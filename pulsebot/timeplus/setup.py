@@ -72,28 +72,50 @@ SETTINGS event_time_column='timestamp';
 """
 
 MEMORY_STREAM_DDL = """
-CREATE MUTABLE STREAM IF NOT EXISTS memory (
-    id string,
+CREATE STREAM IF NOT EXISTS memory (
+    id string DEFAULT uuid(),
     timestamp datetime64(3) DEFAULT now64(3),
-    
+
     -- Classification
     memory_type string,         -- 'fact', 'preference', 'conversation_summary', 'skill_learned'
     category string,            -- 'user_info', 'project', 'schedule', 'general'
-    
+
     -- Content
     content string,             -- The memory itself
     source_session_id string,   -- Where this memory originated
-    
+
     -- Vector embedding for semantic search
     embedding array(float32),   -- 1536-dim for OpenAI, 1024 for others
-    
+
     -- Lifecycle
     importance float32,         -- 0.0 to 1.0, affects retrieval priority
-    access_count int32 DEFAULT 0,
-    last_accessed datetime64(3),
-    expires_at datetime64(3) DEFAULT to_datetime64('2099-12-31 23:59:59', 3)
+    is_deleted bool DEFAULT false  -- Soft delete flag (append-only stream)
 )
-PRIMARY KEY (id)
+SETTINGS event_time_column='timestamp';
+"""
+
+TOOL_LOGS_STREAM_DDL = """
+CREATE STREAM IF NOT EXISTS tool_logs (
+    id string DEFAULT uuid(),
+    timestamp datetime64(3) DEFAULT now64(3),
+
+    -- Context
+    session_id string,
+    llm_request_id string,      -- Links to the LLM call that triggered this
+
+    -- Tool Info
+    tool_name string,
+    skill_name string,
+    arguments string,           -- JSON of tool arguments
+
+    -- Result
+    status string,              -- 'started', 'success', 'error'
+    result_preview string,      -- First 500 chars of result
+    error_message string DEFAULT '',
+
+    -- Timing
+    duration_ms int32 DEFAULT 0
+)
 SETTINGS event_time_column='timestamp';
 """
 
@@ -114,27 +136,6 @@ CREATE STREAM IF NOT EXISTS events (
 SETTINGS event_time_column='timestamp';
 """
 
-# Materialized Views
-MESSAGES_BY_SESSION_MV_DDL = """
-CREATE MATERIALIZED VIEW IF NOT EXISTS messages_by_session AS
-SELECT * FROM messages
-ORDER BY session_id, timestamp;
-"""
-
-LLM_COST_HOURLY_MV_DDL = """
-CREATE MATERIALIZED VIEW IF NOT EXISTS llm_cost_hourly AS
-SELECT 
-    tumble_start(timestamp, 1h) as hour,
-    model,
-    count() as request_count,
-    sum(total_tokens) as total_tokens,
-    sum(estimated_cost_usd) as total_cost_usd,
-    avg(latency_ms) as avg_latency_ms
-FROM llm_logs
-GROUP BY hour, model;
-"""
-
-
 async def create_streams(client: "TimeplusClient") -> None:
     """Create all required Timeplus streams.
     
@@ -147,6 +148,7 @@ async def create_streams(client: "TimeplusClient") -> None:
     streams = [
         ("messages", MESSAGES_STREAM_DDL),
         ("llm_logs", LLM_LOGS_STREAM_DDL),
+        ("tool_logs", TOOL_LOGS_STREAM_DDL),
         ("memory", MEMORY_STREAM_DDL),
         ("events", EVENTS_STREAM_DDL),
     ]
@@ -157,42 +159,20 @@ async def create_streams(client: "TimeplusClient") -> None:
             logger.info(f"Created stream: {name}")
         except Exception as e:
             logger.warning(f"Stream {name} may already exist: {e}")
-    
-    # Create materialized views
-    views = [
-        ("messages_by_session", MESSAGES_BY_SESSION_MV_DDL),
-        ("llm_cost_hourly", LLM_COST_HOURLY_MV_DDL),
-    ]
-    
-    for name, ddl in views:
-        try:
-            client.execute(ddl)
-            logger.info(f"Created materialized view: {name}")
-        except Exception as e:
-            logger.warning(f"Materialized view {name} may already exist: {e}")
-    
+
     logger.info("Timeplus streams setup complete")
 
 
 async def drop_streams(client: "TimeplusClient") -> None:
     """Drop all PulseBot streams (use with caution!).
-    
+
     Args:
         client: Timeplus client instance
     """
     logger.warning("Dropping all Timeplus streams...")
-    
-    # Drop views first (they depend on streams)
-    views = ["messages_by_session", "llm_cost_hourly"]
-    for view in views:
-        try:
-            client.execute(f"DROP VIEW IF EXISTS {view}")
-            logger.info(f"Dropped view: {view}")
-        except Exception as e:
-            logger.warning(f"Could not drop view {view}: {e}")
-    
+
     # Drop streams
-    streams = ["messages", "llm_logs", "memory", "events"]
+    streams = ["messages", "llm_logs", "tool_logs", "memory", "events"]
     for stream in streams:
         try:
             client.execute(f"DROP STREAM IF EXISTS {stream}")
@@ -212,7 +192,7 @@ def verify_streams(client: "TimeplusClient") -> dict[str, bool]:
     Returns:
         Dictionary mapping stream names to existence status
     """
-    required_streams = ["messages", "llm_logs", "memory", "events"]
+    required_streams = ["messages", "llm_logs", "tool_logs", "memory", "events"]
     results = {}
     
     for stream in required_streams:

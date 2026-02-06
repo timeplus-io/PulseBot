@@ -102,6 +102,7 @@ class Agent:
         # Writers use batch client to avoid conflicts with streaming query
         self.messages_writer = StreamWriter(batch_client, "messages")
         self.llm_logger = StreamWriter(batch_client, "llm_logs")
+        self.tool_logger = StreamWriter(batch_client, "tool_logs")
         
         self._running = False
         
@@ -110,14 +111,17 @@ class Agent:
     async def run(self) -> None:
         """Main event loop - listen for messages targeting this agent."""
         self._running = True
-        
+
+        # Ensure all required streams exist before starting
+        await self._ensure_streams_exist()
+
         query = """
-            SELECT * FROM messages 
-            WHERE target = 'agent' 
+            SELECT * FROM messages
+            WHERE target = 'agent'
               AND message_type IN ('user_input', 'tool_result', 'heartbeat', 'scheduled_task')
             SETTINGS seek_to='latest'
         """
-        
+
         logger.info(f"Agent {self.agent_id} starting message loop")
         
         try:
@@ -137,6 +141,36 @@ class Agent:
     async def stop(self) -> None:
         """Stop the agent loop."""
         self._running = False
+
+    async def _ensure_streams_exist(self) -> None:
+        """Ensure all required Timeplus streams exist.
+
+        Creates streams if they don't exist using CREATE STREAM IF NOT EXISTS.
+        Note: Memory stream is optional and created separately when needed.
+        """
+        from pulsebot.timeplus.setup import (
+            MESSAGES_STREAM_DDL,
+            LLM_LOGS_STREAM_DDL,
+            TOOL_LOGS_STREAM_DDL,
+            EVENTS_STREAM_DDL,
+        )
+
+        logger.info("Ensuring required streams exist...")
+
+        # Core streams required for agent operation
+        streams = [
+            ("messages", MESSAGES_STREAM_DDL),
+            ("llm_logs", LLM_LOGS_STREAM_DDL),
+            ("tool_logs", TOOL_LOGS_STREAM_DDL),
+            ("events", EVENTS_STREAM_DDL),
+        ]
+
+        for name, ddl in streams:
+            try:
+                self.tp.execute(ddl)
+                logger.debug(f"Ensured stream exists: {name}")
+            except Exception as e:
+                logger.warning(f"Could not create stream {name}: {e}")
     
     async def _process_message(self, message: dict[str, Any]) -> None:
         """Process a single incoming message through the agent loop.
@@ -201,12 +235,52 @@ class Agent:
             if response.tool_calls:
                 # Execute tools
                 for tool_call in response.tool_calls:
+                    # Broadcast tool call start to UI/CLI
+                    await self._broadcast_tool_call(
+                        session_id=session_id,
+                        source=message.get("source", "webchat"),
+                        tool_name=tool_call.name,
+                        arguments=tool_call.arguments,
+                        status="started",
+                    )
+
+                    # Execute and time the tool
+                    import time
+                    tool_start = time.time()
                     result = await self.executor.execute(
                         tool_name=tool_call.name,
                         arguments=tool_call.arguments,
                         session_id=session_id,
                     )
-                    
+                    tool_duration_ms = int((time.time() - tool_start) * 1000)
+
+                    # Extract result info (executor returns dict with success, output, error)
+                    tool_success = result.get("success", False)
+                    tool_output = result.get("output", "")
+                    tool_error = result.get("error", "")
+                    result_str = str(tool_output) if tool_success else f"Error: {tool_error}"
+
+                    # Broadcast tool result to UI/CLI
+                    await self._broadcast_tool_call(
+                        session_id=session_id,
+                        source=message.get("source", "webchat"),
+                        tool_name=tool_call.name,
+                        arguments=tool_call.arguments,
+                        status="success" if tool_success else "error",
+                        result=result_str,
+                        duration_ms=tool_duration_ms,
+                    )
+
+                    # Log to tool_logs stream
+                    await self._log_tool_call(
+                        session_id=session_id,
+                        tool_name=tool_call.name,
+                        arguments=tool_call.arguments,
+                        result=result_str,
+                        status="success" if tool_success else "error",
+                        duration_ms=tool_duration_ms,
+                    )
+
                     # Add tool result to context for next iteration
                     context.add_assistant_message(
                         content=response.content or "",
@@ -218,7 +292,7 @@ class Agent:
                             },
                         }],
                     )
-                    context.add_tool_result(tool_call.id, result)
+                    context.add_tool_result(tool_call.id, result_str)
             else:
                 # No tool calls - send final response
                 await self._send_response(
@@ -317,7 +391,120 @@ class Agent:
             "tool_call_count": len(response.tool_calls or []),
             "status": "success",
         })
-    
+
+    async def _broadcast_tool_call(
+        self,
+        session_id: str,
+        source: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        status: str,
+        result: str | None = None,
+        duration_ms: int = 0,
+    ) -> None:
+        """Broadcast tool call event to UI/CLI via messages stream.
+
+        Args:
+            session_id: Session identifier
+            source: Original message source (for routing response)
+            tool_name: Name of the tool being called
+            arguments: Tool arguments
+            status: 'started', 'success', or 'error'
+            result: Tool result (for completed calls)
+            duration_ms: Execution duration in milliseconds
+        """
+        # Create a readable summary of the tool call
+        args_summary = self._format_tool_args(tool_name, arguments)
+
+        content = {
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "args_summary": args_summary,
+            "status": status,
+        }
+        if result is not None:
+            content["result_preview"] = truncate_string(result, 200)
+            content["duration_ms"] = duration_ms
+
+        await self.messages_writer.write({
+            "source": "agent",
+            "target": f"channel:{source}",
+            "session_id": session_id,
+            "message_type": "tool_call",
+            "content": json.dumps(content),
+            "priority": 0,
+        })
+
+        logger.debug(
+            f"Tool call broadcast: {tool_name} ({status})",
+            extra={"session_id": session_id, "tool": tool_name},
+        )
+
+    def _format_tool_args(self, tool_name: str, arguments: dict[str, Any]) -> str:
+        """Format tool arguments into a readable summary.
+
+        Args:
+            tool_name: Name of the tool
+            arguments: Tool arguments dict
+
+        Returns:
+            Human-readable summary of what the tool is doing
+        """
+        # Common tool argument patterns
+        if "command" in arguments:
+            cmd = arguments["command"]
+            return f"`{truncate_string(cmd, 80)}`"
+        elif "query" in arguments:
+            query = arguments["query"]
+            return f'"{truncate_string(query, 60)}"'
+        elif "path" in arguments:
+            return f"`{arguments['path']}`"
+        elif "url" in arguments:
+            return f"`{arguments['url']}`"
+        elif "filename" in arguments or "file" in arguments:
+            filename = arguments.get("filename") or arguments.get("file")
+            return f"`{filename}`"
+        elif "content" in arguments:
+            content = arguments["content"]
+            return f'"{truncate_string(content, 40)}"'
+        elif arguments:
+            # Show first argument value
+            first_key = next(iter(arguments))
+            first_val = str(arguments[first_key])
+            return f"{first_key}: {truncate_string(first_val, 50)}"
+        return ""
+
+    async def _log_tool_call(
+        self,
+        session_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        result: str,
+        status: str,
+        duration_ms: int,
+    ) -> None:
+        """Log tool call to tool_logs stream.
+
+        Args:
+            session_id: Session identifier
+            tool_name: Name of the tool
+            arguments: Tool arguments
+            result: Tool result string
+            status: 'success' or 'error'
+            duration_ms: Execution duration in milliseconds
+        """
+        await self.tool_logger.write({
+            "session_id": session_id,
+            "llm_request_id": "",
+            "tool_name": tool_name,
+            "skill_name": tool_name.split("_")[0] if "_" in tool_name else tool_name,
+            "arguments": json.dumps(arguments),
+            "status": status,
+            "result_preview": truncate_string(result, 500),
+            "error_message": result if status == "error" else "",
+            "duration_ms": duration_ms,
+        })
+
     async def _extract_memories(
         self,
         session_id: str,
@@ -368,24 +555,40 @@ class Agent:
             logger.debug(f"No memories extracted: {e}")
     
     async def _log_error(self, message: dict[str, Any], error: Exception) -> None:
-        """Log an error that occurred during processing.
-        
+        """Log an error and send error response to client.
+
         Args:
             message: Message that caused the error
             error: The exception
         """
         session_id = message.get("session_id", "unknown")
-        
+        source = message.get("source", "webchat")
+        error_msg = str(error)
+
+        # Log error internally
         await self.messages_writer.write({
             "source": "agent",
             "target": "agent",
             "session_id": session_id,
             "message_type": "error",
             "content": json.dumps({
-                "error": str(error),
+                "error": error_msg,
                 "original_message_id": message.get("id"),
             }),
             "priority": 2,
+        })
+
+        # Send error response to client
+        await self.messages_writer.write({
+            "source": "agent",
+            "target": f"channel:{source}",
+            "session_id": session_id,
+            "message_type": "agent_response",
+            "content": json.dumps({
+                "text": f"Sorry, an error occurred while processing your request: {error_msg}"
+            }),
+            "user_id": message.get("user_id", ""),
+            "priority": 0,
         })
 
 

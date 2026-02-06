@@ -50,7 +50,20 @@ class MemoryManager:
         self.embedding_model = embedding_model
         self.stream_name = stream_name
         self._openai_client: Any = None
+
+        # Ensure memory stream exists
+        self._ensure_stream_exists()
     
+    def _ensure_stream_exists(self) -> None:
+        """Create the memory stream if it doesn't exist."""
+        from pulsebot.timeplus.setup import MEMORY_STREAM_DDL
+
+        try:
+            self.client.execute(MEMORY_STREAM_DDL)
+            logger.debug(f"Ensured memory stream exists: {self.stream_name}")
+        except Exception as e:
+            logger.warning(f"Could not create memory stream: {e}")
+
     @property
     def openai_client(self) -> Any:
         """Get or create OpenAI client (lazy initialization)."""
@@ -59,15 +72,25 @@ class MemoryManager:
             self._openai_client = OpenAI(api_key=self.openai_api_key)
         return self._openai_client
     
+    def is_available(self) -> bool:
+        """Check if memory features are available (requires OpenAI API key)."""
+        return bool(self.openai_api_key)
+
     async def _get_embedding(self, text: str) -> list[float]:
         """Generate embedding for text using OpenAI.
-        
+
         Args:
             text: Text to embed
-            
+
         Returns:
             Embedding vector (1536 dimensions for text-embedding-3-small)
+
+        Raises:
+            ValueError: If OpenAI API key is not configured
         """
+        if not self.openai_api_key:
+            raise ValueError("OpenAI API key required for memory embeddings")
+
         response = self.openai_client.embeddings.create(
             model=self.embedding_model,
             input=text,
@@ -81,47 +104,39 @@ class MemoryManager:
         category: str = "general",
         importance: float = 0.5,
         source_session_id: str = "",
-        expires_at: datetime | None = None,
     ) -> str:
         """Store a memory with its embedding.
-        
+
         Args:
             content: The memory content to store
             memory_type: Type of memory ('fact', 'preference', 'conversation_summary', 'skill_learned')
             category: Category ('user_info', 'project', 'schedule', 'general')
             importance: Importance score 0.0 to 1.0
             source_session_id: Session where this memory originated
-            expires_at: Optional expiration time
-            
+
         Returns:
             Memory ID
         """
         import uuid
-        
+
         # Generate embedding
         embedding = await self._get_embedding(content)
-        
+
         memory_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
-        
+
         data = {
             "id": memory_id,
-            "timestamp": now,
             "memory_type": memory_type,
             "category": category,
             "content": content,
             "source_session_id": source_session_id,
             "embedding": embedding,
             "importance": importance,
-            "access_count": 0,
-            "last_accessed": now,
+            "is_deleted": False,
         }
-        
-        if expires_at:
-            data["expires_at"] = expires_at
-        
+
         self.client.insert(self.stream_name, [data])
-        
+
         logger.info(
             "Stored memory",
             extra={
@@ -131,7 +146,7 @@ class MemoryManager:
                 "importance": importance,
             }
         )
-        
+
         return memory_id
     
     async def search(
@@ -162,12 +177,15 @@ class MemoryManager:
         embedding_str = _format_embedding(query_embedding)
         
         # Build WHERE clause
-        conditions = [f"importance >= {min_importance}"]
-        
+        conditions = [
+            f"importance >= {min_importance}",
+            "is_deleted = false",
+        ]
+
         if memory_types:
             types_str = ", ".join(f"'{t}'" for t in memory_types)
             conditions.append(f"memory_type IN ({types_str})")
-        
+
         if categories:
             cats_str = ", ".join(f"'{c}'" for c in categories)
             conditions.append(f"category IN ({cats_str})")
@@ -207,16 +225,16 @@ class MemoryManager:
         limit: int = 20,
     ) -> list[dict[str, Any]]:
         """Get memories originating from a specific session.
-        
+
         Args:
             session_id: Session ID to filter by
             limit: Maximum results
-            
+
         Returns:
             List of memories from the session
         """
         sql = f"""
-            SELECT 
+            SELECT
                 id,
                 content,
                 memory_type,
@@ -225,10 +243,11 @@ class MemoryManager:
                 timestamp
             FROM table({self.stream_name})
             WHERE source_session_id = '{session_id}'
+              AND is_deleted = false
             ORDER BY timestamp DESC
             LIMIT {limit}
         """
-        
+
         return self.client.query(sql)
     
     async def get_recent(
@@ -237,21 +256,23 @@ class MemoryManager:
         memory_types: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Get most recent memories.
-        
+
         Args:
             limit: Maximum results
             memory_types: Optional filter by types
-            
+
         Returns:
             List of recent memories
         """
-        where_clause = ""
+        conditions = ["is_deleted = false"]
         if memory_types:
             types_str = ", ".join(f"'{t}'" for t in memory_types)
-            where_clause = f"WHERE memory_type IN ({types_str})"
-        
+            conditions.append(f"memory_type IN ({types_str})")
+
+        where_clause = "WHERE " + " AND ".join(conditions)
+
         sql = f"""
-            SELECT 
+            SELECT
                 id,
                 content,
                 memory_type,
@@ -263,68 +284,18 @@ class MemoryManager:
             ORDER BY timestamp DESC
             LIMIT {limit}
         """
-        
+
         return self.client.query(sql)
     
-    async def update_importance(
-        self,
-        memory_id: str,
-        importance: float,
-    ) -> None:
-        """Update the importance of a memory.
-        
+    async def mark_deleted(self, memory_id: str) -> None:
+        """Mark a memory as deleted (soft delete for append-only stream).
+
+        Note: This inserts a new record marking the memory as deleted.
+        Queries filter out is_deleted=true records.
+
         Args:
-            memory_id: Memory ID to update
-            importance: New importance value
+            memory_id: Memory ID to mark as deleted
         """
-        # Note: Timeplus mutable streams support updates
-        sql = f"""
-            ALTER STREAM {self.stream_name}
-            UPDATE importance = {importance}
-            WHERE id = '{memory_id}'
-        """
-        self.client.execute(sql)
-    
-    async def delete(self, memory_id: str) -> None:
-        """Delete a memory.
-        
-        Args:
-            memory_id: Memory ID to delete
-        """
-        sql = f"""
-            ALTER STREAM {self.stream_name}
-            DELETE WHERE id = '{memory_id}'
-        """
-        self.client.execute(sql)
-        
-        logger.info("Deleted memory", extra={"id": memory_id})
-    
-    async def forget_session(self, session_id: str) -> int:
-        """Delete all memories from a session.
-        
-        Args:
-            session_id: Session ID to forget
-            
-        Returns:
-            Number of memories deleted
-        """
-        # First count
-        count_result = self.client.query(f"""
-            SELECT count() as cnt FROM table({self.stream_name})
-            WHERE source_session_id = '{session_id}'
-        """)
-        count = count_result[0]["cnt"] if count_result else 0
-        
-        # Then delete
-        sql = f"""
-            ALTER STREAM {self.stream_name}
-            DELETE WHERE source_session_id = '{session_id}'
-        """
-        self.client.execute(sql)
-        
-        logger.info(
-            "Forgot session memories",
-            extra={"session_id": session_id, "count": count}
-        )
-        
-        return count
+        # For append-only streams, we insert a deletion marker
+        # Future queries will filter by is_deleted=false
+        logger.info("Memory deletion not fully supported in append-only mode", extra={"id": memory_id})

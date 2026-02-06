@@ -309,6 +309,84 @@
             max-width: 70%;
         }
 
+        /* Tool Call Indicator */
+        .tool-call {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            background: var(--gray-100);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius);
+            font-size: 13px;
+            color: var(--gray-700);
+            animation: fadeIn 0.2s ease;
+        }
+
+        .tool-call.started {
+            background: linear-gradient(90deg, var(--gray-100) 0%, var(--pink-light) 50%, var(--gray-100) 100%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        .tool-call.success {
+            background: #E6FFFA;
+            border-color: #38B2AC;
+            color: #234E52;
+        }
+
+        .tool-call.error {
+            background: #FED7D7;
+            border-color: var(--error-primary);
+            color: var(--error-hover);
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .tool-call-icon {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+        }
+
+        .tool-call-icon.spinning {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .tool-call-name {
+            font-weight: 500;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .tool-call-args {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            color: var(--gray-600);
+            margin-left: 4px;
+        }
+
+        .tool-call.success .tool-call-args {
+            color: #276749;
+        }
+
+        .tool-call-status {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--gray-500);
+        }
+
+        .tool-call.success .tool-call-status {
+            color: #38B2AC;
+        }
+
         /* Typing Indicator */
         .typing-indicator {
             display: none;
@@ -551,6 +629,13 @@
             });
         }
 
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         // Connect to WebSocket
         function connect() {
             sessionId = generateSessionId();
@@ -568,9 +653,13 @@
                 const data = JSON.parse(event.data);
                 if (data.type === 'response') {
                     hideTyping();
+                    removeToolCallIndicators();
                     addMessage(data.text, 'assistant');
                     isWaitingForResponse = false;
                     updateSendButton();
+                } else if (data.type === 'tool_call') {
+                    hideTyping();
+                    handleToolCall(data);
                 }
             };
 
@@ -618,6 +707,59 @@
 
             messagesEl.appendChild(messageEl);
             scrollToBottom();
+        }
+
+        // Track active tool calls by tool name (for updating status)
+        const activeToolCalls = new Map();
+
+        // Handle tool call events
+        function handleToolCall(data) {
+            // Hide empty state
+            emptyStateEl.style.display = 'none';
+
+            const argsSummary = data.args_summary || '';
+            const toolName = data.tool_name;
+
+            if (data.status === 'started') {
+                // Always create a new tool call indicator for 'started' status
+                const toolEl = document.createElement('div');
+                toolEl.className = 'tool-call started';
+                toolEl.innerHTML = `
+                    <svg class="tool-call-icon spinning" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span><span class="tool-call-name">${toolName}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</span>
+                    <span class="tool-call-status">running...</span>
+                `;
+                messagesEl.appendChild(toolEl);
+                activeToolCalls.set(toolName, toolEl);
+                scrollToBottom();
+            } else {
+                // Update the most recent tool call indicator for this tool
+                const toolEl = activeToolCalls.get(toolName);
+                if (toolEl) {
+                    const isSuccess = data.status === 'success';
+                    toolEl.className = `tool-call ${data.status}`;
+                    toolEl.innerHTML = `
+                        <svg class="tool-call-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            ${isSuccess
+                                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />'
+                                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />'
+                            }
+                        </svg>
+                        <span><span class="tool-call-name">${toolName}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</span>
+                        <span class="tool-call-status">${isSuccess ? `${data.duration_ms}ms` : 'failed'}</span>
+                    `;
+                    activeToolCalls.delete(toolName);
+                }
+            }
+        }
+
+        // Clear active tool calls tracking (called when final response arrives)
+        function removeToolCallIndicators() {
+            // Clear the tracking map - indicators stay visible to show the process
+            activeToolCalls.clear();
         }
 
         // Format message with markdown support

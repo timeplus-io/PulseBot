@@ -213,34 +213,60 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
             logger.error(f"WebSocket receive error: {e}")
     
     async def send_responses():
-        """Send agent responses to WebSocket."""
+        """Send agent responses and tool calls to WebSocket."""
         query = f"""
-            SELECT * FROM messages 
+            SELECT * FROM messages
             WHERE session_id = '{session_id}'
               AND target = 'channel:webchat'
-              AND message_type = 'agent_response'
+              AND message_type IN ('agent_response', 'tool_call')
             SETTINGS seek_to='latest'
         """
-        
+
         logger.info(f"Starting send_responses stream for session: {session_id}")
-        
+
         try:
             async for message in ws_reader.stream(query):
+                # Check if websocket is still connected
+                if websocket.client_state.name != "CONNECTED":
+                    logger.info(f"WebSocket no longer connected, stopping stream: {session_id}")
+                    break
+
+                message_type = message.get("message_type", "")
                 content_str = message.get("content", "{}")
+
                 try:
                     content = json.loads(content_str)
-                    text = content.get("text", "")
                 except json.JSONDecodeError:
-                    text = content_str
-                
-                logger.info(f"Sending response to WebSocket: {session_id}, text length: {len(text)}")
-                
-                await websocket.send_json({
-                    "type": "response",
-                    "text": text,
-                    "message_id": message.get("id", ""),
-                })
-                
+                    content = {"text": content_str}
+
+                try:
+                    if message_type == "tool_call":
+                        # Send tool call event
+                        await websocket.send_json({
+                            "type": "tool_call",
+                            "tool_name": content.get("tool_name", ""),
+                            "status": content.get("status", ""),
+                            "arguments": content.get("arguments", {}),
+                            "args_summary": content.get("args_summary", ""),
+                            "result_preview": content.get("result_preview", ""),
+                            "duration_ms": content.get("duration_ms", 0),
+                            "message_id": message.get("id", ""),
+                        })
+                        logger.debug(f"Sent tool_call to WebSocket: {content.get('tool_name')}")
+                    else:
+                        # Send regular response
+                        text = content.get("text", "")
+                        logger.info(f"Sending response to WebSocket: {session_id}, text length: {len(text)}")
+                        await websocket.send_json({
+                            "type": "response",
+                            "text": text,
+                            "message_id": message.get("id", ""),
+                        })
+                except RuntimeError as e:
+                    # WebSocket closed while sending
+                    logger.info(f"WebSocket closed during send: {session_id}")
+                    break
+
         except WebSocketDisconnect:
             logger.info(f"WebSocket disconnected during send_responses: {session_id}")
         except Exception as e:
