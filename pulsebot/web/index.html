@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PulseBot Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* Timeplus Style Guide */
+        :root {
+            /* Gray palette */
+            --gray-900: #120F1A;
+            --gray-800: #1F1B2E;
+            --gray-700: #3D3852;
+            --gray-600: #5C5775;
+            --gray-500: #7A7591;
+            --gray-400: #9994AC;
+            --gray-300: #B8B4C7;
+            --gray-200: #D7D4E2;
+            --gray-100: #EFEDF5;
+            --gray-50: #F7F6F6;
+
+            /* Accent colors */
+            --pink-primary: #D53F8C;
+            --pink-hover: #B83280;
+            --pink-light: #FED7E2;
+
+            /* Error colors */
+            --error-primary: #D12D50;
+            --error-hover: #751025;
+
+            /* Layout */
+            --radius: 4px;
+            --padding: 24px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--gray-900);
+            background-color: var(--gray-50);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            padding: 16px var(--padding);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-logo {
+            width: 32px;
+            height: 32px;
+            background: var(--pink-primary);
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .header-title {
+            font-size: 18px;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+
+        .header-status {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--gray-600);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--gray-400);
+        }
+
+        .status-dot.connected {
+            background: #38A169;
+        }
+
+        /* Chat Container */
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 900px;
+            width: 100%;
+            margin: 0 auto;
+            padding: var(--padding);
+            gap: 16px;
+            overflow: hidden;
+        }
+
+        /* Messages Area */
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding-right: 8px;
+        }
+
+        .messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .messages::-webkit-scrollbar-thumb {
+            background: var(--gray-300);
+            border-radius: 3px;
+        }
+
+        .message {
+            display: flex;
+            gap: 12px;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .message.assistant .message-avatar {
+            background: var(--pink-primary);
+            color: white;
+        }
+
+        .message.user .message-avatar {
+            background: var(--gray-700);
+            color: white;
+        }
+
+        .message-content {
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            word-break: normal;
+            overflow-wrap: break-word;
+        }
+
+        .message.user .message-content {
+            background: var(--gray-800);
+            color: white;
+            border-color: var(--gray-800);
+        }
+
+        .message-content p {
+            margin: 0;
+        }
+
+        .message-content p + p {
+            margin-top: 8px;
+        }
+
+        .message-content code {
+            background: var(--gray-100);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+        }
+
+        .message.user .message-content code {
+            background: var(--gray-700);
+        }
+
+        .message-content pre {
+            background: var(--gray-900);
+            color: var(--gray-100);
+            padding: 12px;
+            border-radius: var(--radius);
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+
+        .message-content pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+        }
+
+        /* Markdown headers */
+        .message-content h1,
+        .message-content h2,
+        .message-content h3 {
+            margin: 16px 0 8px 0;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+
+        .message-content h1:first-child,
+        .message-content h2:first-child,
+        .message-content h3:first-child {
+            margin-top: 0;
+        }
+
+        .message-content h1 { font-size: 1.4em; }
+        .message-content h2 { font-size: 1.2em; }
+        .message-content h3 { font-size: 1.1em; }
+
+        /* Markdown tables */
+        .message-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 12px 0;
+            font-size: 13px;
+        }
+
+        .message-content th,
+        .message-content td {
+            border: 1px solid var(--gray-300);
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .message-content th {
+            background: var(--gray-100);
+            font-weight: 600;
+        }
+
+        .message.user .message-content th {
+            background: var(--gray-700);
+        }
+
+        .message.user .message-content th,
+        .message.user .message-content td {
+            border-color: var(--gray-600);
+        }
+
+        /* Markdown lists */
+        .message-content ul,
+        .message-content ol {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+
+        .message-content li {
+            margin: 4px 0;
+        }
+
+        /* Horizontal rule */
+        .message-content hr {
+            border: none;
+            border-top: 1px solid var(--gray-300);
+            margin: 16px 0;
+        }
+
+        .message.user .message-content hr {
+            border-color: var(--gray-600);
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+
+        .message.user .message-time {
+            text-align: right;
+        }
+
+        .message-wrapper {
+            width: fit-content;
+            max-width: 70%;
+        }
+
+        /* Typing Indicator */
+        .typing-indicator {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+        }
+
+        .typing-indicator.visible {
+            display: flex;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .typing-dots span {
+            width: 6px;
+            height: 6px;
+            background: var(--gray-400);
+            border-radius: 50%;
+            animation: typing 1.4s ease-in-out infinite;
+        }
+
+        .typing-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-4px); }
+        }
+
+        /* Input Area */
+        .input-area {
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius);
+            padding: 12px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-area:focus-within {
+            border-color: var(--pink-primary);
+            box-shadow: 0 0 0 2px var(--pink-light);
+        }
+
+        .input-field {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 1.5;
+            resize: none;
+            min-height: 24px;
+            max-height: 120px;
+        }
+
+        .input-field::placeholder {
+            color: var(--gray-500);
+        }
+
+        .send-button {
+            height: 32px;
+            padding: 0 16px;
+            background: var(--pink-primary);
+            color: white;
+            border: none;
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .send-button:hover {
+            background: var(--pink-hover);
+        }
+
+        .send-button:disabled {
+            background: var(--gray-400);
+            cursor: not-allowed;
+        }
+
+        .send-button svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Empty State */
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--gray-600);
+            text-align: center;
+            padding: 40px;
+        }
+
+        .empty-state-icon {
+            width: 64px;
+            height: 64px;
+            background: var(--gray-100);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+
+        .empty-state-icon svg {
+            width: 32px;
+            height: 32px;
+            color: var(--gray-500);
+        }
+
+        .empty-state h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--gray-900);
+            margin-bottom: 8px;
+        }
+
+        /* Error Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--gray-900);
+            color: white;
+            padding: 12px 20px;
+            border-radius: var(--radius);
+            font-size: 14px;
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .toast.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .toast.error {
+            background: var(--error-primary);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-logo">P</div>
+        <h1 class="header-title">PulseBot</h1>
+        <div class="header-status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Connecting...</span>
+        </div>
+    </header>
+
+    <main class="chat-container">
+        <div class="messages" id="messages">
+            <div class="empty-state" id="emptyState">
+                <div class="empty-state-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                </div>
+                <h2>Start a conversation</h2>
+                <p>Send a message to begin chatting with PulseBot</p>
+            </div>
+        </div>
+
+        <div class="typing-indicator" id="typingIndicator">
+            <div class="message-avatar" style="background: var(--pink-primary); color: white;">P</div>
+            <div class="typing-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <textarea
+                class="input-field"
+                id="messageInput"
+                placeholder="Type a message..."
+                rows="1"
+            ></textarea>
+            <button class="send-button" id="sendButton" disabled>
+                <span>Send</span>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+            </button>
+        </div>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // Configuration
+        const WS_URL = `ws://${window.location.host}/ws`;
+
+        // State
+        let socket = null;
+        let sessionId = null;
+        let isConnected = false;
+        let isWaitingForResponse = false;
+
+        // DOM Elements
+        const messagesEl = document.getElementById('messages');
+        const emptyStateEl = document.getElementById('emptyState');
+        const typingIndicatorEl = document.getElementById('typingIndicator');
+        const messageInputEl = document.getElementById('messageInput');
+        const sendButtonEl = document.getElementById('sendButton');
+        const statusDotEl = document.getElementById('statusDot');
+        const statusTextEl = document.getElementById('statusText');
+        const toastEl = document.getElementById('toast');
+
+        // Generate session ID
+        function generateSessionId() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Connect to WebSocket
+        function connect() {
+            sessionId = generateSessionId();
+            const wsUrl = `${WS_URL}/${sessionId}`;
+
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = () => {
+                isConnected = true;
+                updateStatus(true);
+                console.log('Connected to PulseBot');
+            };
+
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'response') {
+                    hideTyping();
+                    addMessage(data.text, 'assistant');
+                    isWaitingForResponse = false;
+                    updateSendButton();
+                }
+            };
+
+            socket.onclose = () => {
+                isConnected = false;
+                updateStatus(false);
+                console.log('Disconnected from PulseBot');
+                // Attempt to reconnect after 3 seconds
+                setTimeout(connect, 3000);
+            };
+
+            socket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                showToast('Connection error. Retrying...', true);
+            };
+        }
+
+        // Update connection status
+        function updateStatus(connected) {
+            statusDotEl.classList.toggle('connected', connected);
+            statusTextEl.textContent = connected ? 'Connected' : 'Disconnected';
+        }
+
+        // Add message to chat
+        function addMessage(text, role) {
+            // Hide empty state
+            emptyStateEl.style.display = 'none';
+
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${role}`;
+
+            const avatar = role === 'assistant' ? 'P' : 'U';
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            // Simple markdown-like formatting
+            const formattedText = formatMessage(text);
+
+            messageEl.innerHTML = `
+                <div class="message-avatar">${avatar}</div>
+                <div class="message-wrapper">
+                    <div class="message-content">${formattedText}</div>
+                    <div class="message-time">${time}</div>
+                </div>
+            `;
+
+            messagesEl.appendChild(messageEl);
+            scrollToBottom();
+        }
+
+        // Format message with markdown support
+        function formatMessage(text) {
+            if (!text) return '';
+
+            // Escape HTML first
+            text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            // Store code blocks to protect from other transformations
+            const codeBlocks = [];
+            text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+                codeBlocks.push(`<pre><code>${code.trim()}</code></pre>`);
+                return `%%CODEBLOCK${codeBlocks.length - 1}%%`;
+            });
+
+            // Inline code (protect from other transformations)
+            const inlineCodes = [];
+            text = text.replace(/`([^`]+)`/g, (match, code) => {
+                inlineCodes.push(`<code>${code}</code>`);
+                return `%%INLINECODE${inlineCodes.length - 1}%%`;
+            });
+
+            // Process tables
+            text = text.replace(/(?:^|\n)(\|.+\|)\n(\|[-:| ]+\|)\n((?:\|.+\|\n?)+)/g, (match, header, separator, body) => {
+                const headerCells = header.split('|').filter(c => c.trim()).map(c => `<th>${c.trim()}</th>`).join('');
+                const rows = body.trim().split('\n').map(row => {
+                    const cells = row.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
+                    return `<tr>${cells}</tr>`;
+                }).join('');
+                return `\n<table><thead><tr>${headerCells}</tr></thead><tbody>${rows}</tbody></table>\n`;
+            });
+
+            // Headers (must be at start of line)
+            text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            text = text.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            text = text.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+            // Horizontal rules
+            text = text.replace(/^---+$/gm, '<hr>');
+
+            // Unordered lists
+            text = text.replace(/(?:^|\n)((?:[-*] .+\n?)+)/g, (match, list) => {
+                const items = list.trim().split('\n').map(item => {
+                    const content = item.replace(/^[-*] /, '');
+                    return `<li>${content}</li>`;
+                }).join('');
+                return `\n<ul>${items}</ul>\n`;
+            });
+
+            // Ordered lists
+            text = text.replace(/(?:^|\n)((?:\d+\. .+\n?)+)/g, (match, list) => {
+                const items = list.trim().split('\n').map(item => {
+                    const content = item.replace(/^\d+\. /, '');
+                    return `<li>${content}</li>`;
+                }).join('');
+                return `\n<ol>${items}</ol>\n`;
+            });
+
+            // Bold
+            text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+            // Italic
+            text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+            // Restore inline codes
+            inlineCodes.forEach((code, i) => {
+                text = text.replace(`%%INLINECODE${i}%%`, code);
+            });
+
+            // Restore code blocks
+            codeBlocks.forEach((block, i) => {
+                text = text.replace(`%%CODEBLOCK${i}%%`, block);
+            });
+
+            // Convert remaining newlines to <br> (but not around block elements)
+            text = text.replace(/\n(?!<\/?(?:table|thead|tbody|tr|th|td|ul|ol|li|h[1-3]|hr|pre))/g, '<br>');
+
+            // Clean up extra line breaks around block elements
+            text = text.replace(/<br>\s*(<(?:table|ul|ol|h[1-3]|hr|pre))/g, '$1');
+            text = text.replace(/(<\/(?:table|ul|ol|h[1-3]|hr|pre)>)\s*<br>/g, '$1');
+
+            return text;
+        }
+
+        // Show typing indicator
+        function showTyping() {
+            typingIndicatorEl.classList.add('visible');
+            scrollToBottom();
+        }
+
+        // Hide typing indicator
+        function hideTyping() {
+            typingIndicatorEl.classList.remove('visible');
+        }
+
+        // Scroll to bottom of messages
+        function scrollToBottom() {
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        // Send message
+        function sendMessage() {
+            const text = messageInputEl.value.trim();
+            if (!text || !isConnected || isWaitingForResponse) return;
+
+            // Add user message
+            addMessage(text, 'user');
+
+            // Send to server
+            socket.send(JSON.stringify({
+                type: 'message',
+                text: text
+            }));
+
+            // Clear input
+            messageInputEl.value = '';
+            messageInputEl.style.height = 'auto';
+
+            // Show typing indicator
+            showTyping();
+            isWaitingForResponse = true;
+            updateSendButton();
+        }
+
+        // Update send button state
+        function updateSendButton() {
+            const hasText = messageInputEl.value.trim().length > 0;
+            sendButtonEl.disabled = !hasText || !isConnected || isWaitingForResponse;
+        }
+
+        // Show toast notification
+        function showToast(message, isError = false) {
+            toastEl.textContent = message;
+            toastEl.classList.toggle('error', isError);
+            toastEl.classList.add('visible');
+
+            setTimeout(() => {
+                toastEl.classList.remove('visible');
+            }, 3000);
+        }
+
+        // Auto-resize textarea
+        function autoResize() {
+            messageInputEl.style.height = 'auto';
+            messageInputEl.style.height = Math.min(messageInputEl.scrollHeight, 120) + 'px';
+        }
+
+        // Event listeners
+        messageInputEl.addEventListener('input', () => {
+            updateSendButton();
+            autoResize();
+        });
+
+        messageInputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        sendButtonEl.addEventListener('click', sendMessage);
+
+        // Initialize
+        connect();
+    </script>
+</body>
+</html>

@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -102,7 +104,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     
     # Include router
     app.include_router(router)
-    
+
+    # Serve web UI static files
+    web_dir = Path(__file__).parent.parent / "web"
+    if web_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
+
     return app
 
 
@@ -110,6 +117,16 @@ def create_app(config: Config | None = None) -> FastAPI:
 from fastapi import APIRouter
 
 router = APIRouter()
+
+
+@router.get("/", include_in_schema=False)
+async def serve_web_ui() -> FileResponse:
+    """Serve the web chat UI."""
+    web_dir = Path(__file__).parent.parent / "web"
+    index_path = web_dir / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    raise HTTPException(status_code=404, detail="Web UI not found")
 
 
 @router.get("/health", response_model=HealthResponse)
