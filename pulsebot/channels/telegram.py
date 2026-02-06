@@ -42,23 +42,35 @@ class TelegramChannel(BaseChannel):
         allowed_users: list[int] | None = None,
     ):
         """Initialize Telegram channel.
-        
+
         Args:
             token: Telegram bot token
             timeplus_client: Timeplus client for message routing
             allowed_users: List of allowed user IDs (None = all allowed)
         """
+        from pulsebot.timeplus.client import TimeplusClient
+
         self.token = token
         self.tp = timeplus_client
         self.allowed_users = allowed_users
-        
+
         self._app: Application | None = None
-        self._writer = StreamWriter(timeplus_client, "messages")
+
+        # Create separate clients to avoid "Simultaneous queries on single connection" error
+        # Reader client for streaming query (listening for responses)
+        # Writer client for batch inserts (sending messages)
+        writer_client = TimeplusClient(
+            host=timeplus_client.host,
+            port=timeplus_client.port,
+            username=timeplus_client.username,
+            password=timeplus_client.password,
+        )
+        self._writer = StreamWriter(writer_client, "messages")
         self._reader = StreamReader(timeplus_client, "messages")
-        
+
         # Track chat_id -> session_id mapping
         self._sessions: dict[int, str] = {}
-        
+
         logger.info("Initialized Telegram channel")
     
     async def start(self) -> None:
