@@ -61,6 +61,7 @@ All components communicate via Timeplus streams (unbounded append-only data):
 - `pulsebot/channels/` - Input channels (Telegram bot integration)
 - `pulsebot/timeplus/` - Timeplus client, stream reader/writer, vector memory, scheduled tasks
 - `pulsebot/api/` - FastAPI server with REST and WebSocket endpoints
+- `pulsebot/web/` - Web chat UI (served at http://localhost:8000/)
 
 ### Timeplus Streams
 

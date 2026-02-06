@@ -168,8 +168,15 @@ class MySkill(BaseSkill):
 
 ## 📡 API Endpoints
 
+### Web Chat UI
+
+Access the built-in web chat interface at `http://localhost:8000/` after starting the API server.
+
+### REST & WebSocket Endpoints
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/` | Web chat UI |
 | GET | `/health` | Health check |
 | POST | `/chat` | Send message (async) |
 | WS | `/ws/{session_id}` | Real-time chat |
