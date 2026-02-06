@@ -1,0 +1,304 @@
+"""CLI interface for PulseBot."""
+
+from __future__ import annotations
+
+import asyncio
+import click
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+
+console = Console()
+
+
+@click.group()
+@click.version_option(version="0.1.0", prog_name="pulsebot")
+def cli():
+    """PulseBot - Stream-native AI Agent powered by Timeplus."""
+    pass
+
+
+@cli.command()
+@click.option("--config", "-c", default="config.yaml", help="Config file path")
+def run(config: str):
+    """Start the PulseBot agent."""
+    from pulsebot.config import load_config
+    from pulsebot.core import Agent
+    from pulsebot.factory import create_provider
+    from pulsebot.skills import SkillLoader
+    from pulsebot.timeplus.client import TimeplusClient
+    from pulsebot.timeplus.memory import MemoryManager
+    from pulsebot.utils import setup_logging
+    
+    cfg = load_config(config)
+    setup_logging(cfg.logging.level, cfg.logging.format)
+    
+    console.print(Panel.fit(
+        f"[bold green]Starting PulseBot[/]\n"
+        f"Agent: {cfg.agent.name}\n"
+        f"Provider: {cfg.agent.provider}\n"
+        f"Model: {cfg.agent.model}"
+    ))
+    
+    async def main():
+        # Initialize components
+        tp = TimeplusClient.from_config(cfg.timeplus)
+        
+        provider = create_provider(cfg)
+        
+        memory = MemoryManager(
+            client=tp,
+            openai_api_key=cfg.providers.openai.api_key,
+        )
+        
+        skills = SkillLoader.from_config(cfg.skills)
+        
+        agent = Agent(
+            agent_id="main",
+            timeplus=tp,
+            llm_provider=provider,
+            skill_loader=skills,
+            memory_manager=memory,
+            agent_name=cfg.agent.name,
+            model_info=f"Model: {cfg.agent.model}\nProvider: {cfg.agent.provider}",
+            timeplus_config=cfg.timeplus,
+        )
+        
+        console.print("[green]Agent running. Press Ctrl+C to stop.[/]")
+        
+        try:
+            await agent.run()
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Shutting down...[/]")
+            await agent.stop()
+    
+    asyncio.run(main())
+
+
+@cli.command()
+@click.option("--config", "-c", default="config.yaml", help="Config file path")
+@click.option("--host", default="0.0.0.0", help="API server host")
+@click.option("--port", default=8000, help="API server port")
+def serve(config: str, host: str, port: int):
+    """Start the PulseBot API server."""
+    import uvicorn
+    from pulsebot.config import load_config
+    from pulsebot.utils import setup_logging
+    
+    cfg = load_config(config)
+    setup_logging(cfg.logging.level, cfg.logging.format)
+    
+    console.print(Panel.fit(
+        f"[bold green]Starting PulseBot API[/]\n"
+        f"Host: {host}:{port}\n"
+        f"Docs: http://{host}:{port}/docs"
+    ))
+    
+    uvicorn.run(
+        "pulsebot.api:create_app",
+        host=host,
+        port=port,
+        factory=True,
+        reload=False,
+    )
+
+
+@cli.command()
+@click.option("--host", default="localhost", help="API server host")
+@click.option("--port", default=8000, help="API server port")
+def chat(host: str, port: int):
+    """Interactive chat with PulseBot via API."""
+    import httpx
+    import json
+    import uuid
+    import websockets
+    from rich.markdown import Markdown
+
+    console.print(Panel.fit(
+        f"[bold green]PulseBot Interactive Chat[/]\n"
+        f"Connected to http://{host}:{port}\n"
+        "Type 'exit' or 'quit' to end session"
+    ))
+    
+    session_id = str(uuid.uuid4())
+    api_url = f"http://{host}:{port}"
+    ws_url = f"ws://{host}:{port}/ws/{session_id}"
+    
+    async def chat_loop():
+        # Check if API is healthy
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.get(f"{api_url}/health")
+        except Exception:
+            console.print(f"[red]Error: Could not connect to PulseBot API at {api_url}[/]")
+            console.print("Make sure the agent is running: [bold]docker compose up -d[/]")
+            return
+
+        try:
+            async with websockets.connect(ws_url) as websocket:
+                console.print(f"[dim]Connected to session: {session_id}[/]\n")
+
+                # Event to signal when response is received
+                response_received = asyncio.Event()
+
+                # Task to receive messages
+                async def receive_messages():
+                    try:
+                        while True:
+                            message = await websocket.recv()
+                            data = json.loads(message)
+
+                            if data.get("type") == "response":
+                                response_text = data.get("text", "")
+                                console.print(Panel(
+                                    Markdown(response_text),
+                                    title="[bold green]PulseBot[/]",
+                                    border_style="green",
+                                ))
+                                response_received.set()
+                    except websockets.exceptions.ConnectionClosed:
+                        pass
+
+                receive_task = asyncio.create_task(receive_messages())
+
+                while True:
+                    try:
+                        user_input = await asyncio.get_event_loop().run_in_executor(
+                            None, console.input, "[bold blue]You>[/] "
+                        )
+
+                        if user_input.lower() in ("exit", "quit", "q"):
+                            console.print("[yellow]Goodbye![/]")
+                            break
+
+                        if not user_input.strip():
+                            continue
+
+                        # Clear the event before sending
+                        response_received.clear()
+
+                        await websocket.send(json.dumps({
+                            "type": "message",
+                            "text": user_input
+                        }))
+
+                        # Show waiting indicator and wait for response
+                        with console.status("[dim]Thinking...[/]", spinner="dots"):
+                            try:
+                                await asyncio.wait_for(response_received.wait(), timeout=60)
+                            except asyncio.TimeoutError:
+                                console.print("[yellow]Response timed out[/]")
+
+                    except KeyboardInterrupt:
+                        console.print("\n[yellow]Goodbye![/]")
+                        break
+
+                receive_task.cancel()
+                
+        except Exception as e:
+            console.print(f"[red]Connection error: {e}[/]")
+
+    # Run the async loop
+    try:
+        asyncio.run(chat_loop())
+    except KeyboardInterrupt:
+        pass
+
+
+@cli.command()
+@click.option("--config", "-c", default="config.yaml", help="Config file path")
+def setup(config: str):
+    """Initialize Timeplus streams and database tables."""
+    from pulsebot.config import load_config
+    from pulsebot.db import DatabaseManager
+    from pulsebot.timeplus.client import TimeplusClient
+    from pulsebot.timeplus.setup import create_streams
+    
+    cfg = load_config(config)
+    
+    console.print("[bold]Setting up PulseBot infrastructure...[/]")
+    
+    async def run_setup():
+        # Setup Timeplus streams
+        console.print("Creating Timeplus streams...")
+        tp = TimeplusClient.from_config(cfg.timeplus)
+        await create_streams(tp)
+        console.print("[green]✓ Timeplus streams created[/]")
+        
+        # Setup PostgreSQL tables
+        console.print("Creating database tables...")
+        db = DatabaseManager.from_config(cfg.postgres)
+        await db.initialize()
+        console.print("[green]✓ Database tables created[/]")
+        
+        await db.close()
+    
+    asyncio.run(run_setup())
+    console.print("\n[bold green]Setup complete![/]")
+
+
+@cli.command()
+def init():
+    """Generate default config.yaml."""
+    from pulsebot.config import generate_default_config
+    
+    config_path = "config.yaml"
+    
+    import os
+    if os.path.exists(config_path):
+        if not click.confirm(f"{config_path} already exists. Overwrite?"):
+            console.print("[yellow]Cancelled.[/]")
+            return
+    
+    content = generate_default_config()
+    
+    with open(config_path, "w") as f:
+        f.write(content)
+    
+    console.print(f"[green]Created {config_path}[/]")
+    console.print("Edit the file and set your API keys and connection details.")
+
+
+@cli.group()
+def task():
+    """Manage scheduled tasks."""
+    pass
+
+
+@task.command("list")
+@click.option("--config", "-c", default="config.yaml", help="Config file path")
+def list_tasks(config: str):
+    """List all scheduled tasks."""
+    from pulsebot.config import load_config
+    from pulsebot.timeplus.client import TimeplusClient
+    from pulsebot.timeplus.tasks import TaskManager
+    
+    cfg = load_config(config)
+    tp = TimeplusClient.from_config(cfg.timeplus)
+    task_mgr = TaskManager(tp)
+    
+    tasks = task_mgr.list_tasks()
+    
+    if not tasks:
+        console.print("[yellow]No tasks found.[/]")
+        return
+    
+    from rich.table import Table
+    
+    table = Table(title="Scheduled Tasks")
+    table.add_column("Name")
+    table.add_column("Schedule")
+    table.add_column("Status")
+    
+    for t in tasks:
+        table.add_row(
+            t.get("name"),
+            t.get("schedule"),
+            "[green]Running[/]" if t.get("running") else "[red]Paused[/]"
+        )
+    
+    console.print(table)
+
+
+if __name__ == "__main__":
+    cli()
