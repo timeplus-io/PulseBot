@@ -125,9 +125,9 @@ class ContextBuilder:
         # Fetch conversation history
         history = await self._get_conversation_history(session_id, history_limit)
         
-        # Fetch relevant memories
+        # Fetch relevant memories (only if OpenAI API key is configured)
         memories = []
-        if include_memory and self.memory and user_message:
+        if include_memory and self.memory and user_message and self.memory.is_available():
             memories = await self._get_relevant_memories(user_message, memory_limit)
         
         # Build system prompt

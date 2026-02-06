@@ -141,6 +141,9 @@ def chat(host: str, port: int):
                 # Event to signal when response is received
                 response_received = asyncio.Event()
 
+                # Track active tool calls for display
+                active_tools = {}
+
                 # Task to receive messages
                 async def receive_messages():
                     try:
@@ -148,7 +151,26 @@ def chat(host: str, port: int):
                             message = await websocket.recv()
                             data = json.loads(message)
 
-                            if data.get("type") == "response":
+                            if data.get("type") == "tool_call":
+                                tool_name = data.get("tool_name", "unknown")
+                                status = data.get("status", "")
+                                args_summary = data.get("args_summary", "")
+
+                                if status == "started":
+                                    if args_summary:
+                                        console.print(f"  [dim cyan]⚙[/] [bold]{tool_name}[/] [dim]{args_summary}[/]")
+                                    else:
+                                        console.print(f"  [dim cyan]⚙[/] [bold]{tool_name}[/]")
+                                    active_tools[tool_name] = True
+                                else:
+                                    duration = data.get("duration_ms", 0)
+                                    if status == "success":
+                                        console.print(f"  [dim green]✓ {tool_name}[/] [dim]({duration}ms)[/]")
+                                    else:
+                                        console.print(f"  [dim red]✗ {tool_name} failed[/]")
+                                    active_tools.pop(tool_name, None)
+
+                            elif data.get("type") == "response":
                                 response_text = data.get("text", "")
                                 console.print(Panel(
                                     Markdown(response_text),
