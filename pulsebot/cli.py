@@ -29,30 +29,30 @@ def run(config: str):
     from pulsebot.timeplus.client import TimeplusClient
     from pulsebot.timeplus.memory import MemoryManager
     from pulsebot.utils import setup_logging
-    
+
     cfg = load_config(config)
     setup_logging(cfg.logging.level, cfg.logging.format)
-    
+
     console.print(Panel.fit(
         f"[bold green]Starting PulseBot[/]\n"
         f"Agent: {cfg.agent.name}\n"
         f"Provider: {cfg.agent.provider}\n"
         f"Model: {cfg.agent.model}"
     ))
-    
+
     async def main():
         # Initialize components
         tp = TimeplusClient.from_config(cfg.timeplus)
-        
+
         provider = create_provider(cfg)
-        
+
         memory = MemoryManager(
             client=tp,
             openai_api_key=cfg.providers.openai.api_key,
         )
-        
+
         skills = SkillLoader.from_config(cfg.skills)
-        
+
         agent = Agent(
             agent_id="main",
             timeplus=tp,
@@ -63,15 +63,31 @@ def run(config: str):
             model_info=f"Model: {cfg.agent.model}\nProvider: {cfg.agent.provider}",
             timeplus_config=cfg.timeplus,
         )
-        
+
+        # Start Telegram channel if enabled (needs separate client to avoid connection conflicts)
+        telegram_channel = None
+        if cfg.channels.telegram.enabled and cfg.channels.telegram.token:
+            from pulsebot.channels.telegram import TelegramChannel
+            # Create dedicated Timeplus client for Telegram to avoid simultaneous query errors
+            telegram_tp = TimeplusClient.from_config(cfg.timeplus)
+            telegram_channel = TelegramChannel(
+                token=cfg.channels.telegram.token,
+                timeplus_client=telegram_tp,
+                allowed_users=cfg.channels.telegram.allow_from or None,
+            )
+            await telegram_channel.start()
+            console.print("[green]Telegram channel started[/]")
+
         console.print("[green]Agent running. Press Ctrl+C to stop.[/]")
-        
+
         try:
             await agent.run()
         except KeyboardInterrupt:
             console.print("\n[yellow]Shutting down...[/]")
+            if telegram_channel:
+                await telegram_channel.stop()
             await agent.stop()
-    
+
     asyncio.run(main())
 
 

@@ -84,7 +84,7 @@ class TelegramChannelConfig(BaseModel):
     """Telegram channel configuration."""
     enabled: bool = False
     token: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: list[int] = Field(default_factory=list)  # Telegram user IDs
 
 
 class WebchatChannelConfig(BaseModel):
