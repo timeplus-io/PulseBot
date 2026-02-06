@@ -63,12 +63,21 @@ class OllamaConfig(BaseModel):
     timeout_seconds: int = 120
 
 
+class NvidiaConfig(BaseModel):
+    """NVIDIA API configuration."""
+    api_key: str = ""
+    default_model: str = "moonshotai/kimi-k2.5"
+    timeout_seconds: int = 120
+    enable_thinking: bool = False
+
+
 class ProvidersConfig(BaseModel):
     """All LLM providers configuration."""
     anthropic: ProviderConfig = Field(default_factory=ProviderConfig)
     openai: ProviderConfig = Field(default_factory=ProviderConfig)
     openrouter: ProviderConfig = Field(default_factory=ProviderConfig)
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
+    nvidia: NvidiaConfig = Field(default_factory=NvidiaConfig)
 
 
 class TelegramChannelConfig(BaseModel):
@@ -211,6 +220,11 @@ providers:
     enabled: true
     host: "${OLLAMA_HOST:-http://localhost:11434}"
     default_model: "llama3"
+
+  nvidia:
+    api_key: "${NVIDIA_API_KEY}"
+    default_model: "moonshotai/kimi-k2.5"
+    enable_thinking: false
 
 channels:
   telegram:

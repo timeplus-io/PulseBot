@@ -7,7 +7,7 @@ PulseBot is a lightweight, extensible AI agent framework that uses Timeplus stre
 ## ✨ Features
 
 - **Stream-Native Architecture** - All communication flows through Timeplus streams
-- **Multi-Provider LLM Support** - Anthropic Claude, OpenAI, and OpenRouter
+- **Multi-Provider LLM Support** - Anthropic Claude, OpenAI, OpenRouter, Ollama, and NVIDIA
 - **Vector Memory** - Semantic search using embeddings stored in Timeplus
 - **SQL-Native Scheduling** - Timeplus Tasks replace traditional cron jobs
 - **Extensible Skills** - Plugin-based tool system (web search, file ops, shell)
