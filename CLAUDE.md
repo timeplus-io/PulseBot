@@ -13,7 +13,7 @@ PulseBot is a stream-native AI agent framework powered by Timeplus (streaming SQ
 pulsebot run              # Start agent main loop (listens to message streams)
 pulsebot serve            # Start FastAPI server on port 8000
 pulsebot chat             # Interactive CLI chat
-pulsebot setup            # Initialize Timeplus streams & database tables
+pulsebot setup            # Initialize Timeplus streams
 pulsebot init             # Generate default config.yaml
 pulsebot task list        # List scheduled tasks
 
@@ -25,7 +25,7 @@ ruff check .              # Lint code
 mypy pulsebot/            # Type checking
 
 # Docker deployment
-docker-compose up -d      # Start all services (proton, postgres, agent, api)
+docker-compose up -d      # Start all services (proton, agent, api)
 ```
 
 ## Architecture
@@ -60,7 +60,6 @@ All components communicate via Timeplus streams (unbounded append-only data):
 - `pulsebot/skills/` - Tool/skill system with builtin skills (web_search, file_ops, shell)
 - `pulsebot/channels/` - Input channels (Telegram bot integration)
 - `pulsebot/timeplus/` - Timeplus client, stream reader/writer, vector memory, scheduled tasks
-- `pulsebot/db/` - PostgreSQL metadata storage (SQLAlchemy models)
 - `pulsebot/api/` - FastAPI server with REST and WebSocket endpoints
 
 ### Timeplus Streams
@@ -85,7 +84,6 @@ All components communicate via Timeplus streams (unbounded append-only data):
 `config.yaml` uses Pydantic validation with environment variable substitution (`${VAR_NAME}` or `${VAR_NAME:-default}`):
 - `agent`: name, model, provider, temperature
 - `timeplus`: host, port, credentials
-- `postgres`: connection details
 - `providers`: API keys for Anthropic, OpenAI, OpenRouter, Ollama
 - `channels`: Telegram settings
 - `skills`: enabled builtin skills
@@ -94,4 +92,3 @@ All components communicate via Timeplus streams (unbounded append-only data):
 
 - Python 3.11+
 - Timeplus/Proton (streaming database, port 8463)
-- PostgreSQL (metadata storage)

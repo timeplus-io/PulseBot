@@ -48,7 +48,6 @@ PulseBot is a lightweight, extensible AI agent framework that uses Timeplus stre
 
 - Python 3.11+
 - Timeplus (local or cloud)
-- PostgreSQL (for metadata)
 
 ### Installation
 
@@ -125,8 +124,7 @@ docker-compose up -d
 ```
 
 This starts:
-- **Timeplus** - Streaming database (ports 8123, 3218)
-- **PostgreSQL** - Metadata storage (port 5432)
+- **Timeplus** - Streaming database (ports 8123, 3218, 8463)
 - **PulseBot Agent** - Message processing
 - **PulseBot API** - REST/WebSocket interface (port 8000)
 
@@ -137,7 +135,7 @@ This starts:
 | `pulsebot run` | Start the agent loop |
 | `pulsebot serve` | Start FastAPI server |
 | `pulsebot chat` | Interactive CLI chat |
-| `pulsebot setup` | Initialize streams & database |
+| `pulsebot setup` | Initialize Timeplus streams |
 | `pulsebot init` | Generate config.yaml |
 | `pulsebot task list` | List scheduled tasks |
 

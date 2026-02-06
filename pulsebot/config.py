@@ -48,20 +48,6 @@ class TimeplusConfig(BaseModel):
     password: str = ""
 
 
-class PostgresConfig(BaseModel):
-    """PostgreSQL connection configuration."""
-    host: str = "localhost"
-    port: int = 5432
-    database: str = "pulsebot"
-    username: str = "pulsebot"
-    password: str = ""
-    
-    @property
-    def url(self) -> str:
-        """Get SQLAlchemy database URL."""
-        return f"postgresql+asyncpg://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
-
-
 class ProviderConfig(BaseModel):
     """LLM provider configuration."""
     api_key: str = ""
@@ -152,7 +138,6 @@ class Config(BaseSettings):
     """Main PulseBot configuration."""
     agent: AgentConfig = Field(default_factory=AgentConfig)
     timeplus: TimeplusConfig = Field(default_factory=TimeplusConfig)
-    postgres: PostgresConfig = Field(default_factory=PostgresConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
@@ -211,13 +196,6 @@ timeplus:
   port: 8463
   username: "${TIMEPLUS_USER:-default}"
   password: "${TIMEPLUS_PASSWORD:-}"
-
-postgres:
-  host: "${POSTGRES_HOST:-localhost}"
-  port: 5432
-  database: "${POSTGRES_DB:-pulsebot}"
-  username: "${POSTGRES_USER:-pulsebot}"
-  password: "${POSTGRES_PASSWORD:-}"
 
 providers:
   anthropic:

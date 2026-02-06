@@ -208,31 +208,22 @@ def chat(host: str, port: int):
 @cli.command()
 @click.option("--config", "-c", default="config.yaml", help="Config file path")
 def setup(config: str):
-    """Initialize Timeplus streams and database tables."""
+    """Initialize Timeplus streams."""
     from pulsebot.config import load_config
-    from pulsebot.db import DatabaseManager
     from pulsebot.timeplus.client import TimeplusClient
     from pulsebot.timeplus.setup import create_streams
-    
+
     cfg = load_config(config)
-    
+
     console.print("[bold]Setting up PulseBot infrastructure...[/]")
-    
+
     async def run_setup():
         # Setup Timeplus streams
         console.print("Creating Timeplus streams...")
         tp = TimeplusClient.from_config(cfg.timeplus)
         await create_streams(tp)
         console.print("[green]✓ Timeplus streams created[/]")
-        
-        # Setup PostgreSQL tables
-        console.print("Creating database tables...")
-        db = DatabaseManager.from_config(cfg.postgres)
-        await db.initialize()
-        console.print("[green]✓ Database tables created[/]")
-        
-        await db.close()
-    
+
     asyncio.run(run_setup())
     console.print("\n[bold green]Setup complete![/]")
 

@@ -20,32 +20,27 @@ classifiers = [
 dependencies = [
     # Timeplus
     "proton-driver>=0.2.13",
-    
+
     # LLM Providers
     "anthropic>=0.40.0",
     "openai>=1.50.0",
-    
-    # Database
-    "asyncpg>=0.30.0",
-    "sqlalchemy[asyncio]>=2.0.0",
-    "alembic>=1.14.0",
-    
+
     # API Server
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "websockets>=14.0",
-    
+
     # Channels
     "python-telegram-bot>=21.0",
     "aiohttp>=3.10.0",
-    
+
     # Configuration & CLI
     "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
     "pyyaml>=6.0",
     "click>=8.1.0",
     "rich>=13.9.0",
-    
+
     # Utilities
     "httpx>=0.27.0",
 ]
