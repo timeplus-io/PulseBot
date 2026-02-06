@@ -58,6 +58,17 @@ def create_provider(config: "Config") -> "LLMProvider":
             default_max_tokens=config.agent.max_tokens,
             timeout_seconds=config.providers.ollama.timeout_seconds,
         )
-    
+
+    elif provider_name == "nvidia":
+        from pulsebot.providers.nvidia import NvidiaProvider
+        return NvidiaProvider(
+            api_key=config.providers.nvidia.api_key,
+            model=model,
+            default_temperature=config.agent.temperature,
+            default_max_tokens=config.agent.max_tokens,
+            timeout_seconds=config.providers.nvidia.timeout_seconds,
+            enable_thinking=config.providers.nvidia.enable_thinking,
+        )
+
     else:
-        raise ValueError(f"Unknown provider: {provider_name}. Supported: anthropic, openai, openrouter, ollama")
+        raise ValueError(f"Unknown provider: {provider_name}. Supported: anthropic, openai, openrouter, ollama, nvidia")

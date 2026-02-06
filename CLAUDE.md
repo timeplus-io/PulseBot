@@ -56,7 +56,7 @@ All components communicate via Timeplus streams (unbounded append-only data):
 ### Key Source Directories
 
 - `pulsebot/core/` - Agent loop, context building, tool execution, routing
-- `pulsebot/providers/` - LLM provider implementations (Anthropic, OpenAI, OpenRouter, Ollama)
+- `pulsebot/providers/` - LLM provider implementations (Anthropic, OpenAI, OpenRouter, Ollama, NVIDIA)
 - `pulsebot/skills/` - Tool/skill system with builtin skills (web_search, file_ops, shell)
 - `pulsebot/channels/` - Input channels (Telegram bot integration)
 - `pulsebot/timeplus/` - Timeplus client, stream reader/writer, vector memory, scheduled tasks
@@ -84,7 +84,7 @@ All components communicate via Timeplus streams (unbounded append-only data):
 `config.yaml` uses Pydantic validation with environment variable substitution (`${VAR_NAME}` or `${VAR_NAME:-default}`):
 - `agent`: name, model, provider, temperature
 - `timeplus`: host, port, credentials
-- `providers`: API keys for Anthropic, OpenAI, OpenRouter, Ollama
+- `providers`: API keys for Anthropic, OpenAI, OpenRouter, Ollama, NVIDIA
 - `channels`: Telegram settings
 - `skills`: enabled builtin skills
 
