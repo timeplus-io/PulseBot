@@ -59,7 +59,7 @@ PulseBot is a lightweight, extensible AI agent framework that uses Timeplus stre
 ### Prerequisites
 
 - Python 3.11+
-- Timeplus (local or cloud)
+- Timeplus or Proton
 
 ### Installation
 
