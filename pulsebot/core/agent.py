@@ -29,7 +29,7 @@ class Agent:
     2. Builds context from memory and conversation history
     3. Calls LLM for reasoning
     4. Executes tools and writes results back to stream
-    
+
     Example:
         >>> agent = Agent(
         ...     agent_id="main",
@@ -39,7 +39,7 @@ class Agent:
         ... )
         >>> await agent.run()
     """
-    
+
     def __init__(
         self,
         agent_id: str,
@@ -103,11 +103,11 @@ class Agent:
         self.messages_writer = StreamWriter(batch_client, "messages")
         self.llm_logger = StreamWriter(batch_client, "llm_logs")
         self.tool_logger = StreamWriter(batch_client, "tool_logs")
-        
+
         self._running = False
-        
+
         logger.info(f"Initialized agent: {agent_id}")
-    
+
     async def run(self) -> None:
         """Main event loop - listen for messages targeting this agent."""
         self._running = True
@@ -116,19 +116,19 @@ class Agent:
         await self._ensure_streams_exist()
 
         query = """
-            SELECT * FROM messages
-            WHERE target = 'agent'
-              AND message_type IN ('user_input', 'tool_result', 'heartbeat', 'scheduled_task')
-            SETTINGS seek_to='latest'
+        SELECT * FROM messages
+        WHERE target = 'agent'
+        AND message_type IN ('user_input', 'tool_result', 'heartbeat', 'scheduled_task')
+        SETTINGS seek_to='latest'
         """
 
         logger.info(f"Agent {self.agent_id} starting message loop")
-        
+
         try:
             async for message in self.messages_reader.stream(query):
                 if not self._running:
                     break
-                
+
                 try:
                     await self._process_message(message)
                 except Exception as e:
@@ -137,7 +137,7 @@ class Agent:
         finally:
             self._running = False
             logger.info(f"Agent {self.agent_id} stopped")
-    
+
     async def stop(self) -> None:
         """Stop the agent loop."""
         self._running = False
@@ -171,24 +171,24 @@ class Agent:
                 logger.debug(f"Ensured stream exists: {name}")
             except Exception as e:
                 logger.warning(f"Could not create stream {name}: {e}")
-    
+
     async def _process_message(self, message: dict[str, Any]) -> None:
         """Process a single incoming message through the agent loop.
-        
+
         Args:
             message: Raw message from stream
         """
         session_id = message.get("session_id", "")
         message_type = message.get("message_type", "")
         content_str = message.get("content", "{}")
-        
+
         try:
             content = json.loads(content_str)
         except json.JSONDecodeError:
             content = {"text": content_str}
-        
+
         user_message = content.get("text", "")
-        
+
         logger.info(
             "Processing message",
             extra={
@@ -197,7 +197,7 @@ class Agent:
                 "preview": truncate_string(user_message, 50),
             }
         )
-        
+
         # Build context from memory + recent conversation
         context = await self.context_builder.build(
             session_id=session_id,
@@ -206,31 +206,43 @@ class Agent:
             include_memory=True,
             memory_limit=10,
         )
-        
+
         # Get tool definitions
         tools = self.executor.get_tool_definitions()
-        
+
         # Agent loop: keep calling LLM until no more tool calls
         iteration = 0
-        
+
         while iteration < self.max_iterations:
             iteration += 1
-            
+
             # Call LLM
             import time
             start_time = time.time()
-            
+
             response = await self.llm.chat(
                 messages=context.messages,
                 tools=tools if tools else None,
                 system=context.system_prompt,
             )
-            
+
             latency_ms = (time.time() - start_time) * 1000
-            
+
             # Log to observability stream
             await self._log_llm_call(session_id, context, response, latency_ms)
-            
+
+            # Debug LLM response
+            logger.debug(
+                "LLM response details",
+                extra={
+                    "session_id": session_id,
+                    "content_length": len(response.content) if response.content else 0,
+                    "content_preview": truncate_string(response.content or "", 200) if response.content else "None",
+                    "has_tool_calls": bool(response.tool_calls),
+                    "tool_call_count": len(response.tool_calls or []),
+                }
+            )
+
             # Check if LLM wants to call tools
             if response.tool_calls:
                 # Execute tools
@@ -295,10 +307,21 @@ class Agent:
                     context.add_tool_result(tool_call.id, result_str)
             else:
                 # No tool calls - send final response
+                response_content = response.content if response else ""
+                if not response_content:
+                    logger.warning(
+                        "LLM returned empty response content",
+                        extra={
+                            "session_id": session_id,
+                            "response_object": str(response)[:200] if response else "None"
+                        }
+                    )
+                    response_content = "I'm not sure how to respond to that."
+
                 await self._send_response(
                     session_id=session_id,
                     source_message=message,
-                    response_text=response.content,
+                    response_text=response_content,
                 )
 
                 # Extract and store any new memories
@@ -312,10 +335,12 @@ class Agent:
                 f"Max iterations ({self.max_iterations}) reached",
                 extra={"session_id": session_id}
             )
-            final_text = response.content if response and response.content else (
-                "I apologize, but I wasn't able to complete this task within the allowed "
-                "number of steps. Please try breaking down your request into smaller parts."
-            )
+            final_text = response.content if response and response.content else ""
+            if not final_text:
+                final_text = (
+                    "I apologize, but I wasn't able to complete this task within the allowed "
+                    "number of steps. Please try breaking down your request into smaller parts."
+                )
             await self._send_response(
                 session_id=session_id,
                 source_message=message,
@@ -329,14 +354,14 @@ class Agent:
         response_text: str,
     ) -> None:
         """Write agent response back to the messages stream.
-        
+
         Args:
             session_id: Session identifier
             source_message: Original message we're responding to
             response_text: Response content
         """
         source = source_message.get("source", "webchat")
-        
+
         await self.messages_writer.write({
             "source": "agent",
             "target": f"channel:{source}",
@@ -347,7 +372,7 @@ class Agent:
             "channel_metadata": source_message.get("channel_metadata", ""),
             "priority": 0,
         })
-        
+
         logger.info(
             "Sent response",
             extra={
@@ -356,7 +381,7 @@ class Agent:
                 "length": len(response_text),
             }
         )
-    
+
     async def _log_llm_call(
         self,
         session_id: str,
@@ -365,30 +390,38 @@ class Agent:
         latency_ms: float,
     ) -> None:
         """Log LLM call to observability stream.
-        
+
         Args:
             session_id: Session identifier
             context: Context used for the call
             response: LLM response
             latency_ms: Request latency in milliseconds
         """
+        # Safely handle response which might be None in error cases
+        response_content = response.content if response else ""
+        response_usage = response.usage if response else None
+        response_tool_calls = response.tool_calls if response else None
+        
         await self.llm_logger.write({
             "session_id": session_id,
             "model": self.llm.model,
             "provider": self.llm.provider_name,
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-            "total_tokens": response.usage.total_tokens,
-            "estimated_cost_usd": self.llm.estimate_cost(response.usage),
+            "input_tokens": response_usage.input_tokens if response_usage else 0,
+            "output_tokens": response_usage.output_tokens if response_usage else 0,
+            "total_tokens": response_usage.total_tokens if response_usage else 0,
+            "estimated_cost_usd": self.llm.estimate_cost(response_usage) if response_usage else 0.0,
             "latency_ms": int(latency_ms),
             "system_prompt_hash": hash_content(context.system_prompt),
+            "system_prompt_preview": truncate_string(context.system_prompt, 200),
             "user_message_preview": truncate_string(
-                context.messages[-1].get("content", "") if context.messages else "", 
+                context.messages[-1].get("content", "") if context.messages else "",
                 200
             ),
-            "assistant_response_preview": truncate_string(response.content or "", 200),
-            "tools_called": [tc.name for tc in (response.tool_calls or [])],
-            "tool_call_count": len(response.tool_calls or []),
+            "assistant_response_preview": truncate_string(response_content or "", 200),
+            "full_response_content": response_content or "",  # Full response for debugging
+            "messages_count": len(context.messages),
+            "tools_called": [tc.name for tc in (response_tool_calls or [])],
+            "tool_call_count": len(response_tool_calls or []),
             "status": "success",
         })
 
@@ -512,48 +545,165 @@ class Agent:
         response: Any,
     ) -> None:
         """Extract important information to store as memories.
-        
+
         Args:
             session_id: Session identifier
             context: Conversation context
             response: Final LLM response
         """
         if not self.memory:
+            logger.info("Memory manager not available - skipping extraction")
             return
-        
+
+        if not self.memory.is_available():
+            logger.info("Memory features not available - skipping extraction")
+            return
+
         # Get last few messages for extraction
         recent_messages = context.messages[-5:] if len(context.messages) > 5 else context.messages
-        
+        message_count = len(recent_messages)
+
+        logger.info(
+            "Memory extraction started",
+            extra={"session_id": session_id, "message_count": message_count}
+        )
+
         extraction_prompt = build_memory_extraction_prompt()
-        
+
+        # Log the conversation being analyzed
+        conversation_text = json.dumps(recent_messages, indent=2)
+        logger.debug(
+            f"Analyzing conversation for memory extraction",
+            extra={
+                "session_id": session_id,
+                "conversation_preview": truncate_string(conversation_text, 500),
+                "message_count": message_count,
+                "conversation_lines": len(conversation_text.split('\n')) if conversation_text else 0
+            }
+        )
+
         try:
             extraction = await self.llm.chat(
                 messages=[{
                     "role": "user",
-                    "content": extraction_prompt + "\n\nConversation:\n" + json.dumps(recent_messages),
+                    "content": extraction_prompt + "\n\nConversation:\n" + conversation_text,
                 }],
                 system="You are a memory extraction assistant. Be concise. Return only valid JSON.",
             )
+
+            logger.debug(
+                f"Memory extraction LLM response",
+                extra={
+                    "session_id": session_id,
+                    "response_length": len(extraction.content),
+                    "response_preview": truncate_string(extraction.content, 200)
+                }
+            )
+
+            # Handle various response formats the LLM might return
+            response_content = extraction.content.strip()
             
-            memories = json.loads(extraction.content)
+            # Handle empty responses
+            if not response_content:
+                logger.info("Memory extraction returned empty response - no memories to store")
+                return
             
+            # Remove markdown code blocks if present
+            if response_content.startswith("```"):
+                # Find the end of the code block
+                lines = response_content.split('\n')
+                if lines[0].startswith("```"):
+                    # Skip first line and find closing ```
+                    content_lines = []
+                    for line in lines[1:]:
+                        if line.strip() == "```":
+                            break
+                        content_lines.append(line)
+                    response_content = '\n'.join(content_lines).strip()
+            
+            # Handle case where response is just "[]" (empty array)
+            if response_content == "[]":
+                logger.info("Memory extraction returned empty array - no memories to store")
+                return
+            
+            # Try to parse JSON
+            try:
+                memories = json.loads(response_content)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Memory extraction JSON parse failed: {e}")
+                logger.debug(
+                    f"Invalid JSON content",
+                    extra={
+                        "session_id": session_id,
+                        "content": truncate_string(response_content, 500)
+                    }
+                )
+                
+                # Try to extract JSON from within text (LLM sometimes adds explanatory text)
+                import re
+                json_match = re.search(r'\[[^\]]*\]', response_content)
+                if json_match:
+                    try:
+                        memories = json.loads(json_match.group(0))
+                        logger.info(f"Successfully extracted JSON from within text response")
+                    except json.JSONDecodeError:
+                        logger.warning("Could not extract valid JSON from text response")
+                        return
+                else:
+                    # If no JSON found, try to see if it's a single object
+                    obj_match = re.search(r'\{[^}]*\}', response_content)
+                    if obj_match:
+                        try:
+                            obj = json.loads(obj_match.group(0))
+                            memories = [obj] if isinstance(obj, dict) else []
+                            logger.info(f"Successfully extracted single JSON object response")
+                        except json.JSONDecodeError:
+                            logger.warning("Could not extract valid JSON object from text response")
+                            return
+                    else:
+                        return
+
+            memory_count = len(memories) if isinstance(memories, list) else 0
+
+            if memory_count == 0:
+                logger.info("No memories extracted from conversation")
+                return
+
+            logger.info(f"Extracted {memory_count} memories from conversation")
+
+            stored_count = 0
             for mem in memories:
                 if isinstance(mem, dict) and "content" in mem:
+                    mem_type = mem.get("type", "fact")
+                    importance = mem.get("importance", 0.5)
+                    content = mem["content"]
+
+                    logger.info(
+                        "Storing memory",
+                        extra={
+                            "type": mem_type,
+                            "importance": importance,
+                            "content_preview": truncate_string(content, 100),
+                            "session_id": session_id,
+                        }
+                    )
+
                     await self.memory.store(
-                        content=mem["content"],
-                        memory_type=mem.get("type", "fact"),
-                        importance=mem.get("importance", 0.5),
+                        content=content,
+                        memory_type=mem_type,
+                        importance=importance,
                         source_session_id=session_id,
                     )
-                    
-                    logger.debug(
-                        "Stored memory",
-                        extra={"content": truncate_string(mem["content"], 50)},
-                    )
-                    
-        except (json.JSONDecodeError, Exception) as e:
-            logger.debug(f"No memories extracted: {e}")
-    
+                    stored_count += 1
+
+            logger.info(
+                f"Memory extraction complete - stored {stored_count}/{memory_count} memories",
+                extra={"session_id": session_id}
+            )
+
+        except Exception as e:
+            logger.error(f"Memory extraction failed: {e}", exc_info=True)
+
     async def _log_error(self, message: dict[str, Any], error: Exception) -> None:
         """Log an error and send error response to client.
 
@@ -590,5 +740,3 @@ class Agent:
             "user_id": message.get("user_id", ""),
             "priority": 0,
         })
-
-

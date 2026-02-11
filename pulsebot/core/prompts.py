@@ -121,14 +121,23 @@ def build_memory_extraction_prompt() -> str:
     """
     return """
 Review this conversation and extract any important facts, preferences, 
-or information worth remembering about the user. Return as JSON array:
+or information worth remembering about the user. 
+
+CRITICAL: Return ONLY a valid JSON array in this exact format:
 [{"type": "fact|preference|reminder", "content": "...", "importance": 0.0-1.0}]
 
-Return empty array [] if nothing worth remembering.
+If nothing is worth remembering, return an empty array: []
+
+Examples of good extractions:
+- [{"type": "fact", "content": "User's name is John Smith", "importance": 0.9}]
+- [{"type": "preference", "content": "User prefers Python over Java", "importance": 0.7}]
+- [{"type": "fact", "content": "User works at Acme Corp as Data Scientist", "importance": 0.8}]
+- []
 
 Be selective - only extract genuinely useful information like:
-- User preferences (communication style, interests, settings)
-- Important facts (name, location, projects they're working on)
+- User personal information (name, contact details, role, company)
+- User preferences (communication style, interests, settings, favorite tools)
+- Important facts (projects they're working on, technical expertise)
 - Scheduled reminders or commitments
 - Learned information that could help future interactions
 
@@ -136,4 +145,7 @@ Do NOT extract:
 - Generic pleasantries or greetings
 - Transient information
 - Information already known/obvious
+- Questions the user asked (unless they reveal preferences)
+
+IMPORTANT: Respond with ONLY the JSON array. No other text, no explanations, no markdown formatting.
 """.strip()

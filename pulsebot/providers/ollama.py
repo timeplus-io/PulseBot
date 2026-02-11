@@ -112,6 +112,22 @@ class OllamaProvider(LLMProvider):
                 processed_msg["content"] = msg.get("content", "")
 
             all_messages.append(processed_msg)
+        
+        # Debug the final messages
+        logger.debug(
+            "Final messages being sent to Ollama",
+            extra={
+                "model": self.model,
+                "message_count": len(all_messages),
+                "messages_preview": [
+                    {
+                        "role": msg.get("role", ""),
+                        "content_preview": (msg.get("content", "")[:100] if msg.get("content") else "Empty")
+                    }
+                    for msg in all_messages[-2:]  # Last 2 messages
+                ]
+            }
+        )
 
         # Build request payload
         payload = {
@@ -128,6 +144,21 @@ class OllamaProvider(LLMProvider):
         if tools:
             payload["tools"] = tools
         
+        # Debug logging
+        logger.debug(
+            "Ollama request",
+            extra={
+                "host": self.host,
+                "model": self.model,
+                "message_count": len(all_messages),
+                "payload_preview": {
+                    "model": payload["model"],
+                    "message_sample": payload["messages"][-1] if payload["messages"] else {},
+                    "options": payload["options"]
+                }
+            }
+        )
+        
         try:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.post(
@@ -140,6 +171,18 @@ class OllamaProvider(LLMProvider):
                         raise RuntimeError(f"Ollama request failed: HTTP {response.status}")
                     
                     data = await response.json()
+                    
+                    # Debug response
+                    logger.debug(
+                        "Ollama response",
+                        extra={
+                            "host": self.host,
+                            "model": self.model,
+                            "status": response.status,
+                            "response_keys": list(data.keys()) if isinstance(data, dict) else "Not dict",
+                            "response_sample": str(data)[:500]
+                        }
+                    )
         
         except aiohttp.ClientError as e:
             logger.error(f"Ollama connection error: {e}")
@@ -148,6 +191,39 @@ class OllamaProvider(LLMProvider):
         # Parse response
         message = data.get("message", {})
         content = message.get("content", "")
+        
+        # Some models (like Kimi) use "thinking" field for processing results
+        # If content is empty but thinking field has content, use that
+        thinking_content = message.get("thinking", "")
+        if not content and thinking_content:
+            logger.debug(
+                "Using thinking field for content (model may use separate processing field)",
+                extra={
+                    "model": self.model,
+                    "thinking_content_preview": thinking_content[:100]
+                }
+            )
+            content = thinking_content
+        
+        # Some models might return content in different fields
+        if not content:
+            # Check response field (some models use this)
+            content = data.get("response", "")
+        
+        # Debug logging for model responses
+        logger.debug(
+            "Ollama model response parsing",
+            extra={
+                "model": self.model,
+                "data_keys": list(data.keys()) if isinstance(data, dict) else "Not dict",
+                "message_keys": list(message.keys()) if isinstance(message, dict) else "Not dict",
+                "content_field": content[:100] if content else "Empty",
+                "message_content_field": message.get("content", "Missing")[:100] if isinstance(message.get("content"), str) else "Not string",
+                "message_thinking_field": message.get("thinking", "Missing")[:100] if isinstance(message.get("thinking"), str) else "Not string",
+                "response_field": data.get("response", "Missing")[:100] if isinstance(data.get("response"), str) else "Not string",
+                "raw_response_sample": str(data)[:300]
+            }
+        )
         
         # Parse tool calls if present
         tool_calls = []

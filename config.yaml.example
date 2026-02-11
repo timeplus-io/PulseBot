@@ -18,29 +18,27 @@ providers:
   anthropic:
     api_key: "${ANTHROPIC_API_KEY}"
     default_model: "claude-sonnet-4-20250514"
-  
+
   openai:
     api_key: "${OPENAI_API_KEY}"
     default_model: "gpt-4o"
-    embedding_model: "text-embedding-3-small"
-  
+
   openrouter:
     api_key: "${OPENROUTER_API_KEY}"
     default_model: "anthropic/claude-sonnet-4-20250514"
-  
+
   # Local LLM via Ollama (no API key needed)
   ollama:
     enabled: true
     host: "${OLLAMA_HOST:-http://localhost:11434}"
-    default_model: "kimi-k2.5:cloud"  # or: mistral, codellama, phi3, gemma2
-
+    default_model: "kimi-k2.5:cloud" # or: mistral, codellama, phi3, gemma2
 
 channels:
   telegram:
     enabled: true
     token: "${TELEGRAM_BOT_TOKEN}"
-    allow_from: [8518633508]  # Telegram user IDs, empty = allow all
-  
+    allow_from: [8518633508] # Telegram user IDs, empty = allow all
+
   webchat:
     enabled: true
     port: 8000
@@ -50,22 +48,22 @@ skills:
     - web_search
     - file_ops
     - shell
-  
+
   custom: []
 
 mcp_servers: []
-  # Example:
-  # - name: "filesystem"
-  #   transport: "stdio"
-  #   command: "npx"
-  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+# Example:
+# - name: "filesystem"
+#   transport: "stdio"
+#   command: "npx"
+#   args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
 
 scheduled_tasks:
   heartbeat:
     enabled: true
     interval: "30m"
     actions: ["calendar", "reminders"]
-  
+
   daily_summary:
     enabled: false
     cron: "0 9 * * *"
@@ -80,4 +78,18 @@ api:
 
 logging:
   level: "INFO"
-  format: "json"  # "json" or "text"
+  format: "json" # "json" or "text"
+
+memory:
+  similarity_threshold: 0.95  # Adjust duplicate detection sensitivity (0.0-1.0)
+  enabled: true
+  
+  # Embedding provider configuration for memory operations
+  # Supports "openai" (cloud) or "ollama" (local)
+  embedding_provider: "openai"  # or "ollama"
+  embedding_model: "text-embedding-3-small"  # OpenAI: text-embedding-3-small (1536), text-embedding-3-large (3072)
+                                              # Ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
+  # embedding_api_key: "${OPENAI_API_KEY}"     # Optional: override OpenAI API key
+  # embedding_host: "${OLLAMA_HOST}"           # Optional: override Ollama host
+  # embedding_dimensions: 1536                 # Optional: auto-detected if not set
+  embedding_timeout_seconds: 30

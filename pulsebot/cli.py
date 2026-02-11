@@ -27,6 +27,7 @@ def run(config: str):
     from pulsebot.factory import create_provider
     from pulsebot.skills import SkillLoader
     from pulsebot.timeplus.client import TimeplusClient
+    from pulsebot.embeddings import OpenAIEmbeddingProvider, OllamaEmbeddingProvider
     from pulsebot.timeplus.memory import MemoryManager
     from pulsebot.utils import setup_logging
 
@@ -46,9 +47,49 @@ def run(config: str):
 
         provider = create_provider(cfg)
 
+        # Create embedding provider based on memory configuration
+        embedding_provider = None
+        memory_cfg = cfg.memory
+
+        if memory_cfg.enabled:
+            if memory_cfg.embedding_provider == "openai":
+                api_key = memory_cfg.embedding_api_key or cfg.providers.openai.api_key
+                if api_key:
+                    embedding_provider = OpenAIEmbeddingProvider(
+                        api_key=api_key,
+                        model=memory_cfg.embedding_model,
+                        dimensions=memory_cfg.embedding_dimensions,
+                    )
+                    console.print(f"[dim]Using OpenAI embeddings: {memory_cfg.embedding_model}[/]")
+                else:
+                    console.print("[yellow]Warning: OpenAI embedding provider configured but no API key available[/]")
+            elif memory_cfg.embedding_provider == "ollama":
+                host = memory_cfg.embedding_host or cfg.providers.ollama.host
+                try:
+                    embedding_provider = OllamaEmbeddingProvider(
+                        host=host,
+                        model=memory_cfg.embedding_model,
+                        dimensions=memory_cfg.embedding_dimensions,
+                        timeout_seconds=memory_cfg.embedding_timeout_seconds,
+                    )
+                    console.print(f"[dim]Using Ollama embeddings: {memory_cfg.embedding_model} at {host}[/]")
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Failed to initialize Ollama embedding provider: {e}[/]")
+            else:
+                console.print(f"[yellow]Warning: Unknown embedding provider: {memory_cfg.embedding_provider}[/]")
+
+            if not embedding_provider:
+                console.print("[yellow]Warning: Memory features disabled - no embedding provider available[/]")
+        else:
+            console.print("[dim]Memory system disabled in configuration[/]")
+
+        # Create a separate client for memory operations to avoid
+        # "Simultaneous queries on single connection" error
+        memory_tp = TimeplusClient.from_config(cfg.timeplus)
         memory = MemoryManager(
-            client=tp,
-            openai_api_key=cfg.providers.openai.api_key,
+            client=memory_tp,
+            embedding_provider=embedding_provider,
+            similarity_threshold=cfg.memory.similarity_threshold,
         )
 
         skills = SkillLoader.from_config(cfg.skills)
@@ -100,16 +141,16 @@ def serve(config: str, host: str, port: int):
     import uvicorn
     from pulsebot.config import load_config
     from pulsebot.utils import setup_logging
-    
+
     cfg = load_config(config)
     setup_logging(cfg.logging.level, cfg.logging.format)
-    
+
     console.print(Panel.fit(
         f"[bold green]Starting PulseBot API[/]\n"
         f"Host: {host}:{port}\n"
         f"Docs: http://{host}:{port}/docs"
     ))
-    
+
     uvicorn.run(
         "pulsebot.api:create_app",
         host=host,
@@ -135,11 +176,11 @@ def chat(host: str, port: int):
         f"Connected to http://{host}:{port}\n"
         "Type 'exit' or 'quit' to end session"
     ))
-    
+
     session_id = str(uuid.uuid4())
     api_url = f"http://{host}:{port}"
     ws_url = f"ws://{host}:{port}/ws/{session_id}"
-    
+
     async def chat_loop():
         # Check if API is healthy
         try:
@@ -174,16 +215,16 @@ def chat(host: str, port: int):
 
                                 if status == "started":
                                     if args_summary:
-                                        console.print(f"  [dim cyan]⚙[/] [bold]{tool_name}[/] [dim]{args_summary}[/]")
+                                        console.print(f" [dim cyan]⚙[/] [bold]{tool_name}[/] [dim]{args_summary}[/]")
                                     else:
-                                        console.print(f"  [dim cyan]⚙[/] [bold]{tool_name}[/]")
+                                        console.print(f" [dim cyan]⚙[/] [bold]{tool_name}[/]")
                                     active_tools[tool_name] = True
                                 else:
                                     duration = data.get("duration_ms", 0)
                                     if status == "success":
-                                        console.print(f"  [dim green]✓ {tool_name}[/] [dim]({duration}ms)[/]")
+                                        console.print(f" [dim green]✓ {tool_name}[/] [dim]({duration}ms)[/]")
                                     else:
-                                        console.print(f"  [dim red]✗ {tool_name} failed[/]")
+                                        console.print(f" [dim red]✗ {tool_name} failed[/]")
                                     active_tools.pop(tool_name, None)
 
                             elif data.get("type") == "response":
@@ -232,7 +273,7 @@ def chat(host: str, port: int):
                         break
 
                 receive_task.cancel()
-                
+
         except Exception as e:
             console.print(f"[red]Connection error: {e}[/]")
 
@@ -270,20 +311,20 @@ def setup(config: str):
 def init():
     """Generate default config.yaml."""
     from pulsebot.config import generate_default_config
-    
+
     config_path = "config.yaml"
-    
+
     import os
     if os.path.exists(config_path):
         if not click.confirm(f"{config_path} already exists. Overwrite?"):
             console.print("[yellow]Cancelled.[/]")
             return
-    
+
     content = generate_default_config()
-    
+
     with open(config_path, "w") as f:
         f.write(content)
-    
+
     console.print(f"[green]Created {config_path}[/]")
     console.print("Edit the file and set your API keys and connection details.")
 
@@ -301,31 +342,31 @@ def list_tasks(config: str):
     from pulsebot.config import load_config
     from pulsebot.timeplus.client import TimeplusClient
     from pulsebot.timeplus.tasks import TaskManager
-    
+
     cfg = load_config(config)
     tp = TimeplusClient.from_config(cfg.timeplus)
     task_mgr = TaskManager(tp)
-    
+
     tasks = task_mgr.list_tasks()
-    
+
     if not tasks:
         console.print("[yellow]No tasks found.[/]")
         return
-    
+
     from rich.table import Table
-    
+
     table = Table(title="Scheduled Tasks")
     table.add_column("Name")
     table.add_column("Schedule")
     table.add_column("Status")
-    
+
     for t in tasks:
         table.add_row(
             t.get("name"),
             t.get("schedule"),
             "[green]Running[/]" if t.get("running") else "[red]Paused[/]"
         )
-    
+
     console.print(table)
 
 
