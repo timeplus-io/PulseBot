@@ -6,7 +6,7 @@ PulseBot implements a sophisticated memory system that enables the agent to reme
 
 ### Key Features
 
-- **Vector-Based Semantic Search**: Uses OpenAI embeddings to find memories semantically similar to the current query
+- **Vector-Based Semantic Search**: Uses configurable embedding providers (OpenAI or Ollama) to find memories semantically similar to the current query
 - **Hybrid Scoring**: Combines cosine similarity with importance weighting for better relevance
 - **Automatic Memory Extraction**: LLM automatically extracts important facts from conversations
 - **Memory Classification**: Memories are categorized by type (fact, preference, conversation_summary, skill_learned)
@@ -33,7 +33,7 @@ CREATE STREAM IF NOT EXISTS memory (
     source_session_id string, -- Where this memory originated
     
     -- Vector embedding for semantic search
-    embedding array(float32), -- 1536-dim for OpenAI text-embedding-3-small
+    embedding array(float32), -- Variable dimensions based on embedding provider
     
     -- Lifecycle
     importance float32,       -- 0.0 to 1.0, affects retrieval priority
@@ -68,14 +68,64 @@ The core class that manages all memory operations.
 ```python
 from pulsebot.timeplus.memory import MemoryManager
 from pulsebot.timeplus.client import TimeplusClient
+from pulsebot.embeddings import OpenAIEmbeddingProvider
 
-# Initialize
+# Initialize with OpenAI embeddings
 client = TimeplusClient(host="localhost", port=8463)
+embedding_provider = OpenAIEmbeddingProvider(
+    api_key="sk-...",
+    model="text-embedding-3-small"
+)
 memory = MemoryManager(
     client=client,
-    openai_api_key="sk-...",  # Required for embeddings
-    embedding_model="text-embedding-3-small",
-    stream_name="memory"
+    embedding_provider=embedding_provider,
+    stream_name="memory",
+    similarity_threshold=0.95,  # Adjust sensitivity (0.0-1.0)
+)
+```
+
+### Embedding Providers (`pulsebot/embeddings/`)
+
+PulseBot supports multiple embedding providers:
+
+#### OpenAI Embedding Provider
+
+Uses OpenAI's embedding API. Supports models:
+- `text-embedding-3-small` (1536 dimensions) - Default
+- `text-embedding-3-large` (3072 dimensions)
+- `text-embedding-ada-002` (1536 dimensions)
+
+```python
+from pulsebot.embeddings import OpenAIEmbeddingProvider
+
+provider = OpenAIEmbeddingProvider(
+    api_key="sk-...",
+    model="text-embedding-3-small"
+)
+```
+
+#### Ollama Embedding Provider
+
+Uses local Ollama models for embeddings. Supports models:
+- `mxbai-embed-large` (1024 dimensions)
+- `all-minilm` (384 dimensions)
+- `nomic-embed-text` (768 dimensions)
+- `bge-large` (1024 dimensions)
+
+```python
+from pulsebot.embeddings import OllamaEmbeddingProvider
+
+provider = OllamaEmbeddingProvider(
+    host="http://localhost:11434",
+    model="mxbai-embed-large"
+)
+
+# Dimensions are auto-detected on first use
+# Or specify explicitly:
+provider = OllamaEmbeddingProvider(
+    host="http://localhost:11434",
+    model="all-minilm",
+    dimensions=384
 )
 ```
 
@@ -91,8 +141,14 @@ async def store(
     category: str = "general",
     importance: float = 0.5,
     source_session_id: str = "",
+    check_duplicates: bool = True,
 ) -> str:
-    """Store a memory and return its ID."""
+    """Store a memory and return its ID.
+    
+    Automatically checks for duplicates using semantic similarity.
+    If a very similar memory exists, returns the existing ID instead
+    of storing a duplicate.
+    """
 ```
 
 Example:
@@ -105,6 +161,38 @@ memory_id = await memory.store(
     source_session_id="session-abc123"
 )
 ```
+
+**Duplicate Detection**
+
+The memory system automatically prevents duplicate storage using semantic similarity:
+
+- **Pure Similarity Scoring**: Uses cosine similarity (not hybrid) for duplicate detection to focus on content similarity
+- **Configurable Threshold**: Default 0.95 for very strict duplicate detection
+- **Cross-Type Search**: Searches across all memory types/categories to prevent conceptual duplicates
+- **Near-Duplicate Monitoring**: Logs near-duplicates for threshold tuning
+- **Smart Storage**: Returns existing memory ID instead of creating duplicates
+
+```python
+# Store first occurrence
+id1 = await memory.store("User's name is John Smith", check_duplicates=True)
+
+# Store duplicate - returns same ID
+id2 = await memory.store("User's name is John Smith", check_duplicates=True)
+assert id1 == id2  # Same ID returned
+
+# Store similar but different content
+id3 = await memory.store("User name is John Smith", check_duplicates=True)
+# Different ID if similarity < threshold
+
+# Store with different importance - still detected as duplicate
+id4 = await memory.store("User's name is John Smith", importance=0.9, check_duplicates=True)
+assert id4 == id1  # Same ID returned regardless of importance
+```
+
+**Advanced Deduplication Features:**
+- **Hybrid vs Pure Similarity**: Uses pure cosine similarity for deduplication (content-focused) vs hybrid scoring for retrieval (importance-weighted)
+- **Near-Duplicate Detection**: Logs memories with 80%+ of threshold similarity for monitoring
+- **Flexible Filtering**: Optional memory type/category filtering for targeted deduplication
 
 **Semantic Search**
 
@@ -282,6 +370,11 @@ async def _extract_memories(
     response: Any,
 ) -> None:
     if not self.memory:
+        logger.info("Memory manager not available - skipping extraction")
+        return
+    
+    if not self.memory.is_available():
+        logger.info("Memory features not available - skipping extraction")
         return
     
     # Get last 5 messages
@@ -314,22 +407,29 @@ async def _extract_memories(
 ```python
 def build_memory_extraction_prompt() -> str:
     return """
-Review this conversation and extract any important facts, preferences,
+Review this conversation and extract any important facts, preferences, 
 or information worth remembering about the user. Return as JSON array:
 [{"type": "fact|preference|reminder", "content": "...", "importance": 0.0-1.0}]
 
 Return empty array [] if nothing worth remembering.
 
 Be selective - only extract genuinely useful information like:
-- User preferences (communication style, interests, settings)
-- Important facts (name, location, projects they're working on)
+- User personal information (name, contact details, role, company)
+- User preferences (communication style, interests, settings, favorite tools)
+- Important facts (projects they're working on, technical expertise)
 - Scheduled reminders or commitments
 - Learned information that could help future interactions
+
+Examples of good extractions:
+- {"type": "fact", "content": "User's name is John Smith", "importance": 0.9}
+- {"type": "preference", "content": "User prefers Python over Java", "importance": 0.7}
+- {"type": "fact", "content": "User works at Acme Corp as Data Scientist", "importance": 0.8}
 
 Do NOT extract:
 - Generic pleasantries or greetings
 - Transient information
 - Information already known/obvious
+- Questions the user asked (unless they reveal preferences)
 """
 ```
 
@@ -338,23 +438,62 @@ Do NOT extract:
 ### Environment Variables
 
 ```bash
-# Required for memory embeddings
+# For OpenAI embeddings
 OPENAI_API_KEY=sk-...
 
-# Optional: Custom embedding model
-MEMORY_EMBEDDING_MODEL=text-embedding-3-small
+# For Ollama embeddings
+OLLAMA_HOST=http://localhost:11434
 ```
 
 ### Config YAML
 
-Memory is enabled automatically when `OPENAI_API_KEY` is available:
+Memory system and embedding providers are now configured together in the memory section:
 
 ```yaml
+# Memory system configuration (includes embedding settings)
+memory:
+  similarity_threshold: 0.95  # Adjust duplicate detection sensitivity (0.0-1.0)
+  enabled: true
+  
+  # Embedding provider configuration for memory operations
+  embedding_provider: "openai"  # or "ollama"
+  embedding_model: "text-embedding-3-small"  # OpenAI: text-embedding-3-small (1536), text-embedding-3-large (3072)
+                                              # Ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
+  # embedding_api_key: "${OPENAI_API_KEY}"     # Optional: override OpenAI API key
+  # embedding_host: "${OLLAMA_HOST}"           # Optional: override Ollama host
+  # embedding_dimensions: 1536                 # Optional: auto-detected if not set
+  embedding_timeout_seconds: 30
+
+# LLM providers (separate from memory/embedding)
 providers:
   openai:
     api_key: "${OPENAI_API_KEY}"
-    embedding_model: "text-embedding-3-small"
+    default_model: "gpt-4o"
+  
+  ollama:
+    enabled: true
+    host: "${OLLAMA_HOST:-http://localhost:11434}"
+    default_model: "llama3"
 ```
+
+**Memory Configuration Options:**
+
+- **`similarity_threshold`**: Controls how strict duplicate detection is (0.0-1.0)
+  - `0.95` (Default): Very strict - only obvious duplicates skipped
+  - `0.90`: Moderate - similar concepts considered duplicates  
+  - `0.85`: Loose - broader concept matching
+  - `0.80`: Very loose - catches most related memories
+
+- **`enabled`**: Enable/disable the entire memory system
+
+**Embedding Configuration Options:**
+
+- **`embedding_provider`**: `"openai"` or `"ollama"`
+- **`embedding_model`**: Model name for embeddings
+- **`embedding_api_key`**: Optional override for OpenAI API key
+- **`embedding_host`**: Optional override for Ollama host
+- **`embedding_dimensions`**: Optional manual dimensions (auto-detected if not set)
+- **`embedding_timeout_seconds`**: Request timeout (default: 30)
 
 ### Programmatic Usage
 
@@ -362,22 +501,74 @@ providers:
 from pulsebot.timeplus.memory import MemoryManager
 from pulsebot.timeplus.client import TimeplusClient
 from pulsebot.config import load_config
+from pulsebot.embeddings import OpenAIEmbeddingProvider, OllamaEmbeddingProvider
 
 config = load_config("config.yaml")
 client = TimeplusClient.from_config(config.timeplus)
 
-# Initialize memory manager
+# Initialize embedding provider based on memory configuration
+memory_cfg = config.memory
+if memory_cfg.embedding_provider == "openai":
+    embedding_provider = OpenAIEmbeddingProvider(
+        api_key=memory_cfg.embedding_api_key or config.providers.openai.api_key,
+        model=memory_cfg.embedding_model,
+        dimensions=memory_cfg.embedding_dimensions,
+    )
+elif memory_cfg.embedding_provider == "ollama":
+    embedding_provider = OllamaEmbeddingProvider(
+        host=memory_cfg.embedding_host or config.providers.ollama.host,
+        model=memory_cfg.embedding_model,
+        dimensions=memory_cfg.embedding_dimensions,
+        timeout_seconds=memory_cfg.embedding_timeout_seconds,
+    )
+
+# Initialize memory manager with separate client to avoid connection conflicts
+memory_client = TimeplusClient.from_config(config.timeplus)
 memory = MemoryManager(
-    client=client,
-    openai_api_key=config.providers.openai.api_key,
-    embedding_model=config.providers.openai.embedding_model or "text-embedding-3-small"
+    client=memory_client,
+    embedding_provider=embedding_provider,
+    similarity_threshold=memory_cfg.similarity_threshold,
 )
 
-# Check if available
-if memory.is_available():
+# Check if available and enabled
+if memory.is_available() and memory_cfg.enabled:
     # Use memory features
     results = await memory.search("user preferences")
 ```
+
+### Configuration-Based Initialization
+
+The memory system can be completely disabled or configured via `config.yaml`:
+
+```yaml
+memory:
+  similarity_threshold: 0.95  # Duplicate detection sensitivity
+  enabled: true               # Enable/disable memory system
+  
+  # Embedding provider configuration
+  embedding_provider: "openai"  # or "ollama"
+  embedding_model: "text-embedding-3-small"
+  # embedding_api_key: "${OPENAI_API_KEY}"  # Optional override
+  # embedding_host: "${OLLAMA_HOST}"        # Optional override
+  # embedding_dimensions: 1536              # Optional manual dimensions
+  embedding_timeout_seconds: 30
+```
+
+### Duplicate Detection Configuration
+
+The memory system uses semantic similarity to prevent duplicate storage:
+
+**Similarity Thresholds:**
+- **0.95** (Default): Very strict - only obvious duplicates skipped
+- **0.90**: Moderate - similar concepts considered duplicates  
+- **0.85**: Loose - broader concept matching
+- **0.80**: Very loose - catches most related memories
+
+**Recommendations:**
+- Start with default (0.95) to avoid false positives
+- Lower threshold if you want aggressive deduplication
+- Higher threshold if legitimate memories are being skipped
+- Monitor logs to tune the setting appropriately
 
 ## Querying Memories Directly
 
@@ -429,6 +620,18 @@ LIMIT 5
 - **0.3-0.6**: Medium importance, general preferences
 - **0.6-0.8**: High importance, key facts about user
 - **0.8-1.0**: Critical information, must remember
+
+### Duplicate Prevention
+
+- **Enable duplicate checking** for all memory storage operations
+- **Monitor similarity scores** in logs to tune thresholds
+- **Watch for near-duplicates** in debug logs to optimize threshold settings
+- **Use appropriate thresholds** based on your use case:
+  - High precision (0.95+): For factual information
+  - Moderate (0.90): For general preferences
+  - Lower (0.85): For broad conceptual memories
+- **Consider content structure** - consistent formatting reduces false duplicates
+- **Review duplicate stats** periodically using `get_duplicate_stats()` method
 
 ### Memory Types
 
@@ -497,8 +700,10 @@ proton> SELECT memory_type, category, content, importance
 
 ### "Memory features not available"
 
-- **Cause**: `OPENAI_API_KEY` not configured
-- **Solution**: Set the environment variable or pass to MemoryManager
+- **Cause**: No embedding provider configured or provider unavailable
+- **Solution**: 
+  - For OpenAI: Set `OPENAI_API_KEY` environment variable
+  - For Ollama: Ensure Ollama is running and configured in `config.yaml`
 
 ### Memories not being retrieved
 
@@ -516,7 +721,7 @@ proton> SELECT memory_type, category, content, importance
 
 ### High latency on memory operations
 
-- Embedding generation requires API call to OpenAI
+- Embedding generation requires API call to embedding provider
 - Consider caching frequently accessed memories
 - Use more specific queries to reduce results
 
@@ -529,21 +734,8 @@ You can use different embedding models by specifying the model name:
 ```python
 memory = MemoryManager(
     client=client,
-    openai_api_key="sk-...",
-    embedding_model="text-embedding-3-large"  # 3072 dimensions
+    embedding_provider=openai_provider,  # or ollama_provider
 )
-```
-
-**Note**: If changing dimensions, update the stream schema:
-
-```sql
--- Drop and recreate with new dimension
-DROP STREAM IF EXISTS memory;
-CREATE STREAM memory (
-    ...
-    embedding array(float32),  -- Update size if needed
-    ...
-);
 ```
 
 ### Memory Backup and Migration
@@ -594,6 +786,72 @@ context = await builder.build(
 )
 ```
 
+## Connection Management
+
+### Separate Clients for Concurrent Operations
+
+To avoid "Simultaneous queries on single connection" errors, PulseBot uses separate Timeplus clients:
+
+```python
+# In pulsebot/cli.py
+tp = TimeplusClient.from_config(cfg.timeplus)           # Main streaming client
+memory_tp = TimeplusClient.from_config(cfg.timeplus)    # Memory operations client
+
+memory = MemoryManager(
+    client=memory_tp,           # Separate client for memory
+    embedding_provider=embedding_provider,
+)
+```
+
+This ensures that:
+- Long-running streaming queries don't block memory operations
+- Memory searches use historical queries (`client.query()`)
+- All operations can run concurrently without connection conflicts
+
+## Custom Embedding Providers
+
+You can create custom embedding providers by implementing the `EmbeddingProvider` interface:
+
+```python
+from pulsebot.embeddings.base import EmbeddingProvider
+
+class CustomEmbeddingProvider(EmbeddingProvider):
+    """Custom embedding provider implementation."""
+    
+    provider_name = "custom"
+    model = "my-model"
+    dimensions = 768
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self._client = None
+    
+    async def embed(self, text: str) -> list[float]:
+        """Generate embedding for text."""
+        # Implementation here
+        return [0.0] * self.dimensions
+    
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for multiple texts."""
+        return [await self.embed(text) for text in texts]
+```
+
+## Dimension Compatibility
+
+When switching embedding providers, be aware of dimension differences:
+
+| Provider | Model | Dimensions |
+|----------|-------|------------|
+| OpenAI | text-embedding-3-small | 1536 |
+| OpenAI | text-embedding-3-large | 3072 |
+| OpenAI | text-embedding-ada-002 | 1536 |
+| Ollama | mxbai-embed-large | 1024 |
+| Ollama | all-minilm | 384 |
+| Ollama | nomic-embed-text | 768 |
+| Ollama | bge-large | 1024 |
+
+**Note**: Mixing embeddings with different dimensions will cause errors. When switching providers, you may need to clear existing memories or ensure all stored memories use the same embedding model.
+
 ## Summary
 
 PulseBot's memory system provides:
@@ -605,5 +863,16 @@ PulseBot's memory system provides:
 5. **Stream-Native**: All data flows through Timeplus streams
 6. **Soft Deletes**: Append-only with deletion support
 7. **Flexible Queries**: Filter by type, category, importance, or session
+8. **Multiple Providers**: Support for OpenAI (cloud) and Ollama (local) embeddings
+9. **Auto-Detection**: Automatically detects embedding dimensions for Ollama models
+10. **Connection Safety**: Uses separate clients to prevent query conflicts
+11. **Intelligent Deduplication**: Automatic semantic deduplication prevents memory explosion
+12. **Pure Similarity Focus**: Uses cosine similarity (not hybrid) for content-focused duplicate detection
+13. **Near-Duplicate Monitoring**: Logs similar memories for threshold optimization
+14. **Configurable Sensitivity**: Adjustable similarity thresholds for precise control
 
-To enable memory, simply configure `OPENAI_API_KEY` and the agent will automatically remember and recall relevant information to provide personalized responses.
+To enable memory, configure an embedding provider in `config.yaml`:
+- **OpenAI**: Set `OPENAI_API_KEY` environment variable
+- **Ollama**: Configure `providers.embedding.provider = "ollama"` with appropriate host and model
+
+The agent will automatically remember and recall relevant information to provide personalized responses, while preventing duplicate storage through advanced semantic deduplication that focuses on content similarity rather than importance-weighted retrieval scores.

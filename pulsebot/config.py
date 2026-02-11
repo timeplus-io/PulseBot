@@ -52,7 +52,6 @@ class ProviderConfig(BaseModel):
     """LLM provider configuration."""
     api_key: str = ""
     default_model: str = ""
-    embedding_model: str | None = None
 
 
 class OllamaConfig(BaseModel):
@@ -69,6 +68,9 @@ class NvidiaConfig(BaseModel):
     default_model: str = "moonshotai/kimi-k2.5"
     timeout_seconds: int = 120
     enable_thinking: bool = False
+
+
+
 
 
 class ProvidersConfig(BaseModel):
@@ -143,6 +145,20 @@ class LoggingConfig(BaseModel):
     format: str = "json"
 
 
+class MemoryConfig(BaseModel):
+    """Memory system configuration."""
+    similarity_threshold: float = 0.95  # Threshold for duplicate detection (0.0-1.0)
+    enabled: bool = True  # Whether memory system is enabled
+    
+    # Embedding provider configuration for memory operations
+    embedding_provider: str = "openai"  # "openai" or "ollama"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_api_key: str | None = None  # For OpenAI (optional, falls back to providers.openai.api_key)
+    embedding_host: str | None = None  # For Ollama (optional, falls back to providers.ollama.host)
+    embedding_dimensions: int | None = None  # Optional: auto-detected if not set
+    embedding_timeout_seconds: int = 30  # Timeout for embedding requests
+
+
 class Config(BaseSettings):
     """Main PulseBot configuration."""
     agent: AgentConfig = Field(default_factory=AgentConfig)
@@ -154,6 +170,7 @@ class Config(BaseSettings):
     scheduled_tasks: ScheduledTasksConfig = Field(default_factory=ScheduledTasksConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
 
 
 def load_config(config_path: str | Path = "config.yaml") -> Config:
@@ -265,6 +282,20 @@ api:
 logging:
   level: "INFO"
   format: "json"
+
+memory:
+  similarity_threshold: 0.95  # Adjust duplicate detection sensitivity (0.0-1.0)
+  enabled: true
+  
+  # Embedding provider configuration for memory operations
+  # Supports "openai" (cloud) or "ollama" (local)
+  embedding_provider: "openai"  # or "ollama"
+  embedding_model: "text-embedding-3-small"  # OpenAI: text-embedding-3-small (1536), text-embedding-3-large (3072)
+                                              # Ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
+  # embedding_api_key: "${OPENAI_API_KEY}"     # Optional: override OpenAI API key
+  # embedding_host: "${OLLAMA_HOST}"           # Optional: override Ollama host
+  # embedding_dimensions: 1536                 # Optional: auto-detected if not set
+  embedding_timeout_seconds: 30
 """
     
     path = Path(path)

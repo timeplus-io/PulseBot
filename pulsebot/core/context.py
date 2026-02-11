@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pulsebot.core.prompts import build_system_prompt
-from pulsebot.utils import get_logger, safe_json_dumps
+from pulsebot.utils import get_logger, safe_json_dumps, truncate_string
 
 if TYPE_CHECKING:
     from pulsebot.timeplus.client import TimeplusClient
@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 @dataclass
 class Context:
     """Assembled context for LLM prompt."""
-    
+
     system_prompt: str
     messages: list[dict[str, Any]]
     tools: list[Any] = field(default_factory=list)
@@ -26,10 +26,10 @@ class Context:
     session_id: str = ""
     user_id: str = ""
     channel: str = "webchat"
-    
+
     def add_tool_result(self, tool_call_id: str, result: Any) -> None:
         """Add a tool result to the message history.
-        
+
         Args:
             tool_call_id: ID of the tool call
             result: Result from tool execution
@@ -39,10 +39,10 @@ class Context:
             "tool_call_id": tool_call_id,
             "content": safe_json_dumps(result) if not isinstance(result, str) else result,
         })
-    
+
     def add_assistant_message(self, content: str, tool_calls: list[dict] | None = None) -> None:
         """Add an assistant message to the history.
-        
+
         Args:
             content: Message content
             tool_calls: Optional tool calls
@@ -55,12 +55,12 @@ class Context:
 
 class ContextBuilder:
     """Build context for LLM prompts from conversation history and memory.
-    
+
     Assembles:
     - System prompt with agent identity, tools, and memories
     - Conversation history from Timeplus messages stream
     - Relevant memories via vector search
-    
+
     Example:
         >>> builder = ContextBuilder(timeplus_client, memory_manager)
         >>> context = await builder.build(
@@ -68,7 +68,7 @@ class ContextBuilder:
         ...     user_message="What's the weather?",
         ... )
     """
-    
+
     def __init__(
         self,
         timeplus_client: "TimeplusClient",
@@ -79,7 +79,7 @@ class ContextBuilder:
         model_info: str = "",
     ):
         """Initialize context builder.
-        
+
         Args:
             timeplus_client: Timeplus client for fetching history
             memory_manager: Optional memory manager for semantic search
@@ -93,7 +93,7 @@ class ContextBuilder:
         self.custom_identity = custom_identity
         self.custom_instructions = custom_instructions
         self.model_info = model_info
-    
+
     async def build(
         self,
         session_id: str,
@@ -106,7 +106,7 @@ class ContextBuilder:
         channel: str = "webchat",
     ) -> Context:
         """Build complete context for LLM prompt.
-        
+
         Args:
             session_id: Session identifier
             user_message: Current user message
@@ -116,20 +116,35 @@ class ContextBuilder:
             history_limit: Max history messages to include
             user_name: User display name
             channel: Channel name
-            
+
         Returns:
             Assembled Context object
         """
         tools = tools or []
-        
+
         # Fetch conversation history
         history = await self._get_conversation_history(session_id, history_limit)
         
-        # Fetch relevant memories (only if OpenAI API key is configured)
+        logger.debug(
+            "Fetched conversation history",
+            extra={
+                "session_id": session_id,
+                "history_count": len(history),
+                "history_preview": [
+                    {
+                        "type": h.get("message_type", ""),
+                        "content_preview": truncate_string(h.get("content", ""), 100)
+                    }
+                    for h in history[-3:]  # Last 3 messages
+                ] if history else []
+            }
+        )
+
+        # Fetch relevant memories (only if embedding provider is configured)
         memories = []
         if include_memory and self.memory and user_message and self.memory.is_available():
             memories = await self._get_relevant_memories(user_message, memory_limit)
-        
+
         # Build system prompt
         system_prompt = build_system_prompt(
             agent_name=self.agent_name,
@@ -142,16 +157,16 @@ class ContextBuilder:
             custom_instructions=self.custom_instructions,
             model_info=self.model_info,
         )
-        
+
         # Build messages list
         messages = self._format_history(history)
-        
+
         # Add current user message
         messages.append({
             "role": "user",
             "content": user_message,
         })
-        
+
         logger.debug(
             "Built context",
             extra={
@@ -161,7 +176,7 @@ class ContextBuilder:
                 "tool_count": len(tools),
             }
         )
-        
+
         return Context(
             system_prompt=system_prompt,
             messages=messages,
@@ -170,28 +185,28 @@ class ContextBuilder:
             session_id=session_id,
             channel=channel,
         )
-    
+
     async def _get_conversation_history(
         self,
         session_id: str,
         limit: int,
     ) -> list[dict[str, Any]]:
         """Fetch conversation history from Timeplus.
-        
+
         Args:
             session_id: Session to fetch
             limit: Max messages
-            
+
         Returns:
             List of message dicts in chronological order
         """
         try:
             query = f"""
-                SELECT * FROM table(messages)
-                WHERE session_id = '{session_id}'
-                  AND message_type IN ('user_input', 'agent_response', 'tool_call', 'tool_result')
-                ORDER BY timestamp DESC
-                LIMIT {limit}
+            SELECT * FROM table(messages)
+            WHERE session_id = '{session_id}'
+            AND message_type IN ('user_input', 'agent_response', 'tool_call', 'tool_result')
+            ORDER BY timestamp DESC
+            LIMIT {limit}
             """
             result = self.timeplus.query(query)
             # Reverse to get chronological order
@@ -199,42 +214,68 @@ class ContextBuilder:
         except Exception as e:
             logger.warning(f"Failed to fetch history: {e}")
             return []
-    
+
     async def _get_relevant_memories(
         self,
         query: str,
         limit: int,
     ) -> list[dict[str, Any]]:
         """Fetch relevant memories via vector search.
-        
+
         Args:
             query: Search query
             limit: Max results
-            
+
         Returns:
             List of memory dicts
         """
+        logger.info(
+            "Searching for relevant memories",
+            extra={"query": truncate_string(query, 100), "limit": limit}
+        )
+
         try:
-            return await self.memory.search(query, limit=limit)
+            memories = await self.memory.search(query, limit=limit)
+
+            memory_count = len(memories)
+            if memory_count > 0:
+                logger.info(f"Found {memory_count} relevant memories")
+                logger.debug(
+                    "Relevant memories",
+                    extra={
+                        "memories": [
+                            {
+                                "type": m.get("memory_type", "fact"),
+                                "content": truncate_string(m.get("content", ""), 100),
+                                "score": m.get("score", 0),
+                            }
+                            for m in memories
+                        ]
+                    }
+                )
+            else:
+                logger.info("No relevant memories found")
+
+            return memories
         except Exception as e:
-            logger.warning(f"Failed to fetch memories: {e}")
+            logger.error(f"Failed to fetch memories: {e}")
             return []
-    
+
     def _format_history(self, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Format Timeplus messages as LLM conversation.
-        
+
         Args:
             history: Raw messages from Timeplus
-            
+
         Returns:
             Formatted message list
         """
         messages = []
-        
+
         for msg in history:
             msg_type = msg.get("message_type", "")
             content = msg.get("content", "")
-            
+
             # Parse JSON content if needed
             try:
                 import json
@@ -242,7 +283,7 @@ class ContextBuilder:
                 text = parsed.get("text", content)
             except (json.JSONDecodeError, TypeError):
                 text = content
-            
+
             if msg_type == "user_input":
                 messages.append({"role": "user", "content": text})
             elif msg_type == "agent_response":
@@ -257,5 +298,5 @@ class ContextBuilder:
                     "tool_call_id": msg.get("id", ""),
                     "content": text,
                 })
-        
+
         return messages

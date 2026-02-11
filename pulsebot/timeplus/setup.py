@@ -57,8 +57,11 @@ CREATE STREAM IF NOT EXISTS llm_logs (
     
     -- Content (for debugging)
     system_prompt_hash string,  -- SHA256 of system prompt (not full content)
+    system_prompt_preview string,-- First 200 chars of system prompt
     user_message_preview string,-- First 200 chars
     assistant_response_preview string,
+    full_response_content string,-- Full response content for debugging
+    messages_count int8,        -- Number of messages in context
     
     -- Tool Usage
     tools_called array(string),
