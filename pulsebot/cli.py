@@ -92,7 +92,16 @@ def run(config: str):
             similarity_threshold=cfg.memory.similarity_threshold,
         )
 
-        skills = SkillLoader.from_config(cfg.skills)
+        # Prepare skill configurations
+        skill_configs = {
+            "web_search": {
+                "provider": cfg.search.provider,
+                "api_key": cfg.search.brave_api_key,
+                "searxng_url": cfg.search.searxng_url,
+            }
+        }
+        
+        skills = SkillLoader.from_config(cfg.skills, **skill_configs)
 
         agent = Agent(
             agent_id="main",
