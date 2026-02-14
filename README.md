@@ -223,8 +223,8 @@ TELEGRAM_BOT_TOKEN=...    # For Telegram channel
 
 ## 📚 Documentation
 
-- [Technical Design](docs/TechnicalDesign.md) - Full architecture documentation
-- [Telegram Setup](docs/TelegramSetup.md) - Connect PulseBot to Telegram
+- [Technical Design](docs/design.md) - Full architecture documentation
+- [Telegram Setup](docs/telegram.md) - Connect PulseBot to Telegram
 
 ## 📄 License
 
