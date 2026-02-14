@@ -48,6 +48,13 @@ class TimeplusConfig(BaseModel):
     password: str = ""
 
 
+class SearchConfig(BaseModel):
+    """Search provider configuration."""
+    provider: str = "brave"  # "brave" or "searxng"
+    brave_api_key: str = ""
+    searxng_url: str = "http://localhost:8080"
+
+
 class ProviderConfig(BaseModel):
     """LLM provider configuration."""
     api_key: str = ""
@@ -161,8 +168,11 @@ class MemoryConfig(BaseModel):
 
 class Config(BaseSettings):
     """Main PulseBot configuration."""
+    model_config = {"extra": "allow"}
+    
     agent: AgentConfig = Field(default_factory=AgentConfig)
     timeplus: TimeplusConfig = Field(default_factory=TimeplusConfig)
+    search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)

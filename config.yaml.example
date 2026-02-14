@@ -14,6 +14,11 @@ timeplus:
   username: "${TIMEPLUS_USER:-default}"
   password: "${TIMEPLUS_PASSWORD:-}"
 
+search:
+  provider: "searxng"  # "brave" or "searxng"
+  brave_api_key: "${BRAVE_API_KEY:-}"
+  searxng_url: "http://searxng:8080"  # Use service name when running in Docker Compose
+
 providers:
   anthropic:
     api_key: "${ANTHROPIC_API_KEY}"

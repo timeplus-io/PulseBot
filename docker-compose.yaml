@@ -52,5 +52,29 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # SearXNG - Privacy-respecting metasearch engine
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+      # Only needed if you want to use the JSON API or other features requiring a secret
+      - SEARXNG_SECRET=searxng-secret-key-12345
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+
 volumes:
   proton_data:
