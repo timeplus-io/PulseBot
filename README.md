@@ -17,7 +17,7 @@ PulseBot is a lightweight, extensible AI agent framework that uses Timeplus stre
 
 ## 🏗️ Architecture
 
-<img width="721" height="659" alt="image" src="https://github.com/user-attachments/assets/f528034d-5131-47fe-90cc-5aed7b8490b2" />
+<img width="681" height="501" alt="image" src="https://github.com/user-attachments/assets/37a260d9-4f21-4ed5-9d90-2cc75721a3ec" />
 
 
 ## 🚀 Quick Start
