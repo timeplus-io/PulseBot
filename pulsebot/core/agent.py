@@ -94,6 +94,7 @@ class Agent:
             memory_manager=memory_manager,
             agent_name=agent_name,
             model_info=model_info,
+            skills_index=skill_loader.format_skills_for_prompt(),
         )
         self.executor = ToolExecutor(skill_loader)
 

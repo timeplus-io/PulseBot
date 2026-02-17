@@ -125,21 +125,60 @@ This starts:
 | `file_ops` | `read_file`, `write_file`, `list_directory` | Sandboxed file operations |
 | `shell` | `run_command` | Shell execution with security guards |
 
-### Adding Custom Skills
+### AgentSkills.io Support
+
+PulseBot supports the [agentskills.io](https://agentskills.io) standard for external skill packages. Skills are discovered from configured directories by scanning for `SKILL.md` files.
+
+**Configure skill directories** in `config.yaml`:
+
+```yaml
+skills:
+  skill_dirs:
+    - "./skills"
+    - "/shared/skills"
+  disabled_skills: []
+```
+
+**Create a skill package** as a directory with a `SKILL.md` file:
+
+```
+skills/
+  my-skill/
+    SKILL.md          # Required: YAML frontmatter + instructions
+    scripts/          # Optional: executable code
+    references/       # Optional: supplementary docs
+```
+
+The `SKILL.md` uses YAML frontmatter for metadata and Markdown body for instructions:
+
+```markdown
+---
+name: my-skill
+description: Does something useful when the user asks about X.
+---
+
+# My Skill
+
+Full instructions loaded on demand by the agent.
+```
+
+Only skill name and description are loaded into the system prompt at startup (~24 tokens per skill). Full instructions are loaded on demand when the agent calls the `load_skill` tool.
+
+### Adding Custom Code Skills
 
 ```python
 from pulsebot.skills import BaseSkill, ToolDefinition, ToolResult
 
 class MySkill(BaseSkill):
     name = "my_skill"
-    
+
     def get_tools(self) -> list[ToolDefinition]:
         return [ToolDefinition(
             name="my_tool",
             description="Does something useful",
             parameters={"type": "object", "properties": {}}
         )]
-    
+
     async def execute(self, tool_name: str, args: dict) -> ToolResult:
         return ToolResult.ok("Success!")
 ```

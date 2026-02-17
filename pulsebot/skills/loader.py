@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING, Any
 
+from pulsebot.skills.agentskills.loader import discover_skills
+from pulsebot.skills.agentskills.models import SkillMetadata
 from pulsebot.skills.base import BaseSkill, ToolDefinition
 from pulsebot.utils import get_logger
 
@@ -41,20 +43,21 @@ class SkillLoader:
         """Initialize skill loader."""
         self._skills: dict[str, BaseSkill] = {}
         self._tool_to_skill: dict[str, str] = {}
-    
+        self._external_skills: dict[str, SkillMetadata] = {}
+
     @classmethod
     def from_config(cls, config: "SkillsConfig", **skill_configs: dict[str, Any]) -> "SkillLoader":
         """Create loader and load skills from configuration.
-        
+
         Args:
             config: Skills configuration
             **skill_configs: Per-skill configuration (e.g., web_search={"api_key": "..."})
-            
+
         Returns:
             Configured skill loader
         """
         loader = cls()
-        
+
         # Load built-in skills
         for skill_name in config.builtin:
             skill_config = skill_configs.get(skill_name, {})
@@ -62,15 +65,50 @@ class SkillLoader:
                 loader.load_builtin(skill_name, **skill_config)
             except Exception as e:
                 logger.warning(f"Failed to load builtin skill {skill_name}: {e}")
-        
+
         # Load custom skills
         for module_path in config.custom:
             try:
                 loader.load_custom(module_path)
             except Exception as e:
                 logger.warning(f"Failed to load custom skill {module_path}: {e}")
-        
+
+        # Discover external agentskills.io skills
+        if config.skill_dirs:
+            loader._discover_external_skills(
+                skill_dirs=config.skill_dirs,
+                disabled=config.disabled_skills,
+            )
+
         return loader
+
+    def _discover_external_skills(
+        self, skill_dirs: list[str], disabled: list[str] | None = None
+    ) -> None:
+        """Discover agentskills.io packages and register the bridge skill.
+
+        Args:
+            skill_dirs: Directories to scan for SKILL.md files
+            disabled: Skill names to skip
+        """
+        disabled_set = set(disabled or [])
+        discovered = discover_skills(skill_dirs)
+
+        for meta in discovered:
+            if meta.name not in disabled_set:
+                self._external_skills[meta.name] = meta
+
+        if self._external_skills:
+            from pulsebot.skills.builtin.agentskills_bridge import AgentSkillsBridge
+            bridge = AgentSkillsBridge(skill_registry=self._external_skills)
+            self._skills["agentskills_bridge"] = bridge
+            for tool in bridge.get_tools():
+                self._tool_to_skill[tool.name] = "agentskills_bridge"
+
+            logger.info(
+                f"Discovered {len(self._external_skills)} external skill(s): "
+                f"{list(self._external_skills.keys())}"
+            )
     
     def load_builtin(self, name: str, **config: Any) -> None:
         """Load a built-in skill by name.
@@ -188,7 +226,35 @@ class SkillLoader:
         """List of loaded skill names."""
         return list(self._skills.keys())
     
-    @property 
+    @property
     def available_tools(self) -> list[str]:
         """List of available tool names."""
         return list(self._tool_to_skill.keys())
+
+    @property
+    def external_skills(self) -> dict[str, SkillMetadata]:
+        """Registry of discovered external agentskills.io skills."""
+        return self._external_skills
+
+    def format_skills_for_prompt(self) -> str:
+        """Generate compact skill index for the system prompt.
+
+        Only external agentskills.io skills are listed here. Built-in skills
+        are already registered as regular tools.
+
+        Returns:
+            Formatted string for system prompt injection, or empty string.
+        """
+        if not self._external_skills:
+            return ""
+
+        lines = [
+            "## Available Skills",
+            "You have access to the following agentskills.io skills. "
+            "To use a skill, call the `load_skill` tool with the skill name "
+            "to get its full instructions.\n",
+        ]
+        for meta in self._external_skills.values():
+            lines.append(f"- **{meta.name}**: {meta.description}")
+
+        return "\n".join(lines)

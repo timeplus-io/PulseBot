@@ -30,6 +30,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
+      - ./skills:/app/skills:ro
     depends_on:
       proton:
         condition: service_healthy

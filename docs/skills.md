@@ -2,114 +2,66 @@
 
 ## Overview
 
-PulseBot's skills system provides a flexible framework for extending the agent's capabilities through tools. Skills are modular components that the LLM can invoke to perform actions like web searches, file operations, shell commands, or custom integrations.
+PulseBot's skills system provides two ways to extend the agent's capabilities:
 
-The skills architecture follows these key principles:
-- **OpenAI-Compatible Tool Format**: Skills define tools using the same schema format as OpenAI's function calling API
-- **Async Execution**: All skill methods are async for non-blocking I/O operations
-- **Dynamic Loading**: Skills can be loaded dynamically from configuration
-- **Type Safety**: Uses Pydantic models for validation and type safety
-- **Composability**: A skill can expose multiple related tools
+1. **Built-in Skills** - Python classes that register tools directly with the LLM (web search, file ops, shell)
+2. **External Skills (agentskills.io)** - Markdown-based skill packages discovered from the filesystem, following the [agentskills.io](https://agentskills.io) open standard
+
+Both types coexist seamlessly. Built-in skills expose tools the LLM can call directly. External skills use a **metadata-first loading pattern** where only name + description enter the system prompt at startup (~24 tokens per skill), and full instructions are loaded on demand via the `load_skill` tool.
 
 ## Architecture
 
-### Core Components
-
 ```
 pulsebot/skills/
-├── base.py          # Base classes and models
-├── loader.py        # Dynamic skill loading
+├── base.py                  # BaseSkill, ToolDefinition, ToolResult
+├── loader.py                # SkillLoader (built-in + external discovery)
 ├── __init__.py
-└── builtin/         # Built-in skill implementations
+├── agentskills/             # agentskills.io integration
+│   ├── __init__.py
+│   ├── models.py            # SkillMetadata, SkillContent
+│   └── loader.py            # SKILL.md parser, validator, directory scanner
+└── builtin/                 # Built-in skill implementations
     ├── __init__.py
     ├── web_search.py
     ├── file_ops.py
-    └── shell.py
-```
+    ├── shell.py
+    └── agentskills_bridge.py  # Bridge: load_skill + read_skill_file tools
 
-### Base Classes
-
-#### `BaseSkill` (Abstract Base Class)
-
-All skills must inherit from `BaseSkill` and implement two abstract methods:
-
-```python
-from pulsebot.skills.base import BaseSkill, ToolDefinition, ToolResult
-
-class MySkill(BaseSkill):
-    name = "my_skill"
-    description = "Description of what this skill does"
-    
-    def get_tools(self) -> list[ToolDefinition]:
-        """Return list of tools provided by this skill."""
-        pass
-    
-    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
-        """Execute a tool with given arguments."""
-        pass
-```
-
-#### `ToolDefinition` (Pydantic Model)
-
-Defines a tool using OpenAI-compatible JSON Schema format:
-
-```python
-class ToolDefinition(BaseModel):
-    name: str                    # Tool name (must be unique across all skills)
-    description: str             # Description for LLM to understand when to use it
-    parameters: dict[str, Any]   # JSON Schema for tool arguments
-    
-    def to_openai_format(self) -> dict[str, Any]:
-        """Convert to OpenAI tool format."""
-```
-
-#### `ToolResult` (Pydantic Model)
-
-Standardized result format for tool execution:
-
-```python
-class ToolResult(BaseModel):
-    success: bool           # Whether execution succeeded
-    output: Any             # Result data (any JSON-serializable type)
-    error: str | None       # Error message if failed
-    
-    @classmethod
-    def ok(cls, output: Any) -> "ToolResult":
-        """Create a successful result."""
-    
-    @classmethod
-    def fail(cls, error: str) -> "ToolResult":
-        """Create a failed result."""
+skills/                      # Default directory for external skill packages
+└── timeplus-sql-guide/      # Example skill
+    ├── SKILL.md
+    └── references/
+        └── syntax-cheatsheet.md
 ```
 
 ## How Skills Work
 
-### 1. Skill Discovery
+### Skill Loading Flow
 
-The `SkillLoader` manages skill registration and tool discovery:
-
-```python
-from pulsebot.skills.loader import SkillLoader
-
-loader = SkillLoader()
-loader.load_builtin("web_search", api_key="...")
-loader.load_custom("my_project.skills.custom_skill.MyCustomSkill")
-
-# Get all tools for LLM
-tools = loader.get_tools()
-tools_openai_format = loader.get_tool_definitions()
+```
+Startup
+  │
+  ├─ Load built-in skills (Python classes → tools registered directly)
+  │    web_search, file_ops, shell
+  │
+  ├─ Discover external skills (scan skill_dirs for SKILL.md files)
+  │    Parse YAML frontmatter → SkillMetadata (name + description only)
+  │
+  └─ If external skills found:
+       Register AgentSkillsBridge skill → load_skill + read_skill_file tools
+       Inject skill index into system prompt
 ```
 
-### 2. Tool Execution
+### Two-Tier Loading (External Skills)
 
-When the LLM requests a tool call, the agent:
+| Tier | When | What | Cost |
+|------|------|------|------|
+| Tier 1 - Metadata | Startup | Name + description in system prompt | ~24 tokens/skill |
+| Tier 2 - Full Content | On demand via `load_skill` | Full SKILL.md instructions, scripts, references | ~2,000-5,000 tokens |
 
-1. Receives tool name and arguments from LLM
-2. Looks up the skill that provides the tool via `SkillLoader.get_skill_for_tool()`
-3. Calls `skill.execute(tool_name, arguments)`
-4. Returns `ToolResult` to the LLM as a tool result message
+This means 25 external skills add only ~630 tokens to the base prompt, instead of 50,000-125,000 tokens if all instructions were loaded upfront.
 
-### 3. Execution Flow
+### Tool Execution Flow
 
 ```
 User Message → Agent
@@ -118,61 +70,87 @@ User Message → Agent
                     ↓
             Tool Call Request
                     ↓
+            SkillLoader.get_skill_for_tool()
+                    ↓
             Skill.execute()
                     ↓
             ToolResult → LLM → Final Response
+```
+
+## Configuration
+
+### Full Config Reference
+
+```yaml
+skills:
+  # Built-in Python skills to load
+  builtin:
+    - web_search
+    - file_ops
+    - shell
+
+  # Custom Python skill classes (module paths)
+  custom: []
+
+  # Directories to scan for agentskills.io skill packages
+  skill_dirs:
+    - "./skills"
+    - "/shared/team-skills"
+
+  # Skill names to skip during discovery
+  disabled_skills: []
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `builtin` | list[str] | `["web_search", "file_ops", "shell"]` | Built-in skill names to load |
+| `custom` | list[str] | `[]` | Module paths to custom Python skill classes |
+| `skill_dirs` | list[str] | `[]` | Directories to scan for agentskills.io packages |
+| `disabled_skills` | list[str] | `[]` | Skill names to skip (by `name` field in SKILL.md) |
+
+### Enabling/Disabling External Skills
+
+| Action | Configuration |
+|--------|---------------|
+| Enable external skills | Add directories to `skill_dirs` |
+| Disable all external skills | Set `skill_dirs: []` or omit it |
+| Disable specific skills | Add names to `disabled_skills` |
+| Add more skill sources | Add more paths to `skill_dirs` |
+
+### Docker Deployment
+
+When running with Docker, mount the skills directory into the container:
+
+```yaml
+# docker-compose.yaml
+pulsebot-agent:
+  volumes:
+    - ./config.yaml:/app/config.yaml:ro
+    - ./skills:/app/skills:ro
 ```
 
 ## Built-in Skills
 
 ### Web Search (`web_search`)
 
-Uses Brave Search API to search the web.
+Searches the web using Brave Search API or SearXNG.
 
 **Tool**: `web_search`
 - **Parameters**: `query` (string), `count` (integer, 1-10)
 - **Returns**: List of search results with title, URL, and description
 
-**Configuration**:
-```yaml
-skills:
-  builtin:
-    - web_search
-```
-
-**Environment Variable**: `BRAVE_API_KEY` or pass `api_key` to constructor
+**Configuration**: Set `search.provider` to `"brave"` or `"searxng"` in config.yaml.
 
 ### File Operations (`file_ops`)
 
 Read, write, and list files with security guardrails.
 
 **Tools**:
-- `read_file`: Read file contents
-  - Parameters: `path` (string)
-  - Returns: File content as string
+- `read_file` - Read file contents (parameter: `path`)
+- `write_file` - Write content to file (parameters: `path`, `content`, `append`)
+- `list_directory` - List directory contents (parameter: `path`)
 
-- `write_file`: Write content to file
-  - Parameters: `path` (string), `content` (string), `append` (boolean)
-  - Returns: Bytes written
-
-- `list_directory`: List directory contents
-  - Parameters: `path` (string, optional)
-  - Returns: List of files with type and size
-
-**Configuration**:
-```yaml
-skills:
-  builtin:
-    - file_ops
-```
-
-**Constructor Options**:
-```python
-FileOpsSkill(
-    base_path="/allowed/directory",  # Restricts file operations
-    allowed_extensions=[".txt", ".py", ".md"]  # Optional extension filter
-)
-```
+**Security**: Path traversal prevention ensures operations stay within the configured base path.
 
 ### Shell Commands (`shell`)
 
@@ -182,395 +160,203 @@ Execute shell commands with safety controls.
 - **Parameters**: `command` (string)
 - **Returns**: Exit code, stdout, stderr
 
-**Safety Features**:
-- Blocked commands list: `rm`, `rmdir`, `mv`, `sudo`, etc.
-- Dangerous pattern detection
-- Optional whitelist mode
-- Timeout protection (default 30s)
-- Output size limits
+**Safety Features**: Blocked commands list (`rm`, `sudo`, etc.), dangerous pattern detection, timeout protection (30s default), output size limits.
 
-**Configuration**:
-```yaml
-skills:
-  builtin:
-    - shell
+## External Skills (agentskills.io)
+
+### The agentskills.io Standard
+
+The [agentskills.io](https://agentskills.io) standard is a filesystem-based format for packaging AI agent skills, adopted by Claude, GitHub Copilot, OpenAI Codex, Cursor, and others.
+
+A skill is a directory containing a `SKILL.md` file with YAML frontmatter for metadata and Markdown body for instructions:
+
+```
+my-skill/
+├── SKILL.md          # Required: metadata + instructions
+├── scripts/          # Optional: executable code
+├── references/       # Optional: supplementary docs
+└── assets/           # Optional: templates, data files
 ```
 
-**Constructor Options**:
-```python
-ShellSkill(
-    allowed_commands=["ls", "cat", "grep"],  # Whitelist mode
-    working_directory="/path",  # Working directory
-    timeout_seconds=30,
-    max_output_length=10000
-)
+### SKILL.md Format
+
+```markdown
+---
+name: my-skill
+description: What this skill does and when to use it.
+license: Apache-2.0
+metadata:
+  author: your-name
+  version: "1.0"
+compatibility: Requires X to be configured
+allowed-tools: tool1 tool2
+---
+
+# My Skill
+
+Full instructions loaded on demand by the agent.
+
+## When to use this skill
+Use when the user asks about X.
+
+## Procedures
+Step-by-step instructions...
 ```
 
-## Creating Custom Skills
+### Frontmatter Fields
 
-### Step 1: Create Skill Class
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | 1-64 chars, lowercase letters, digits, hyphens. Must match directory name. |
+| `description` | Yes | 1-1024 chars. Describes capability and trigger conditions. |
+| `license` | No | License identifier (e.g., Apache-2.0) |
+| `compatibility` | No | Environment requirements |
+| `metadata` | No | Arbitrary key-value pairs (author, version, etc.) |
+| `allowed-tools` | No | Space-delimited pre-approved tool list |
 
-Create a new file, e.g., `my_project/skills/weather_skill.py`:
+### How External Skills Are Used
+
+1. At startup, PulseBot scans `skill_dirs` for directories containing `SKILL.md`
+2. Only name + description are parsed and injected into the system prompt as a skill index
+3. When the LLM determines a skill is relevant, it calls `load_skill` with the skill name
+4. The full SKILL.md body (instructions, procedures, examples) is returned to the LLM
+5. The LLM can read individual files from the skill package via `read_skill_file`
+
+### Bridge Tools
+
+The `AgentSkillsBridge` skill provides two tools for the LLM to interact with external skills:
+
+| Tool | Description |
+|------|-------------|
+| `load_skill` | Load full instructions for a skill by name. Parameters: `skill_name` (string) |
+| `read_skill_file` | Read a file from a skill's `scripts/` or `references/` directory. Parameters: `skill_name` (string), `file_path` (string) |
+
+These tools are only registered when external skills are discovered. If `skill_dirs` is empty, they don't appear.
+
+### Creating an External Skill
+
+1. Create a directory under your skills path:
+
+```bash
+mkdir -p skills/my-skill/references
+```
+
+2. Create `SKILL.md` with frontmatter and instructions:
+
+```markdown
+---
+name: my-skill
+description: Guide for doing X when the user asks about Y.
+---
+
+# My Skill
+
+## When to use
+Use this skill when...
+
+## Instructions
+1. Do this
+2. Then that
+```
+
+3. Optionally add reference files or scripts:
+
+```bash
+echo "# Cheatsheet" > skills/my-skill/references/cheatsheet.md
+```
+
+4. Restart PulseBot - the skill is automatically discovered.
+
+## Custom Python Skills
+
+For capabilities that require code execution (API calls, database queries), create a Python skill class.
+
+### Creating a Custom Skill
 
 ```python
-"""Weather lookup skill using a weather API."""
-
-from __future__ import annotations
-
-from typing import Any
-
-import aiohttp
-
 from pulsebot.skills.base import BaseSkill, ToolDefinition, ToolResult
-from pulsebot.utils import get_logger
 
-logger = get_logger(__name__)
+class MySkill(BaseSkill):
+    name = "my_skill"
+    description = "Does something useful"
 
-
-class WeatherSkill(BaseSkill):
-    """Weather lookup skill using OpenWeatherMap API."""
-    
-    name = "weather"
-    description = "Get current weather and forecasts"
-    
     def __init__(self, api_key: str = ""):
-        """Initialize weather skill.
-        
-        Args:
-            api_key: OpenWeatherMap API key
-        """
         self.api_key = api_key
-        self.base_url = "https://api.openweathermap.org/data/2.5"
-    
+
     def get_tools(self) -> list[ToolDefinition]:
-        """Return weather tool definitions."""
-        return [
-            ToolDefinition(
-                name="get_current_weather",
-                description="Get current weather for a city",
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "city": {
-                            "type": "string",
-                            "description": "City name (e.g., 'San Francisco')"
-                        },
-                        "units": {
-                            "type": "string",
-                            "enum": ["metric", "imperial"],
-                            "description": "Temperature units",
-                            "default": "metric"
-                        }
-                    },
-                    "required": ["city"]
-                }
-            ),
-            ToolDefinition(
-                name="get_forecast",
-                description="Get 5-day weather forecast",
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "city": {
-                            "type": "string",
-                            "description": "City name"
-                        },
-                        "days": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 5,
-                            "description": "Number of days",
-                            "default": 3
-                        }
-                    },
-                    "required": ["city"]
-                }
-            )
-        ]
-    
-    async def execute(
-        self, 
-        tool_name: str, 
-        arguments: dict[str, Any]
-    ) -> ToolResult:
-        """Execute weather tool."""
-        if tool_name == "get_current_weather":
-            return await self._get_current_weather(arguments)
-        elif tool_name == "get_forecast":
-            return await self._get_forecast(arguments)
-        else:
-            return ToolResult.fail(f"Unknown tool: {tool_name}")
-    
-    async def _get_current_weather(
-        self, 
-        arguments: dict[str, Any]
-    ) -> ToolResult:
-        """Fetch current weather."""
-        city = arguments.get("city", "")
-        units = arguments.get("units", "metric")
-        
-        if not self.api_key:
-            return ToolResult.fail("Weather API key not configured")
-        
-        if not city:
-            return ToolResult.fail("City is required")
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                url = f"{self.base_url}/weather"
-                params = {
-                    "q": city,
-                    "appid": self.api_key,
-                    "units": units
-                }
-                
-                async with session.get(url, params=params) as response:
-                    if response.status != 200:
-                        return ToolResult.fail(
-                            f"Weather API error: HTTP {response.status}"
-                        )
-                    
-                    data = await response.json()
-                    result = {
-                        "city": data["name"],
-                        "temperature": data["main"]["temp"],
-                        "description": data["weather"][0]["description"],
-                        "humidity": data["main"]["humidity"],
-                        "wind_speed": data["wind"]["speed"]
+        return [ToolDefinition(
+            name="my_tool",
+            description="Clear description for the LLM",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "What to look up"
                     }
-                    return ToolResult.ok(result)
-        
-        except aiohttp.ClientError as e:
-            return ToolResult.fail(f"Network error: {e}")
-        except Exception as e:
-            return ToolResult.fail(f"Weather lookup failed: {e}")
-    
-    async def _get_forecast(
-        self, 
-        arguments: dict[str, Any]
-    ) -> ToolResult:
-        """Fetch weather forecast."""
-        # Implementation similar to _get_current_weather
-        pass
+                },
+                "required": ["query"]
+            }
+        )]
+
+    async def execute(self, tool_name: str, arguments: dict) -> ToolResult:
+        if tool_name == "my_tool":
+            # Your implementation here
+            return ToolResult.ok("Result data")
+        return ToolResult.fail(f"Unknown tool: {tool_name}")
 ```
 
-### Step 2: Register in Config
+### Registering Custom Skills
 
 Add to `config.yaml`:
 
 ```yaml
 skills:
-  builtin:
-    - web_search
-    - file_ops
-    - shell
   custom:
-    - my_project.skills.weather_skill.WeatherSkill
+    - my_project.skills.my_skill.MySkill
 ```
 
-Or use the `SkillLoader` directly:
+### Best Practices
 
-```python
-from pulsebot.skills.loader import SkillLoader
+- **Input Validation**: Always validate arguments before processing
+- **Error Handling**: Return descriptive errors via `ToolResult.fail()`
+- **Security**: Validate paths, commands, and external inputs
+- **Timeouts**: Use `asyncio.wait_for()` for external API calls
+- **Naming**: Use descriptive, action-oriented tool names (`get_weather`, not `weather`)
+- **Descriptions**: Write clear descriptions - this is what the LLM uses to decide when to call your tool
 
-loader = SkillLoader()
-loader.load_custom(
-    "my_project.skills.weather_skill.WeatherSkill",
-    api_key="your-api-key"
-)
-```
+## When to Use Which Approach
 
-### Step 3: Best Practices
-
-1. **Input Validation**: Always validate arguments before processing
-2. **Error Handling**: Return descriptive errors via `ToolResult.fail()`
-3. **Security**: Validate paths, commands, and external inputs
-4. **Timeouts**: Use `asyncio.wait_for()` for external API calls
-5. **Logging**: Use `get_logger(__name__)` for consistent logging
-6. **Documentation**: Write clear descriptions for tools and parameters
-
-### Tool Naming Conventions
-
-- Use descriptive, action-oriented names: `get_weather`, `run_command`, `read_file`
-- Avoid generic names that might conflict: use `search_web` instead of `search`
-- Use snake_case for consistency with Python conventions
-
-### Parameter Schema Best Practices
-
-```python
-ToolDefinition(
-    name="my_tool",
-    description="Clear, LLM-friendly description of what this does",
-    parameters={
-        "type": "object",
-        "properties": {
-            "required_param": {
-                "type": "string",
-                "description": "What this parameter is for"
-            },
-            "optional_param": {
-                "type": "integer",
-                "description": "Description with constraints",
-                "minimum": 1,
-                "maximum": 100,
-                "default": 10
-            },
-            "enum_param": {
-                "type": "string",
-                "enum": ["option1", "option2", "option3"],
-                "description": "Must be one of the allowed values",
-                "default": "option1"
-            }
-        },
-        "required": ["required_param"]  # List required fields
-    }
-)
-```
-
-## Advanced Topics
-
-### Custom Skill Packages
-
-For reusable skills, create a Python package:
-
-```
-my_pulsebot_skills/
-├── __init__.py
-├── weather/
-│   ├── __init__.py
-│   └── weather_skill.py
-├── database/
-│   ├── __init__.py
-│   └── db_skill.py
-└── utils.py
-```
-
-Install with pip:
-```bash
-pip install -e ./my_pulsebot_skills
-```
-
-Then reference in config:
-```yaml
-skills:
-  custom:
-    - my_pulsebot_skills.weather.WeatherSkill
-    - my_pulsebot_skills.database.DatabaseSkill
-```
-
-### Skill Composition
-
-Skills can use other skills or shared utilities:
-
-```python
-from pulsebot.skills.base import BaseSkill, ToolDefinition, ToolResult
-from my_project.utils import shared_api_client
-
-class ComposedSkill(BaseSkill):
-    def __init__(self):
-        self.api_client = shared_api_client
-        self.cache = {}
-    
-    async def execute(self, tool_name: str, arguments: dict) -> ToolResult:
-        # Use shared resources
-        pass
-```
-
-### Testing Skills
-
-```python
-import pytest
-from pulsebot.skills.builtin.web_search import WebSearchSkill
-
-@pytest.fixture
-def skill():
-    return WebSearchSkill(api_key="test-key")
-
-@pytest.mark.asyncio
-async def test_web_search_success(skill, mock_aiohttp):
-    # Mock the API response
-    mock_aiohttp.get("https://api.search.brave.com/res/v1/web/search", json={
-        "web": {"results": [{"title": "Test", "url": "http://test.com"}]}
-    })
-    
-    result = await skill.execute("web_search", {"query": "test"})
-    
-    assert result.success is True
-    assert len(result.output) > 0
-
-@pytest.mark.asyncio
-async def test_web_search_no_api_key():
-    skill = WebSearchSkill(api_key="")
-    result = await skill.execute("web_search", {"query": "test"})
-    
-    assert result.success is False
-    assert "API key" in result.error
-```
-
-## Configuration Reference
-
-### SkillsConfig (config.py)
-
-```python
-class SkillsConfig(BaseModel):
-    builtin: list[str] = ["web_search", "file_ops", "shell"]
-    custom: list[str] = []  # Module paths to custom skill classes
-```
-
-### Environment Variables
-
-Skills can receive configuration via:
-
-1. **Config YAML**: Per-skill config under `skills:`
-2. **Environment Variables**: Standard `${VAR_NAME}` substitution
-3. **Constructor Args**: Passed when loading via code
-
-Example with environment variables:
-
-```yaml
-skills:
-  builtin:
-    - web_search
-  custom:
-    - my_project.skills.weather.WeatherSkill
-
-# In your skill
-class WeatherSkill(BaseSkill):
-    def __init__(self, api_key: str = ""):
-        self.api_key = api_key or os.environ.get("WEATHER_API_KEY", "")
-```
+| Use Case | Approach |
+|----------|----------|
+| Need to call APIs, run code, access databases | Custom Python skill |
+| Procedural knowledge, guides, SQL templates | External agentskills.io skill |
+| Team-shared domain knowledge | External skill in a shared `skill_dirs` path |
+| Portable across AI platforms | External skill (agentskills.io standard) |
+| Core agent capability | Built-in skill |
 
 ## Troubleshooting
 
-### Common Issues
+**External skill not discovered**:
+- Verify the directory contains a `SKILL.md` file
+- Check that `name` in frontmatter matches the directory name exactly
+- Ensure the directory is inside a path listed in `skill_dirs`
+- Check that the skill name is not in `disabled_skills`
+- Look for validation warnings in logs
+
+**`load_skill` / `read_skill_file` tools not available**:
+- These only appear when at least one external skill is discovered
+- Verify `skill_dirs` is configured and contains valid skill packages
 
 **"Unknown built-in skill" error**:
-- Check that the skill name is in the `BUILTIN_SKILLS` registry in `loader.py`
-- Verify the module path is correct
+- Check that the skill name matches one of: `web_search`, `file_ops`, `shell`
 
 **"Failed to load custom skill" error**:
 - Ensure the module path is importable (in Python path)
-- Verify the class exists and is properly named
+- Verify the class exists and inherits from `BaseSkill`
 - Check for import errors in the skill module
 
 **Tool not being called by LLM**:
 - Check tool description is clear and specific
-- Ensure parameters schema is correct
+- Ensure parameter schema is correct JSON Schema
 - Verify tool name is unique across all skills
-
-**Skill executes but returns errors**:
-- Check argument validation
-- Verify external dependencies (API keys, network access)
-- Review error messages in `ToolResult.fail()` calls
-
-## Summary
-
-The PulseBot skills system provides:
-
-1. **Modularity**: Skills are self-contained and composable
-2. **Safety**: Built-in validation and security controls
-3. **Flexibility**: Support for both built-in and custom skills
-4. **Standards**: OpenAI-compatible tool format
-5. **Observability**: All tool calls logged to streams
-
-To add new capabilities to your agent, simply create a skill class, register it in config, and the LLM will automatically be able to invoke it when appropriate.

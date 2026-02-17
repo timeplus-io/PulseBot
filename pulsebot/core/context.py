@@ -77,6 +77,7 @@ class ContextBuilder:
         custom_identity: str = "",
         custom_instructions: str = "",
         model_info: str = "",
+        skills_index: str = "",
     ):
         """Initialize context builder.
 
@@ -86,6 +87,7 @@ class ContextBuilder:
             agent_name: Agent display name
             custom_identity: Custom persona description
             custom_instructions: Additional instructions
+            skills_index: Formatted agentskills.io skill index for prompt
         """
         self.timeplus = timeplus_client
         self.memory = memory_manager
@@ -93,6 +95,7 @@ class ContextBuilder:
         self.custom_identity = custom_identity
         self.custom_instructions = custom_instructions
         self.model_info = model_info
+        self.skills_index = skills_index
 
     async def build(
         self,
@@ -156,6 +159,7 @@ class ContextBuilder:
             custom_identity=self.custom_identity,
             custom_instructions=self.custom_instructions,
             model_info=self.model_info,
+            skills_index=self.skills_index,
         )
 
         # Build messages list

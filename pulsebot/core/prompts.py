@@ -27,6 +27,7 @@ You have access to the following tools:
 ## Relevant Memories
 {memories}
 
+{skills_index}
 ## Guidelines
 
 ### Tool Usage
@@ -65,6 +66,7 @@ def build_system_prompt(
     custom_identity: str = "I am a helpful, friendly AI assistant.",
     custom_instructions: str = "",
     model_info: str = "",
+    skills_index: str = "",
 ) -> str:
     """Build the complete system prompt.
     
@@ -110,6 +112,7 @@ def build_system_prompt(
         memories=memories_text,
         custom_instructions=custom_instructions,
         model_info_section=f"\n## Model Configuration\n{model_info}" if model_info else "",
+        skills_index=f"\n{skills_index}\n" if skills_index else "",
     )
 
 
