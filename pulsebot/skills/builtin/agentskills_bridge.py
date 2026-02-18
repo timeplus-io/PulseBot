@@ -143,7 +143,9 @@ class AgentSkillsBridge(BaseSkill):
             for fname in content.scripts:
                 parts.append(f"- {fname}")
             parts.append(
-                "\nUse the read_skill_file tool to read any script or reference file."
+                "\nUse the read_skill_file tool to read any script or reference file. "
+                "To execute a script, first read it with read_skill_file, then run it "
+                "using the run_command tool."
             )
 
         return "\n".join(parts)

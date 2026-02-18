@@ -252,7 +252,8 @@ class SkillLoader:
             "## Available Skills",
             "You have access to the following agentskills.io skills. "
             "To use a skill, call the `load_skill` tool with the skill name "
-            "to get its full instructions.\n",
+            "to get its full instructions. If a skill includes scripts, "
+            "use `read_skill_file` to read the script, then `run_command` to execute it.\n",
         ]
         for meta in self._external_skills.values():
             lines.append(f"- **{meta.name}**: {meta.description}")
