@@ -112,6 +112,8 @@ class SkillsConfig(BaseModel):
     """Skills configuration."""
     builtin: list[str] = Field(default_factory=lambda: ["web_search", "file_ops", "shell"])
     custom: list[str] = Field(default_factory=list)
+    skill_dirs: list[str] = Field(default_factory=list)
+    disabled_skills: list[str] = Field(default_factory=list)
 
 
 class MCPServerConfig(BaseModel):
@@ -268,8 +270,15 @@ skills:
     - web_search
     - file_ops
     - shell
-  
+
   custom: []
+
+  # Directories to scan for agentskills.io skill packages
+  skill_dirs:
+    - "./skills"
+
+  # Skill names to disable
+  disabled_skills: []
 
 mcp_servers: []
 

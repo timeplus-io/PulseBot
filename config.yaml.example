@@ -56,6 +56,13 @@ skills:
 
   custom: []
 
+  # Directories to scan for agentskills.io skill packages
+  skill_dirs:
+    - "./skills"          # relative to where you run pulsebot
+
+  # Skill names to skip (by name field in SKILL.md frontmatter)
+  disabled_skills: []
+
 mcp_servers: []
 # Example:
 # - name: "filesystem"
