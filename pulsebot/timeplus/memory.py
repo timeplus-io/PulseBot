@@ -177,7 +177,7 @@ class MemoryManager:
                 "is_deleted": False,
             }
 
-            self.client.insert(self.stream_name, [data])
+            self.client.insert(f"pulsebot.{self.stream_name}", [data])
 
             logger.info(
                 "Stored memory",
@@ -258,7 +258,7 @@ class MemoryManager:
                 cosine_distance(embedding, {embedding_str}) as distance,
                 (1 - cosine_distance(embedding, {embedding_str})) * importance as score,
                 (1 - cosine_distance(embedding, {embedding_str})) as similarity
-            FROM table({self.stream_name})
+            FROM table(pulsebot.{self.stream_name})
             WHERE {where_clause}
             ORDER BY score DESC
             LIMIT {limit}
@@ -299,7 +299,7 @@ class MemoryManager:
             # Get existing memory to copy other fields
             sql = f"""
             SELECT content, memory_type, category, embedding, source_session_id
-            FROM table({self.stream_name})
+            FROM table(pulsebot.{self.stream_name})
             WHERE id = '{memory_id}' AND is_deleted = false
             ORDER BY timestamp DESC
             LIMIT 1
@@ -324,7 +324,7 @@ class MemoryManager:
                 "is_deleted": False,
             }
             
-            self.client.insert(self.stream_name, [update_data])
+            self.client.insert(f"pulsebot.{self.stream_name}", [update_data])
             
             logger.info(
                 "Updated memory importance",
@@ -355,7 +355,7 @@ class MemoryManager:
                 COUNT(DISTINCT content) as unique_contents,
                 memory_type,
                 category
-            FROM table({self.stream_name})
+            FROM table(pulsebot.{self.stream_name})
             WHERE is_deleted = false
             GROUP BY memory_type, category
             ORDER BY total_memories DESC
@@ -437,7 +437,7 @@ class MemoryManager:
             timestamp,
             cosine_distance(embedding, {embedding_str}) as distance,
             (1 - cosine_distance(embedding, {embedding_str})) * importance as score
-        FROM table({self.stream_name})
+        FROM table(pulsebot.{self.stream_name})
         WHERE {where_clause}
         ORDER BY score DESC
         LIMIT {limit}
@@ -494,7 +494,7 @@ class MemoryManager:
             category,
             importance,
             timestamp
-        FROM table({self.stream_name})
+        FROM table(pulsebot.{self.stream_name})
         WHERE source_session_id = '{session_id}'
         AND is_deleted = false
         ORDER BY timestamp DESC
@@ -532,7 +532,7 @@ class MemoryManager:
             category,
             importance,
             timestamp
-        FROM table({self.stream_name})
+        FROM table(pulsebot.{self.stream_name})
         {where_clause}
         ORDER BY timestamp DESC
         LIMIT {limit}

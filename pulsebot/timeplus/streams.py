@@ -48,7 +48,7 @@ class StreamReader:
             Row dictionaries as they arrive
         """
         if query is None:
-            query = f"SELECT * FROM {self.stream_name} SETTINGS seek_to='{seek_to}'"
+            query = f"SELECT * FROM pulsebot.{self.stream_name} SETTINGS seek_to='{seek_to}'"
         
         logger.info(
             "Starting stream",
@@ -89,7 +89,7 @@ class StreamReader:
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         
         query = f"""
-            SELECT * FROM table({self.stream_name})
+            SELECT * FROM table(pulsebot.{self.stream_name})
             {where_clause}
             ORDER BY timestamp DESC
             LIMIT {limit}
@@ -155,7 +155,7 @@ class StreamWriter:
         if "timestamp" not in data:
             data["timestamp"] = datetime.now(timezone.utc)
         
-        self.client.insert(self.stream_name, [data])
+        self.client.insert(f"pulsebot.{self.stream_name}", [data])
         
         logger.debug(
             "Wrote message",
@@ -181,7 +181,7 @@ class StreamWriter:
                 item["timestamp"] = datetime.now(timezone.utc)
             ids.append(item["id"])
         
-        self.client.insert(self.stream_name, data)
+        self.client.insert(f"pulsebot.{self.stream_name}", data)
         
         logger.debug(
             "Wrote batch",

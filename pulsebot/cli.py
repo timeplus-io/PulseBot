@@ -293,27 +293,42 @@ def chat(host: str, port: int):
         pass
 
 
+
+
+
 @cli.command()
 @click.option("--config", "-c", default="config.yaml", help="Config file path")
-def setup(config: str):
-    """Initialize Timeplus streams."""
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+def reset(config: str, force: bool):
+    """Reset PulseBot data by recreating all streams."""
     from pulsebot.config import load_config
     from pulsebot.timeplus.client import TimeplusClient
-    from pulsebot.timeplus.setup import create_streams
+    from pulsebot.timeplus.setup import create_streams, drop_streams
+
+    if not force:
+        if not click.confirm(
+            "Are you sure you want to delete all PulseBot data? This cannot be undone."
+        ):
+            console.print("[yellow]Cancelled.[/]")
+            return
 
     cfg = load_config(config)
 
-    console.print("[bold]Setting up PulseBot infrastructure...[/]")
+    console.print("[bold red]Resetting PulseBot infrastructure...[/]")
 
-    async def run_setup():
-        # Setup Timeplus streams
-        console.print("Creating Timeplus streams...")
+    async def run_reset():
         tp = TimeplusClient.from_config(cfg.timeplus)
+        
+        # Drop existing streams
+        await drop_streams(tp)
+        
+        # Recreate streams
+        console.print("Recreating Timeplus streams...")
         await create_streams(tp)
-        console.print("[green]✓ Timeplus streams created[/]")
+        console.print("[green]✓ Timeplus streams recreated[/]")
 
-    asyncio.run(run_setup())
-    console.print("\n[bold green]Setup complete![/]")
+    asyncio.run(run_reset())
+    console.print("\n[bold green]Reset complete![/]")
 
 
 @cli.command()

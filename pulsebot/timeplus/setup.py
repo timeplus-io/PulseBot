@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 # SQL DDL for creating Timeplus streams
 MESSAGES_STREAM_DDL = """
-CREATE STREAM IF NOT EXISTS messages (
+CREATE STREAM IF NOT EXISTS pulsebot.messages (
     id string DEFAULT uuid(),
     timestamp datetime64(3) DEFAULT now64(3),
     
@@ -36,7 +36,7 @@ SETTINGS event_time_column='timestamp';
 """
 
 LLM_LOGS_STREAM_DDL = """
-CREATE STREAM IF NOT EXISTS llm_logs (
+CREATE STREAM IF NOT EXISTS pulsebot.llm_logs (
     id string DEFAULT uuid(),
     timestamp datetime64(3) DEFAULT now64(3),
     
@@ -75,7 +75,7 @@ SETTINGS event_time_column='timestamp';
 """
 
 MEMORY_STREAM_DDL = """
-CREATE STREAM IF NOT EXISTS memory (
+CREATE STREAM IF NOT EXISTS pulsebot.memory (
     id string DEFAULT uuid(),
     timestamp datetime64(3) DEFAULT now64(3),
 
@@ -98,7 +98,7 @@ SETTINGS event_time_column='timestamp';
 """
 
 TOOL_LOGS_STREAM_DDL = """
-CREATE STREAM IF NOT EXISTS tool_logs (
+CREATE STREAM IF NOT EXISTS pulsebot.tool_logs (
     id string DEFAULT uuid(),
     timestamp datetime64(3) DEFAULT now64(3),
 
@@ -123,7 +123,7 @@ SETTINGS event_time_column='timestamp';
 """
 
 EVENTS_STREAM_DDL = """
-CREATE STREAM IF NOT EXISTS events (
+CREATE STREAM IF NOT EXISTS pulsebot.events (
     id string DEFAULT uuid(),
     timestamp datetime64(3) DEFAULT now64(3),
     
@@ -139,6 +139,21 @@ CREATE STREAM IF NOT EXISTS events (
 SETTINGS event_time_column='timestamp';
 """
 
+async def create_database(client: "TimeplusClient") -> None:
+    """Create the pulsebot database.
+    
+    Args:
+        client: Timeplus client instance
+    """
+    logger.info("Creating pulsebot database...")
+    
+    try:
+        client.execute("CREATE DATABASE IF NOT EXISTS pulsebot")
+        logger.info("Created database: pulsebot")
+    except Exception as e:
+        logger.warning(f"Database pulsebot may already exist: {e}")
+
+
 async def create_streams(client: "TimeplusClient") -> None:
     """Create all required Timeplus streams.
     
@@ -146,6 +161,9 @@ async def create_streams(client: "TimeplusClient") -> None:
         client: Timeplus client instance
     """
     logger.info("Creating Timeplus streams...")
+    
+    # First ensure the database exists
+    await create_database(client)
     
     # Create streams
     streams = [
@@ -175,7 +193,7 @@ async def drop_streams(client: "TimeplusClient") -> None:
     logger.warning("Dropping all Timeplus streams...")
 
     # Drop streams
-    streams = ["messages", "llm_logs", "tool_logs", "memory", "events"]
+    streams = ["pulsebot.messages", "pulsebot.llm_logs", "pulsebot.tool_logs", "pulsebot.memory", "pulsebot.events"]
     for stream in streams:
         try:
             client.execute(f"DROP STREAM IF EXISTS {stream}")
@@ -195,7 +213,7 @@ def verify_streams(client: "TimeplusClient") -> dict[str, bool]:
     Returns:
         Dictionary mapping stream names to existence status
     """
-    required_streams = ["messages", "llm_logs", "tool_logs", "memory", "events"]
+    required_streams = ["pulsebot.messages", "pulsebot.llm_logs", "pulsebot.tool_logs", "pulsebot.memory", "pulsebot.events"]
     results = {}
     
     for stream in required_streams:
