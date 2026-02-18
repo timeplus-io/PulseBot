@@ -10,11 +10,22 @@ services:
       - "8463:8463"   # Native TCP
     volumes:
       - proton_data:/var/lib/proton
+      - ./init-proton.sh:/docker-entrypoint-initdb.d/init-proton.sh:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8123/"]
       interval: 10s
       timeout: 5s
       retries: 5
+    # Grant privileges to default user after container starts
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        /entrypoint.sh &
+        PROTON_PID=$$!
+        sleep 10
+        /docker-entrypoint-initdb.d/init-proton.sh
+        wait $$PROTON_PID
 
   # PulseBot Agent
   pulsebot-agent:
@@ -22,7 +33,7 @@ services:
     command: pulsebot run
     environment:
       - TIMEPLUS_HOST=proton
-      - TIMEPLUS_USER=default
+      - TIMEPLUS_USER=pulsebot
       - TIMEPLUS_PASSWORD=
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -44,7 +55,7 @@ services:
       - "8000:8000"
     environment:
       - TIMEPLUS_HOST=proton
-      - TIMEPLUS_USER=default
+      - TIMEPLUS_USER=pulsebot
       - TIMEPLUS_PASSWORD=
     volumes:
       - ./config.yaml:/app/config.yaml:ro

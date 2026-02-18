@@ -215,7 +215,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
     async def send_responses():
         """Send agent responses and tool calls to WebSocket."""
         query = f"""
-            SELECT * FROM messages
+            SELECT * FROM pulsebot.messages
             WHERE session_id = '{session_id}'
               AND target = 'channel:webchat'
               AND message_type IN ('agent_response', 'tool_call')

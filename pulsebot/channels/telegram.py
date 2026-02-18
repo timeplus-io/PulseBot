@@ -202,7 +202,7 @@ class TelegramChannel(BaseChannel):
     async def _listen_for_responses(self) -> None:
         """Listen for agent responses targeting this channel."""
         query = """
-            SELECT * FROM messages 
+            SELECT * FROM pulsebot.messages 
             WHERE target = 'channel:telegram' 
               AND message_type = 'agent_response'
             SETTINGS seek_to='latest'

@@ -117,7 +117,7 @@ class Agent:
         await self._ensure_streams_exist()
 
         query = """
-        SELECT * FROM messages
+        SELECT * FROM pulsebot.messages
         WHERE target = 'agent'
         AND message_type IN ('user_input', 'tool_result', 'heartbeat', 'scheduled_task')
         SETTINGS seek_to='latest'
@@ -150,6 +150,7 @@ class Agent:
         Note: Memory stream is optional and created separately when needed.
         """
         from pulsebot.timeplus.setup import (
+            create_database,
             MESSAGES_STREAM_DDL,
             LLM_LOGS_STREAM_DDL,
             TOOL_LOGS_STREAM_DDL,
@@ -157,6 +158,9 @@ class Agent:
         )
 
         logger.info("Ensuring required streams exist...")
+        
+        # First ensure the database exists
+        await create_database(self.tp)
 
         # Core streams required for agent operation
         streams = [
