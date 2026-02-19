@@ -14,6 +14,7 @@ proton-client --user=proton --password='proton@t+' --query="CREATE USER IF NOT E
 # Grant CREATE DATABASE and all privileges on pulsebot database to pulsebot user
 proton-client --user=proton --password='proton@t+' --query="GRANT CREATE DATABASE ON *.* TO pulsebot;"
 proton-client --user=proton --password='proton@t+' --query="GRANT ALL ON pulsebot.* TO pulsebot;"
+proton-client --user=proton --password='proton@t+' --query="GRANT ALL ON default.* TO pulsebot;"
 
 echo "User created and privileges granted successfully!"
 
