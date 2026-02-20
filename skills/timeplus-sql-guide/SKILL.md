@@ -58,6 +58,8 @@ Port 8123 is the ClickHouse-compatible HTTP interface. Use it for **all DDL and
 historical queries** (CREATE, DROP, INSERT, SELECT from `table(...)`). 
 Always use username password with -u option
 
+NOTE, if the curl returns nothing, it is not an error, it means the query returns no records. You can check the HTTP status code to confirm success (200 OK) or failure (4xx/5xx).
+
 ```bash
 # Standard pattern — pipe SQL into curl
 echo "YOUR SQL HERE" | curl "http://${TIMEPLUS_HOST}:8123/" \

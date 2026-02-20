@@ -3,7 +3,7 @@
 
 # Variables
 IMAGE_NAME := pulsebot
-IMAGE_TAG ?= 0.1.0
+IMAGE_TAG ?= 0.1.1
 DOCKER_REPO := timeplus
 FULL_IMAGE_NAME := $(DOCKER_REPO)/$(IMAGE_NAME):$(IMAGE_TAG)
 ALL_IN_ONE_PROTON_NAME := $(DOCKER_REPO)/$(IMAGE_NAME)-proton:$(IMAGE_TAG)
@@ -38,7 +38,7 @@ help:
 	@echo "  clean            Remove local Docker image"
 	@echo ""
 	@echo "Variables:"
-	@echo "  IMAGE_TAG        Docker image tag (default: 0.1.0)"
+	@echo "  IMAGE_TAG        Docker image tag (default: 0.1.1)"
 	@echo "  DOCKER_REPO      Docker Hub repository (default: timeplus)"
 	@echo "  PLATFORMS        Platforms for multi-platform build (default: linux/amd64,linux/arm64)"
 	@echo "  SINGLE_PLATFORM  Platform for single platform build (default: linux/amd64)"

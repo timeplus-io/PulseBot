@@ -66,7 +66,10 @@ class AgentSkillsBridge(BaseSkill):
                         },
                         "file_path": {
                             "type": "string",
-                            "description": "Filename to read (from scripts/ or references/)",
+                            "description": (
+                                "Path of the file to read, including the directory prefix "
+                                "as listed in the skill instructions."
+                            ),
                         },
                     },
                     "required": ["skill_name", "file_path"],
@@ -108,15 +111,29 @@ class AgentSkillsBridge(BaseSkill):
         try:
             content = self._get_content(meta)
 
-            if file_path in content.scripts:
-                return ToolResult.ok(content.scripts[file_path])
-            if file_path in content.references:
-                return ToolResult.ok(content.references[file_path])
+            # file_path includes the directory prefix, e.g. "references/RANDOM_STREAMS.md"
+            if file_path.startswith("scripts/"):
+                name = file_path[len("scripts/"):]
+                if name in content.scripts:
+                    return ToolResult.ok(content.scripts[name])
+            elif file_path.startswith("references/"):
+                name = file_path[len("references/"):]
+                if name in content.references:
+                    return ToolResult.ok(content.references[name])
+            else:
+                # bare filename — check both buckets as fallback
+                if file_path in content.scripts:
+                    return ToolResult.ok(content.scripts[file_path])
+                if file_path in content.references:
+                    return ToolResult.ok(content.references[file_path])
 
-            available_files = list(content.scripts.keys()) + list(content.references.keys())
+            available = (
+                [f"scripts/{f}" for f in content.scripts]
+                + [f"references/{f}" for f in content.references]
+            )
             return ToolResult.fail(
                 f"File '{file_path}' not found in skill '{skill_name}'. "
-                f"Available files: {available_files}"
+                f"Available files: {available}"
             )
         except Exception as e:
             logger.error("Failed to read file from skill '%s': %s", skill_name, e)
@@ -136,16 +153,17 @@ class AgentSkillsBridge(BaseSkill):
         if content.references:
             parts.append("\n\n## Available References")
             for fname in content.references:
-                parts.append(f"- {fname}")
+                parts.append(f"- references/{fname}")
 
         if content.scripts:
             parts.append("\n\n## Available Scripts")
             for fname in content.scripts:
-                parts.append(f"- {fname}")
+                parts.append(f"- scripts/{fname}")
             parts.append(
-                "\nUse the read_skill_file tool to read any script or reference file. "
-                "To execute a script, first read it with read_skill_file, then run it "
-                "using the run_command tool."
+                "\nUse the read_skill_file tool to read any script or reference file, "
+                "passing the full path as shown above. "
+                "To execute a script, first read it with read_skill_file, "
+                "then run it using the run_command tool."
             )
 
         return "\n".join(parts)
