@@ -1,0 +1,66 @@
+# All-in-One Docker Image for PulseBot with Proton
+FROM d.timeplus.com/timeplus-io/proton:latest
+
+# Suppress interactive prompts for all apt-get calls in this build
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Switch to root to install dependencies
+USER root
+
+# Install Python 3.12 via deadsnakes PPA (agent-free key import for Docker builds)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gpg \
+    lsb-release \
+    ca-certificates \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF23C5A6CF475977595C89F51BA6932366A755776" \
+       | gpg --batch --no-tty --no-autostart --dearmor -o /etc/apt/keyrings/deadsnakes.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/deadsnakes.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $(lsb_release -cs) main" \
+       > /etc/apt/sources.list.d/deadsnakes.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symlinks for python and pip
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python3
+
+# Install pip for Python 3.12
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
+
+WORKDIR /app
+
+# Copy project files needed for installation
+COPY pyproject.toml README.md ./
+COPY pulsebot/ ./pulsebot/
+COPY skills/ ./skills/
+
+# Install Python dependencies (non-editable for Docker)
+RUN python3.12 -m pip install --no-cache-dir --extra-index-url https://d.timeplus.com/simple/ .
+
+# Copy config template and scripts
+COPY docker/config.yaml ./config.yaml
+COPY docker/start-all-in-one.sh /usr/local/bin/
+COPY docker/entrypoint-proton.sh /usr/local/bin/
+
+# Make scripts executable
+RUN chmod +x /usr/local/bin/start-all-in-one.sh /usr/local/bin/entrypoint-proton.sh
+
+# Change ownership of app directory to timeplus user
+RUN chown -R timeplus:timeplus /app
+
+# Switch back to timeplus user
+USER timeplus
+
+# Expose ports
+# 8123: HTTP port (batch queries)
+# 3218: Streaming port
+# 8463: Native TCP
+# 8001: PulseBot API Server
+EXPOSE 8123 3218 8463 8001
+
+# Use our custom entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint-proton.sh"]

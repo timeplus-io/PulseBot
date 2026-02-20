@@ -80,10 +80,7 @@ ollama serve
 ### Setup & Run
 
 ```bash
-# Create Timeplus streams and database tables
-pulsebot setup
-
-# Start the agent
+# Start the agent (streams are initialized automatically on first run)
 pulsebot run
 
 # Or start the API server
@@ -113,7 +110,6 @@ This starts:
 | `pulsebot run` | Start the agent loop |
 | `pulsebot serve` | Start FastAPI server |
 | `pulsebot chat` | Interactive CLI chat |
-| `pulsebot setup` | Initialize Timeplus streams |
 | `pulsebot init` | Generate config.yaml |
 | `pulsebot task list` | List scheduled tasks |
 
