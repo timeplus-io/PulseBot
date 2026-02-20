@@ -63,22 +63,10 @@
             gap: 12px;
         }
 
-        .header-logo {
-            width: 32px;
-            height: 32px;
-            background: var(--pink-primary);
-            border-radius: var(--radius);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 600;
-        }
-
-        .header-title {
-            font-size: 18px;
-            font-weight: 600;
-            line-height: 1.4;
+        .header-logo-img {
+            height: 28px;
+            width: auto;
+            display: block;
         }
 
         .header-status {
@@ -552,8 +540,7 @@
 </head>
 <body>
     <header class="header">
-        <div class="header-logo">P</div>
-        <h1 class="header-title">PulseBot</h1>
+        <img src="/static/assets/pulsebot_logo_pink.svg" alt="PulseBot" class="header-logo-img">
         <div class="header-status">
             <span class="status-dot" id="statusDot"></span>
             <span id="statusText">Connecting...</span>

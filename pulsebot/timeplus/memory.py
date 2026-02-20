@@ -90,7 +90,10 @@ class MemoryManager:
             raise ValueError(f"Embedding provider {self.embedding_provider.provider_name} is not available")
 
         try:
-            return await self.embedding_provider.embed(text)
+            result = await self.embedding_provider.embed(text)
+            if not result:
+                raise RuntimeError("Embedding provider returned empty embedding")
+            return result
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
             raise RuntimeError(f"Failed to generate embedding: {e}")
@@ -227,13 +230,18 @@ class MemoryManager:
         Returns:
             List of similar memories with hybrid similarity scores
         """
+        if not embedding:
+            logger.warning("Empty embedding provided to similarity search, skipping")
+            return []
+
         try:
             embedding_str = _format_embedding(embedding)
-            
+
             # Build WHERE clause - search across all memory types/categories for duplicates
             conditions = [
                 f"importance >= {min_importance}",
                 "is_deleted = false",
+                "length(embedding) > 0",
             ]
             
             # Only filter by type/category if specified (for more targeted deduplication)
@@ -407,12 +415,16 @@ class MemoryManager:
         """
         # Generate query embedding
         query_embedding = await self._get_embedding(query)
+        if not query_embedding:
+            logger.warning("Empty embedding returned for memory search query, skipping")
+            return []
         embedding_str = _format_embedding(query_embedding)
 
         # Build WHERE clause
         conditions = [
             f"importance >= {min_importance}",
             "is_deleted = false",
+            "length(embedding) > 0",
         ]
 
         if memory_types:
@@ -443,7 +455,11 @@ class MemoryManager:
         LIMIT {limit}
         """
 
-        results = self.client.query(sql)
+        try:
+            results = self.client.query(sql)
+        except Exception as e:
+            logger.warning(f"Memory search query failed: {e}")
+            return []
 
         result_count = len(results)
         logger.info(
