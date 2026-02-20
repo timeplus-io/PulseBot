@@ -138,7 +138,7 @@ class TaskManager:
             name="heartbeat_task",
             schedule=f"{interval_minutes}m",
             query=query,
-            target_stream="messages",
+            target_stream="pulsebot.messages",
             timeout_seconds=10,
         )
     
@@ -176,7 +176,7 @@ class TaskManager:
             name="daily_summary",
             schedule=f"CRON '{cron}'",
             query=query,
-            target_stream="messages",
+            target_stream="pulsebot.messages",
             timeout_seconds=60,
         )
     
@@ -202,7 +202,7 @@ class TaskManager:
                 SELECT 
                     sum(estimated_cost_usd) as hourly_cost,
                     count() as req_count
-                FROM table(llm_logs)
+                FROM table(pulsebot.llm_logs)
                 WHERE timestamp > now() - interval 1 hour
             )
         """
@@ -211,6 +211,6 @@ class TaskManager:
             name="cost_alert",
             schedule="1h",
             query=query,
-            target_stream="events",
+            target_stream="pulsebot.events",
             timeout_seconds=5,
         )

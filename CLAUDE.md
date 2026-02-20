@@ -13,7 +13,6 @@ PulseBot is a stream-native AI agent framework powered by Timeplus (streaming SQ
 pulsebot run              # Start agent main loop (listens to message streams)
 pulsebot serve            # Start FastAPI server on port 8000
 pulsebot chat             # Interactive CLI chat
-pulsebot setup            # Initialize Timeplus streams
 pulsebot init             # Generate default config.yaml
 pulsebot task list        # List scheduled tasks
 

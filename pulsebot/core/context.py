@@ -206,7 +206,7 @@ class ContextBuilder:
         """
         try:
             query = f"""
-            SELECT * FROM table(messages)
+            SELECT * FROM table(pulsebot.messages)
             WHERE session_id = '{session_id}'
             AND message_type IN ('user_input', 'agent_response', 'tool_call', 'tool_result')
             ORDER BY timestamp DESC

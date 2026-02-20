@@ -2,12 +2,18 @@ services:
   # Proton - Open Source Streaming Database
   # For enterprise Timeplus, replace with: timeplus/timeplusd:latest
   proton:
-    image: d.timeplus.com/timeplus-io/proton:latest
+    image: timeplus/pulsebot-proton:0.1.0
     platform: linux/amd64  # Required for ARM Macs (runs via Rosetta)
     ports:
       - "8123:8123"   # HTTP port (batch queries)
       - "3218:3218"   # Streaming port
       - "8463:8463"   # Native TCP
+      - "8001:8001"   # Agent API and Web UI
+    environment:
+      - PULSEBOT_PROVIDER=ollama
+      - PULSEBOT_MODEL=kimi-k2.5:cloud
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     volumes:
       - proton_data:/var/lib/proton
     healthcheck:
@@ -15,42 +21,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # PulseBot Agent
-  pulsebot-agent:
-    image: timeplus/pulsebot:0.1.0
-    command: pulsebot run
-    environment:
-      - TIMEPLUS_HOST=proton
-      - TIMEPLUS_USER=default
-      - TIMEPLUS_PASSWORD=
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
-    depends_on:
-      proton:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # PulseBot API Server
-  pulsebot-api:
-    image: timeplus/pulsebot:0.1.0
-    command: pulsebot serve --host 0.0.0.0 --port 8000
-    ports:
-      - "8000:8000"
-    environment:
-      - TIMEPLUS_HOST=proton
-      - TIMEPLUS_USER=default
-      - TIMEPLUS_PASSWORD=
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
-    depends_on:
-      proton:
-        condition: service_healthy
-    restart: unless-stopped
 
 volumes:
   proton_data:

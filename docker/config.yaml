@@ -1,0 +1,189 @@
+# PulseBot Configuration Template for All-in-One Docker Images
+# All settings support ${VAR_NAME} and ${VAR_NAME:-default} env var substitution.
+#
+# Key environment variables to set when running the container:
+#
+#   LLM provider (pick one):
+#     ANTHROPIC_API_KEY      - API key for Anthropic Claude
+#     OPENAI_API_KEY         - API key for OpenAI
+#     OPENROUTER_API_KEY     - API key for OpenRouter
+#     NVIDIA_API_KEY         - API key for NVIDIA NIM
+#     OLLAMA_HOST            - Ollama server URL (default: http://localhost:11434)
+#
+#   Agent:
+#     PULSEBOT_NAME          - Agent display name (default: PulseBot)
+#     PULSEBOT_PROVIDER      - LLM provider: anthropic|openai|openrouter|ollama|nvidia (default: anthropic)
+#     PULSEBOT_MODEL         - Model name for the chosen provider
+#
+#   Database (pre-configured for all-in-one; override only if needed):
+#     TIMEPLUS_HOST          - Timeplus/Proton host (default: localhost)
+#     TIMEPLUS_USER          - Database user (default: pulsebot for proton, proton for timeplus)
+#     TIMEPLUS_PASSWORD      - Database password (default: empty)
+#
+#   API server:
+#     PULSEBOT_API_PORT      - PulseBot HTTP/WebSocket port (default: 8001)
+#
+#   Channels:
+#     TELEGRAM_BOT_TOKEN     - Telegram bot token (enables Telegram channel when set)
+#
+#   Search:
+#     SEARCH_PROVIDER        - Search backend: searxng|brave (default: searxng)
+#     SEARXNG_URL            - SearXNG instance URL (default: http://localhost:8080)
+#     BRAVE_API_KEY          - Brave Search API key (required when SEARCH_PROVIDER=brave)
+#
+#   Memory / Embeddings:
+#     EMBEDDING_PROVIDER     - Embedding backend: openai|ollama (default: ollama)
+#     EMBEDDING_MODEL        - Embedding model name
+
+# ---------------------------------------------------------------------------
+# Agent
+# ---------------------------------------------------------------------------
+agent:
+  name: "${PULSEBOT_NAME:-PulseBot}"
+  provider: "${PULSEBOT_PROVIDER:-anthropic}"
+  model: "${PULSEBOT_MODEL:-claude-sonnet-4-20250514}"
+  temperature: 0.7
+  max_tokens: 4096
+
+# ---------------------------------------------------------------------------
+# Timeplus / Proton database connection
+# In all-in-one images the database runs in the same container → localhost.
+# ---------------------------------------------------------------------------
+timeplus:
+  host: "${TIMEPLUS_HOST:-localhost}"
+  port: 8463
+  username: "${TIMEPLUS_USER:-pulsebot}"
+  password: "${TIMEPLUS_PASSWORD:-}"
+
+# ---------------------------------------------------------------------------
+# Web search
+# ---------------------------------------------------------------------------
+search:
+  provider: "${SEARCH_PROVIDER:-searxng}"   # "brave" or "searxng"
+  brave_api_key: "${BRAVE_API_KEY:-}"
+  searxng_url: "${SEARXNG_URL:-http://localhost:8080}"
+
+# ---------------------------------------------------------------------------
+# LLM providers – set the API key for whichever provider you use.
+# ---------------------------------------------------------------------------
+providers:
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY:-}"
+    default_model: "claude-sonnet-4-20250514"
+
+  openai:
+    api_key: "${OPENAI_API_KEY:-}"
+    default_model: "gpt-4o"
+
+  openrouter:
+    api_key: "${OPENROUTER_API_KEY:-}"
+    default_model: "anthropic/claude-sonnet-4-20250514"
+
+  # Local LLM via Ollama – no API key needed.
+  ollama:
+    enabled: true
+    host: "${OLLAMA_HOST:-http://localhost:11434}"
+    default_model: "${PULSEBOT_MODEL:-llama3}"
+    timeout_seconds: 120
+
+  # NVIDIA NIM API
+  nvidia:
+    api_key: "${NVIDIA_API_KEY:-}"
+    default_model: "moonshotai/kimi-k2.5"
+    timeout_seconds: 120
+    enable_thinking: false
+
+# ---------------------------------------------------------------------------
+# Input channels
+# ---------------------------------------------------------------------------
+channels:
+  telegram:
+    # Automatically enabled when TELEGRAM_BOT_TOKEN is non-empty.
+    enabled: false
+    token: "${TELEGRAM_BOT_TOKEN:-}"
+    allow_from: []   # Restrict to specific Telegram user IDs; empty = allow all
+
+  webchat:
+    enabled: true
+    port: "${PULSEBOT_API_PORT:-8001}"
+
+# ---------------------------------------------------------------------------
+# Skills
+# ---------------------------------------------------------------------------
+skills:
+  builtin:
+    - web_search
+    - file_ops
+    - shell
+
+  custom: []
+
+  # Directories to scan for agentskills.io skill packages
+  skill_dirs:
+    - "/app/skills"
+
+  disabled_skills: []
+
+# ---------------------------------------------------------------------------
+# MCP servers (uncomment and fill in as needed)
+# ---------------------------------------------------------------------------
+mcp_servers: []
+# Example:
+# - name: "filesystem"
+#   transport: "stdio"
+#   command: "npx"
+#   args: ["-y", "@modelcontextprotocol/server-filesystem", "/app/data"]
+
+# ---------------------------------------------------------------------------
+# Scheduled tasks
+# ---------------------------------------------------------------------------
+scheduled_tasks:
+  heartbeat:
+    enabled: true
+    interval: "30m"
+    actions: ["calendar", "reminders"]
+
+  daily_summary:
+    enabled: false
+    cron: "0 9 * * *"
+    timezone: "UTC"
+
+# ---------------------------------------------------------------------------
+# API server
+# Port 8001 is the default to avoid conflict with Timeplus Enterprise web UI
+# which uses port 8000.
+# ---------------------------------------------------------------------------
+api:
+  host: "0.0.0.0"
+  port: "${PULSEBOT_API_PORT:-8001}"
+  cors_origins:
+    - "http://localhost:${PULSEBOT_API_PORT:-8001}"
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging:
+  level: "${LOG_LEVEL:-INFO}"
+  format: "json"   # "json" or "text"
+
+# ---------------------------------------------------------------------------
+# Memory / vector search
+# ---------------------------------------------------------------------------
+memory:
+  enabled: true
+  similarity_threshold: 0.95
+
+  # Embedding backend: "ollama" (local, no API key) or "openai" (cloud)
+  embedding_provider: "${EMBEDDING_PROVIDER:-ollama}"
+  embedding_model: "${EMBEDDING_MODEL:-mxbai-embed-large}"
+  # mxbai-embed-large (1024) | all-minilm (384) | nomic-embed-text (768)  ← Ollama
+  # text-embedding-3-small (1536) | text-embedding-3-large (3072)          ← OpenAI
+
+  # Optional overrides (fall back to providers.*.api_key / host if unset)
+  # embedding_api_key: "${OPENAI_API_KEY}"
+  # embedding_host: "${OLLAMA_HOST}"
+  # embedding_dimensions: 1024
+
+  embedding_timeout_seconds: 30

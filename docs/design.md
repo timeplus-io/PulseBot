@@ -452,7 +452,6 @@ Services:
 | `pulsebot run` | Start the agent loop |
 | `pulsebot serve` | Start FastAPI server |
 | `pulsebot chat` | Interactive CLI chat |
-| `pulsebot setup` | Initialize Timeplus streams |
 | `pulsebot init` | Generate config.yaml |
 
 ---

@@ -111,14 +111,6 @@ View agent logs for debugging:
 pulsebot run --log-level DEBUG
 ```
 
-### Verify Streams
-
-Ensure the messages stream exists:
-
-```bash
-pulsebot setup
-```
-
 ## Security Recommendations
 
 1. **Restrict Users**: Always set `allow_from` in production to prevent unauthorized access

@@ -2,19 +2,21 @@ services:
   # Proton - Open Source Streaming Database
   # For enterprise Timeplus, replace with: timeplus/timeplusd:latest
   timeplus:
-    image: timeplus/timeplus-enterprise:3.1.2-rc.2
+    image: timeplus/pulsebot-timeplus:0.1.0
     platform: linux/amd64
     ports:
       - 8000:8000
+      - 8001:8001
       - 8463:8463
       - 8123:8123
       - 3218:3218
       - 3001:3001
     environment:
       - ENABLE_DATA_PREALLOCATE=false
-      - MCP_ENABLED=true
-      - MCP_TRANSPORT=http
-      - MCP_PORT=3001
+      - PULSEBOT_PROVIDER=ollama
+      - PULSEBOT_MODEL=kimi-k2.5:cloud
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     volumes:
       - timeplus_data:/timeplus/data/
     
@@ -23,42 +25,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # PulseBot Agent
-  pulsebot-agent:
-    image: timeplus/pulsebot:0.1.0
-    command: pulsebot run
-    environment:
-      - TIMEPLUS_HOST=timeplus
-      - TIMEPLUS_USER=proton
-      - TIMEPLUS_PASSWORD=timeplus@t+
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
-    depends_on:
-      timeplus:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # PulseBot API Server
-  pulsebot-api:
-    image: timeplus/pulsebot:0.1.0
-    command: pulsebot serve --host 0.0.0.0 --port 8000
-    ports:
-      - "8001:8000"
-    environment:
-      - TIMEPLUS_HOST=timeplus
-      - TIMEPLUS_USER=proton
-      - TIMEPLUS_PASSWORD=timeplus@t+
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
-    depends_on:
-      timeplus:
-        condition: service_healthy
-    restart: unless-stopped
 
 volumes:
   timeplus_data:
