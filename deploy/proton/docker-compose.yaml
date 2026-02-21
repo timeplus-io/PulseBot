@@ -1,8 +1,14 @@
 services:
   # Proton - Open Source Streaming Database
   # For enterprise Timeplus, replace with: timeplus/timeplusd:latest
+  workspace-init:
+    image: busybox
+    command: ["sh", "-c", "chmod 777 /app/workspaces"]
+    volumes:
+      - workspace_data:/app/workspaces
+    restart: "no"
   proton:
-    image: timeplus/pulsebot-proton:0.1.0
+    image: timeplus/pulsebot-proton:0.2.0
     platform: linux/amd64  # Required for ARM Macs (runs via Rosetta)
     ports:
       - "8123:8123"   # HTTP port (batch queries)
@@ -16,6 +22,10 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     volumes:
       - proton_data:/var/lib/proton
+      - workspace_data:/app/workspaces:rw
+    depends_on:
+      workspace-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8123/"]
       interval: 10s
@@ -24,3 +34,4 @@ services:
 
 volumes:
   proton_data:
+  workspace_data:

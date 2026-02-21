@@ -1,8 +1,14 @@
 services:
+  workspace-init:
+    image: busybox
+    command: ["sh", "-c", "chmod 777 /app/workspaces"]
+    volumes:
+      - workspace_data:/app/workspaces
+    restart: "no"
   # Proton - Open Source Streaming Database
   # For enterprise Timeplus, replace with: timeplus/timeplusd:latest
   timeplus:
-    image: timeplus/pulsebot-timeplus:0.1.0
+    image: timeplus/pulsebot-timeplus:0.2.0
     platform: linux/amd64
     ports:
       - 8000:8000
@@ -19,7 +25,10 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     volumes:
       - timeplus_data:/timeplus/data/
-    
+      - workspace_data:/app/workspaces:rw
+    depends_on:
+      workspace-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "timeplusd client --user proton --password timeplus@t+ --query 'select 1'"]
       interval: 10s
@@ -28,3 +37,4 @@ services:
 
 volumes:
   timeplus_data:
+  workspace_data:

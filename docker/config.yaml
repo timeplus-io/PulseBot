@@ -115,6 +115,7 @@ skills:
     - web_search
     - file_ops
     - shell
+    - workspace
 
   custom: []
 
