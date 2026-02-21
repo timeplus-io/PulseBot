@@ -9,6 +9,8 @@ import yaml
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
+from pulsebot.workspace.config import WorkspaceConfig
+
 
 def _substitute_env_vars(value: Any) -> Any:
     """Recursively substitute environment variables in config values.
@@ -183,6 +185,7 @@ class Config(BaseSettings):
     api: APIConfig = Field(default_factory=APIConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
 
 
 def load_config(config_path: str | Path = "config.yaml") -> Config:
@@ -270,6 +273,7 @@ skills:
     - web_search
     - file_ops
     - shell
+    - workspace
 
   custom: []
 
@@ -315,6 +319,27 @@ memory:
   # embedding_host: "${OLLAMA_HOST}"           # Optional: override Ollama host
   # embedding_dimensions: 1536                 # Optional: auto-detected if not set
   embedding_timeout_seconds: 30
+  
+workspace:
+  # Root directory for all session/task workspace folders on the agent machine.
+  base_dir: ${WORKSPACE_DIR:-./workspaces}
+
+  # Port the agent's embedded WorkspaceServer listens on.
+  workspace_port: ${WORKSPACE_PORT:-8001}
+
+  # Hostname or Docker service name the API server uses to reach this agent.
+  agent_host: ${AGENT_HOST:-localhost}
+
+  # API server base URL — agent calls this to register artifacts.
+  api_server_url: ${API_SERVER_URL:-http://localhost:8000}
+
+  # Shared secret for /internal/workspace/* endpoints.
+  # Generate: python -c "import secrets; print(secrets.token_hex(32))"
+  # Must be identical on both agent and API server.
+  internal_api_key: ${WORKSPACE_INTERNAL_KEY:-}
+
+  # Seconds to wait after spawning a backend subprocess before health-checking.
+  backend_boot_timeout: 3.0
 """
     
     path = Path(path)

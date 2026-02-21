@@ -18,12 +18,22 @@ from pulsebot.config import Config, load_config
 from pulsebot.timeplus.streams import StreamReader, StreamWriter
 from pulsebot.utils import get_logger
 
+from pulsebot.workspace import (
+    ProxyRegistry,
+    workspace_proxy_router,
+    registration_router,
+    set_proxy_registry,
+    set_proxy_registry_for_router,
+)
+
 logger = get_logger(__name__)
 
 # Global state
 _config: Config | None = None
 _writer: StreamWriter | None = None
 _reader: StreamReader | None = None
+
+_proxy_registry: ProxyRegistry | None = None
 
 
 class ChatRequest(BaseModel):
@@ -47,7 +57,7 @@ class HealthResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global _config, _writer, _reader
+    global _config, _writer, _reader, _proxy_registrys
     
     # Startup
     logger.info("Starting PulseBot API server")
@@ -56,6 +66,13 @@ async def lifespan(app: FastAPI):
         from pulsebot.timeplus.client import TimeplusClient
         
         _config = load_config()
+        
+        _proxy_registry = ProxyRegistry()
+        internal_key = _config.workspace.internal_api_key
+        set_proxy_registry(_proxy_registry, internal_key)
+        set_proxy_registry_for_router(_proxy_registry)
+        logger.info("Workspace proxy registry initialized")
+        
         client = TimeplusClient.from_config(_config.timeplus)
         
         _writer = StreamWriter(client, "messages")
@@ -104,6 +121,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     
     # Include router
     app.include_router(router)
+    
+    app.include_router(workspace_proxy_router)
+    app.include_router(registration_router)
 
     # Serve web UI static files
     web_dir = Path(__file__).parent.parent / "web"
