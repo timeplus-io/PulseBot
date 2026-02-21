@@ -187,3 +187,24 @@ memory:
   # embedding_dimensions: 1024
 
   embedding_timeout_seconds: 30
+
+workspace:
+  # Root directory for all session/task workspace folders on the agent machine.
+  base_dir: ${WORKSPACE_DIR:-./workspaces}
+
+  # Port the agent's embedded WorkspaceServer listens on.
+  workspace_port: ${WORKSPACE_PORT:-8002}
+
+  # Hostname or Docker service name the API server uses to reach this agent.
+  agent_host: ${AGENT_HOST:-localhost}
+
+  # API server base URL — agent calls this to register artifacts.
+  api_server_url: ${API_SERVER_URL:-http://localhost:8001}
+
+  # Shared secret for /internal/workspace/* endpoints.
+  # Generate: python -c "import secrets; print(secrets.token_hex(32))"
+  # Must be identical on both agent and API server.
+  internal_api_key: ${WORKSPACE_INTERNAL_KEY:test-workspace-key-12345}
+
+  # Seconds to wait after spawning a backend subprocess before health-checking.
+  backend_boot_timeout: 3.0
