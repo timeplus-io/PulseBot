@@ -24,7 +24,7 @@ def run(config: str):
     """Start the PulseBot agent."""
     from pulsebot.config import load_config
     from pulsebot.core import Agent
-    from pulsebot.factory import create_provider
+    from pulsebot.factory import create_provider, create_skill_loader
     from pulsebot.skills import SkillLoader
     from pulsebot.timeplus.client import TimeplusClient
     from pulsebot.embeddings import OpenAIEmbeddingProvider, OllamaEmbeddingProvider
@@ -92,16 +92,17 @@ def run(config: str):
             similarity_threshold=cfg.memory.similarity_threshold,
         )
 
-        # Prepare skill configurations
-        skill_configs = {
-            "web_search": {
-                "provider": cfg.search.provider,
-                "api_key": cfg.search.brave_api_key,
-                "searxng_url": cfg.search.searxng_url,
-            }
-        }
+        skills = create_skill_loader(cfg)
         
-        skills = SkillLoader.from_config(cfg.skills, **skill_configs)
+        workspace_skill = skills.get_skill("workspace")
+        if workspace_skill is not None:
+            from pulsebot.workspace import run_workspace_server
+            asyncio.create_task(
+                run_workspace_server(workspace_skill.manager, cfg.workspace)
+            )
+            console.print(
+                f"[dim]WorkspaceServer started on port {cfg.workspace.workspace_port}[/]"
+            )
 
         agent = Agent(
             agent_id="main",
@@ -137,6 +138,8 @@ def run(config: str):
             if telegram_channel:
                 await telegram_channel.stop()
             await agent.stop()
+            if workspace_skill is not None:
+                await workspace_skill.manager.shutdown_all()
 
     asyncio.run(main())
 
@@ -159,6 +162,8 @@ def serve(config: str, host: str, port: int):
         f"Host: {host}:{port}\n"
         f"Docs: http://{host}:{port}/docs"
     ))
+    
+    console.print(f"[dim]Workspace agent_base_url: {cfg.workspace.agent_base_url}[/]")
 
     uvicorn.run(
         "pulsebot.api:create_app",

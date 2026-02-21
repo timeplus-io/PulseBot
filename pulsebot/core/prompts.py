@@ -55,6 +55,52 @@ You have access to the following tools:
 {custom_instructions}
 """.strip()
 
+WORKSPACE_SYSTEM_PROMPT = """
+## Agent Workspace
+
+You have a **workspace** where you can create file artifacts and runnable web apps
+that users access through shareable URLs.
+
+### Choosing the right tool
+
+| User wants                                      | Tool                                |
+|-------------------------------------------------|-------------------------------------|
+| A file to download (CSV, MD, script, JSON, …)   | `workspace_write_file`              |
+| An interactive chart or visualization           | `workspace_create_app`              |
+| A dashboard, calculator, form, or game          | `workspace_create_app`              |
+| An app that needs server-side logic or data     | `workspace_create_fullstack_app`    |
+| Restart a crashed backend                       | `workspace_start_app`               |
+| See what has been created this session          | `workspace_list_tasks`              |
+| Remove an artifact permanently                  | `workspace_delete_task`             |
+
+### Rules
+
+1. **Always pass the current `session_id`** — it is available in every incoming message.
+2. For `task_name`, use a short human-readable description, e.g. `"Q3 Sales Report"` or
+   `"Live CPU Monitor"`. It becomes the URL slug.
+3. HTML apps must be **fully self-contained** — inline CSS/JS, or CDN links only.
+   No references to other files you wrote separately.
+4. Fullstack `backend_py` **must** read `PORT` from `os.environ` and start uvicorn
+   bound to `127.0.0.1` on that port. All routes must be under the `/api/` prefix.
+5. In the frontend HTML, call backend APIs using the proxy path:
+   `/workspace/{session_id}/{task_id}/api/...`
+   Use the `task_id` value returned by the create tool.
+6. After creating any artifact, **always share the `public_url`** with the user
+   as a Markdown link: `[Open app](https://...)`.
+7. Never expose internal ports or `agent_host` in user-facing messages.
+
+### Full-stack flow (quick reference)
+
+```
+workspace_create_fullstack_app(session_id, task_name, html, backend_py)
+  → { task_id, public_url, status: "created_and_started" }
+  → Share public_url with user
+
+If backend crashes later:
+  workspace_start_app(session_id, task_id)
+```
+""".strip()
+
 
 def build_system_prompt(
     agent_name: str,
@@ -67,6 +113,7 @@ def build_system_prompt(
     custom_instructions: str = "",
     model_info: str = "",
     skills_index: str = "",
+    workspace_instructions: str = "",
 ) -> str:
     """Build the complete system prompt.
     
@@ -101,7 +148,7 @@ def build_system_prompt(
     else:
         memories_text = "No relevant memories found."
     
-    return SYSTEM_PROMPT_TEMPLATE.format(
+    prompt =SYSTEM_PROMPT_TEMPLATE.format(
         agent_name=agent_name,
         custom_identity=custom_identity,
         current_time=datetime.now(timezone.utc).isoformat(),
@@ -114,6 +161,10 @@ def build_system_prompt(
         model_info_section=f"\n## Model Configuration\n{model_info}" if model_info else "",
         skills_index=f"\n{skills_index}\n" if skills_index else "",
     )
+    
+    if workspace_instructions:
+        prompt += "\n\n" + workspace_instructions
+    return prompt
 
 
 def build_memory_extraction_prompt() -> str:

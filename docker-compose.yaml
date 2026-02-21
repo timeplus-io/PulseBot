@@ -39,9 +39,15 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OLLAMA_HOST=http://host.docker.internal:11434
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - API_SERVER_URL=http://pulsebot-api:8000
+      - WORKSPACE_INTERNAL_KEY=test-workspace-key-12345
+      - AGENT_HOST=pulsebot-agent
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./skills:/app/skills:ro
+      - ./workspaces:/app/workspaces:rw
+    ports:
+      - "8001:8001"
     depends_on:
       proton:
         condition: service_healthy
@@ -57,6 +63,8 @@ services:
       - TIMEPLUS_HOST=proton
       - TIMEPLUS_USER=pulsebot
       - TIMEPLUS_PASSWORD=
+      - AGENT_HOST=pulsebot-agent
+      - WORKSPACE_INTERNAL_KEY=test-workspace-key-12345
     volumes:
       - ./config.yaml:/app/config.yaml:ro
     depends_on:

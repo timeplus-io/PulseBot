@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pulsebot.config import Config
     from pulsebot.providers.base import LLMProvider
+    from pulsebot.skills import SkillLoader
+    
+_log = logging.getLogger(__name__)
 
 
 def create_provider(config: "Config") -> "LLMProvider":
@@ -72,3 +76,52 @@ def create_provider(config: "Config") -> "LLMProvider":
 
     else:
         raise ValueError(f"Unknown provider: {provider_name}. Supported: anthropic, openai, openrouter, ollama, nvidia")
+
+def create_skill_loader(config: "Config") -> "SkillLoader":
+    """Create a SkillLoader with all configured builtin and custom skills.
+
+    WorkspaceSkill is handled specially because its constructor takes a
+    WorkspaceConfig object, not plain string kwargs like other builtins.
+    We build the loader for everything else first, then register WorkspaceSkill
+    manually with the correct argument.
+
+    Args:
+        config: Full PulseBot Config.
+
+    Returns:
+        Fully populated SkillLoader.
+    """
+    from pulsebot.skills import SkillLoader
+
+    # Standard kwargs for non-workspace builtins
+    skill_configs: dict = {
+        "web_search": {
+            "provider": config.search.provider,
+            "api_key": config.search.brave_api_key,
+            "searxng_url": config.search.searxng_url,
+        },
+    }
+
+    # Build loader for all skills except workspace
+    non_workspace = config.skills.model_copy(
+        update={
+            "builtin": [s for s in config.skills.builtin if s != "workspace"]
+        }
+    )
+    loader = SkillLoader.from_config(non_workspace, **skill_configs)
+
+    # Register WorkspaceSkill with WorkspaceConfig object
+    if "workspace" in config.skills.builtin:
+        from pulsebot.skills.builtin.workspace import WorkspaceSkill
+
+        skill = WorkspaceSkill(config=config.workspace)
+        loader._skills["workspace"] = skill
+        for tool in skill.get_tools():
+            loader._tool_to_skill[tool.name] = "workspace"
+
+        _log.info(
+            "Workspace skill registered",
+            extra={"tools": [t.name for t in skill.get_tools()]},
+        )
+
+    return loader
