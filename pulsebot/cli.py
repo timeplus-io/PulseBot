@@ -98,7 +98,7 @@ def run(config: str):
         if workspace_skill is not None:
             from pulsebot.workspace import run_workspace_server
             asyncio.create_task(
-                run_workspace_server(workspace_skill.manager, cfg.workspace)
+                run_workspace_server(workspace_skill.manager, cfg.workspace, cfg.timeplus.username, cfg.timeplus.password, cfg.timeplus.host)
             )
             console.print(
                 f"[dim]WorkspaceServer started on port {cfg.workspace.workspace_port}[/]"
