@@ -10,7 +10,8 @@ PulseBot is a lightweight, extensible AI agent framework that uses Timeplus stre
 - **Multi-Provider LLM Support** - Anthropic Claude, OpenAI, OpenRouter, Ollama, and NVIDIA
 - **Vector Memory** - Semantic search using embeddings stored in Timeplus
 - **SQL-Native Scheduling** - Timeplus Tasks replace traditional cron jobs
-- **Extensible Skills** - Plugin-based tool system (web search, file ops, shell)
+- **Interactive Workspaces** - Build and publish dynamic artifacts and runnable web apps
+- **Extensible Skills** - Plugin-based tool system (web search, file ops, shell, workspace)
 - **Multi-Channel** - Telegram, webchat, with easy extension to Slack/WhatsApp
 - **Real-Time Observability** - All LLM calls and tool executions logged to streams
 - **Production Ready** - Docker deployment, async architecture, structured logging
@@ -58,7 +59,12 @@ providers:
   ollama:
     enabled: true
     host: "http://localhost:11434"
-    default_model: "llama3"  # or: mistral, codellama, phi3
+    default_model: "llama3"
+
+workspace:
+  base_dir: "./workspaces"
+  workspace_port: 8001
+  internal_api_key: "${WORKSPACE_INTERNAL_KEY}"
 ```
 
 ### Using Ollama (Local Testing)
@@ -117,9 +123,10 @@ This starts:
 
 | Skill | Tools | Description |
 |-------|-------|-------------|
-| `web_search` | `web_search` | Brave Search API integration |
+| `web_search` | `web_search` | Brave Search / SearXNG integration |
 | `file_ops` | `read_file`, `write_file`, `list_directory` | Sandboxed file operations |
 | `shell` | `run_command` | Shell execution with security guards |
+| `workspace` | `workspace_create_app`, `workspace_write_file`, ... | Create and publish dynamic artifacts and web apps |
 
 ### AgentSkills.io Support
 
@@ -225,7 +232,11 @@ TELEGRAM_BOT_TOKEN=...    # For Telegram channel
 ## 📚 Documentation
 
 - [Technical Design](docs/design.md) - Full architecture documentation
+- [Configuration Guide](docs/configuration.md) - All settings and environment variables
+- [Agent Workspace](docs/workspace.md) - Dynamic artifacts and full-stack apps
 - [Telegram Setup](docs/telegram.md) - Connect PulseBot to Telegram
+- [Memory System](docs/memory.md) - Vector memory and embeddings
+- [Skills System](docs/skills.md) - Plugin architecture
 
 ## 📄 License
 
