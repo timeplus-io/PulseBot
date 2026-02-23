@@ -359,6 +359,9 @@
             font-size: 12px;
             color: var(--gray-600);
             margin-left: 4px;
+            white-space: pre-wrap; /* Preserve newlines for verbose JSON args */
+            display: inline-block;
+            vertical-align: top;
         }
 
         .tool-call.success .tool-call-args {
@@ -369,10 +372,53 @@
             margin-left: auto;
             font-size: 12px;
             color: var(--gray-500);
+            white-space: nowrap;
         }
 
         .tool-call.success .tool-call-status {
             color: #38B2AC;
+        }
+
+        .tool-call-details {
+            width: 100%;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--gray-300);
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 11px;
+            color: var(--gray-700);
+            background: var(--gray-100);
+            padding: 8px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .tool-call.success .tool-call-details {
+            border-color: #A0AEC0;
+            background: rgba(255, 255, 255, 0.5);
+            color: #2D3748;
+        }
+
+        .tool-call.error .tool-call-details {
+            border-color: #FEB2B2;
+            background: rgba(255, 255, 255, 0.5);
+            color: #9B2C2C;
+        }
+
+        /* Tool header layout to support wrapping details below it */
+        .tool-call-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .tool-call {
+            flex-direction: column;
+            align-items: flex-start;
         }
 
         /* Typing Indicator */
@@ -712,12 +758,16 @@
                 const toolEl = document.createElement('div');
                 toolEl.className = 'tool-call started';
                 toolEl.innerHTML = `
-                    <svg class="tool-call-icon spinning" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    <span><span class="tool-call-name">${toolName}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</span>
-                    <span class="tool-call-status">running...</span>
+                    <div class="tool-call-header">
+                        <svg class="tool-call-icon spinning" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <div style="display: flex; flex-direction: column; flex: 1;">
+                            <div><span class="tool-call-name">${toolName}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</div>
+                        </div>
+                        <span class="tool-call-status">running...</span>
+                    </div>
                 `;
                 messagesEl.appendChild(toolEl);
                 activeToolCalls.set(toolName, toolEl);
@@ -725,18 +775,25 @@
             } else {
                 // Update the most recent tool call indicator for this tool
                 const toolEl = activeToolCalls.get(toolName);
+                const resultPreview = data.result_preview || '';
+                
                 if (toolEl) {
                     const isSuccess = data.status === 'success';
                     toolEl.className = `tool-call ${data.status}`;
                     toolEl.innerHTML = `
-                        <svg class="tool-call-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            ${isSuccess
-                                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />'
-                                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />'
-                            }
-                        </svg>
-                        <span><span class="tool-call-name">${toolName}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</span>
-                        <span class="tool-call-status">${isSuccess ? `${data.duration_ms}ms` : 'failed'}</span>
+                        <div class="tool-call-header">
+                            <svg class="tool-call-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                ${isSuccess
+                                    ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />'
+                                    : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />'
+                                }
+                            </svg>
+                            <div style="display: flex; flex-direction: column; flex: 1;">
+                                <div><span class="tool-call-name">${toolName}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</div>
+                            </div>
+                            <span class="tool-call-status">${isSuccess ? `${data.duration_ms}ms` : 'failed'}</span>
+                        </div>
+                        ${resultPreview && (resultPreview.length > 50 || resultPreview.includes('\\n')) ? `<div class="tool-call-details">${escapeHtml(resultPreview)}</div>` : ''}
                     `;
                     activeToolCalls.delete(toolName);
                 }

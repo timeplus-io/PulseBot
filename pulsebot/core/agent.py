@@ -51,6 +51,7 @@ class Agent:
         model_info: str = "",
         max_iterations: int = 10,
         timeplus_config: "TimeplusConfig | None" = None,
+        verbose_tools: bool = False,
     ):
         """Initialize the agent.
 
@@ -74,6 +75,7 @@ class Agent:
         self.agent_name = agent_name
         self.model_info = model_info
         self.max_iterations = max_iterations
+        self.verbose_tools = verbose_tools
 
         # Create a separate client for batch queries to avoid
         # "Simultaneous queries on single connection" error
@@ -452,7 +454,12 @@ class Agent:
             duration_ms: Execution duration in milliseconds
         """
         # Create a readable summary of the tool call
-        args_summary = self._format_tool_args(tool_name, arguments)
+        if getattr(self, "verbose_tools", False):
+            # Format arguments as multi-line JSON for verbose mode
+            # Skip indent if arguments is empty to avoid printing '{}' on formatted lines
+            args_summary = json.dumps(arguments, indent=2) if arguments else ""
+        else:
+            args_summary = self._format_tool_args(tool_name, arguments)
 
         content = {
             "tool_name": tool_name,
@@ -461,7 +468,10 @@ class Agent:
             "status": status,
         }
         if result is not None:
-            content["result_preview"] = truncate_string(result, 200)
+            if getattr(self, "verbose_tools", False):
+                content["result_preview"] = result
+            else:
+                content["result_preview"] = truncate_string(result, 200)
             content["duration_ms"] = duration_ms
 
         await self.messages_writer.write({
