@@ -18,10 +18,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
        | gpg --batch --no-tty --no-autostart --dearmor -o /etc/apt/keyrings/deadsnakes.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/deadsnakes.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $(lsb_release -cs) main" \
        > /etc/apt/sources.list.d/deadsnakes.list \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-venv \
+    nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Create symlinks for python and pip

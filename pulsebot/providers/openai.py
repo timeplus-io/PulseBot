@@ -105,9 +105,19 @@ class OpenAIProvider(LLMProvider):
         request = {
             "model": self.model,
             "messages": all_messages,
-            "temperature": temperature or self.default_temperature,
-            "max_tokens": max_tokens or self.default_max_tokens,
         }
+        
+        # Check if model is o1/o3 series which use max_completion_tokens instead of max_tokens
+        # and generally do not support temperature in earlier versions
+        if self.model.startswith("o1") or self.model.startswith("o3"):
+            request["max_completion_tokens"] = max_tokens or self.default_max_tokens
+            if temperature is not None and temperature != 1:
+                 # Only pass temperature to o-series if explicitly requested
+                 # Note: newer o-series support temp but default is 1
+                 request["temperature"] = temperature
+        else:
+            request["max_tokens"] = max_tokens or self.default_max_tokens
+            request["temperature"] = temperature or self.default_temperature
         
         if tools:
             request["tools"] = tools
@@ -115,6 +125,18 @@ class OpenAIProvider(LLMProvider):
         # Make request
         try:
             response = self.client.chat.completions.create(**request)
+        except openai.BadRequestError as e:
+            error_str = str(e)
+            if "max_tokens" in error_str and "max_completion_tokens" in error_str:
+                logger.info(f"Retrying with max_completion_tokens for model {self.model}")
+                if "max_tokens" in request:
+                    request["max_completion_tokens"] = request.pop("max_tokens")
+                if "temperature" in request:
+                    request.pop("temperature") # O-series models generally don't support temperature
+                response = self.client.chat.completions.create(**request)
+            else:
+                logger.error(f"OpenAI API error: {e}")
+                raise
         except openai.APIError as e:
             logger.error(f"OpenAI API error: {e}")
             raise

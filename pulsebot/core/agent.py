@@ -305,6 +305,7 @@ class Agent:
                         content=response.content or "",
                         tool_calls=[{
                             "id": tool_call.id,
+                            "type": "function",
                             "function": {
                                 "name": tool_call.name,
                                 "arguments": json.dumps(tool_call.arguments),
