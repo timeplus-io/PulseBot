@@ -40,6 +40,7 @@ class AgentConfig(BaseModel):
     provider: str = "anthropic"
     temperature: float = 0.7
     max_tokens: int = 4096
+    verbose_tools: bool = False
 
 
 class TimeplusConfig(BaseModel):
@@ -231,6 +232,7 @@ agent:
   provider: "anthropic"
   temperature: 0.7
   max_tokens: 4096
+  verbose_tools: false
 
 timeplus:
   host: "${TIMEPLUS_HOST:-localhost}"

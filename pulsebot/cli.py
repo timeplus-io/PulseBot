@@ -113,6 +113,7 @@ def run(config: str):
             agent_name=cfg.agent.name,
             model_info=f"Model: {cfg.agent.model}\nProvider: {cfg.agent.provider}",
             timeplus_config=cfg.timeplus,
+            verbose_tools=cfg.agent.verbose_tools,
         )
 
         # Start Telegram channel if enabled (needs separate client to avoid connection conflicts)
@@ -175,15 +176,19 @@ def serve(config: str, host: str, port: int):
 
 
 @cli.command()
+@click.option("--config", "-c", default="config.yaml", help="Config file path")
 @click.option("--host", default="localhost", help="API server host")
 @click.option("--port", default=8000, help="API server port")
-def chat(host: str, port: int):
+def chat(config: str, host: str, port: int):
     """Interactive chat with PulseBot via API."""
     import httpx
     import json
     import uuid
     import websockets
     from rich.markdown import Markdown
+    from pulsebot.config import load_config
+
+    cfg = load_config(config)
 
     console.print(Panel.fit(
         f"[bold green]PulseBot Interactive Chat[/]\n"
@@ -229,16 +234,26 @@ def chat(host: str, port: int):
 
                                 if status == "started":
                                     if args_summary:
-                                        console.print(f" [dim cyan]⚙[/] [bold]{tool_name}[/] [dim]{args_summary}[/]")
+                                        if "\n" in args_summary:
+                                            # Multiline args summary (e.g. verbose mode JSON)
+                                            console.print(f" [dim cyan]⚙[/] [bold]{tool_name}[/]\n[dim]{args_summary}[/]")
+                                        else:
+                                            # Single line args summary
+                                            console.print(f" [dim cyan]⚙[/] [bold]{tool_name}[/] [dim]{args_summary}[/]")
                                     else:
                                         console.print(f" [dim cyan]⚙[/] [bold]{tool_name}[/]")
                                     active_tools[tool_name] = True
                                 else:
                                     duration = data.get("duration_ms", 0)
+                                    result_preview = data.get("result_preview", "")
                                     if status == "success":
                                         console.print(f" [dim green]✓ {tool_name}[/] [dim]({duration}ms)[/]")
+                                        if result_preview and cfg.agent.verbose_tools:
+                                            console.print(f"[dim green]Result:[/] [dim]{result_preview}[/]")
                                     else:
                                         console.print(f" [dim red]✗ {tool_name} failed[/]")
+                                        if result_preview and cfg.agent.verbose_tools:
+                                            console.print(f"[dim red]Error:[/] [dim]{result_preview}[/]")
                                     active_tools.pop(tool_name, None)
 
                             elif data.get("type") == "response":
