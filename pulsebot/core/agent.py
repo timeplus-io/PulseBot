@@ -214,8 +214,9 @@ class Agent:
             memory_limit=10,
         )
 
-        # Get tool definitions
-        tools = self.executor.get_tool_definitions()
+        # Get tool definitions using the current LLM provider's format
+        raw_tools = self.skills.get_tools()
+        tools = self.llm.get_tool_definitions(raw_tools)
 
         # Agent loop: keep calling LLM until no more tool calls
         iteration = 0
@@ -301,16 +302,20 @@ class Agent:
                     )
 
                     # Add tool result to context for next iteration
+                    tool_call_dict = {
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.name,
+                            "arguments": json.dumps(tool_call.arguments),
+                        },
+                    }
+                    if tool_call.extra:
+                        tool_call_dict["function"].update(tool_call.extra)
+                        
                     context.add_assistant_message(
                         content=response.content or "",
-                        tool_calls=[{
-                            "id": tool_call.id,
-                            "type": "function",
-                            "function": {
-                                "name": tool_call.name,
-                                "arguments": json.dumps(tool_call.arguments),
-                            },
-                        }],
+                        tool_calls=[tool_call_dict],
                     )
                     context.add_tool_result(tool_call.id, result_str)
             else:

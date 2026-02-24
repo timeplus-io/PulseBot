@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -112,6 +113,10 @@
             padding-right: 8px;
         }
 
+        .error-text {
+            color: var(--error-primary) !important;
+        }
+
         .messages::-webkit-scrollbar {
             width: 6px;
         }
@@ -132,8 +137,15 @@
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .message.user {
@@ -181,7 +193,7 @@
             margin: 0;
         }
 
-        .message-content p + p {
+        .message-content p+p {
             margin-top: 8px;
         }
 
@@ -227,9 +239,17 @@
             margin-top: 0;
         }
 
-        .message-content h1 { font-size: 1.4em; }
-        .message-content h2 { font-size: 1.2em; }
-        .message-content h3 { font-size: 1.1em; }
+        .message-content h1 {
+            font-size: 1.4em;
+        }
+
+        .message-content h2 {
+            font-size: 1.2em;
+        }
+
+        .message-content h3 {
+            font-size: 1.1em;
+        }
 
         /* Markdown tables */
         .message-content table {
@@ -330,8 +350,13 @@
         }
 
         @keyframes shimmer {
-            0% { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
+            0% {
+                background-position: 200% 0;
+            }
+
+            100% {
+                background-position: -200% 0;
+            }
         }
 
         .tool-call-icon {
@@ -345,8 +370,13 @@
         }
 
         @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .tool-call-name {
@@ -359,7 +389,8 @@
             font-size: 12px;
             color: var(--gray-600);
             margin-left: 4px;
-            white-space: pre-wrap; /* Preserve newlines for verbose JSON args */
+            white-space: pre-wrap;
+            /* Preserve newlines for verbose JSON args */
             display: inline-block;
             vertical-align: top;
         }
@@ -455,8 +486,16 @@
         }
 
         @keyframes typing {
-            0%, 60%, 100% { transform: translateY(0); }
-            30% { transform: translateY(-4px); }
+
+            0%,
+            60%,
+            100% {
+                transform: translateY(0);
+            }
+
+            30% {
+                transform: translateY(-4px);
+            }
         }
 
         /* Input Area */
@@ -584,6 +623,7 @@
         }
     </style>
 </head>
+
 <body>
     <header class="header">
         <img src="/static/assets/pulsebot_logo_pink.svg" alt="PulseBot" class="header-logo-img">
@@ -598,7 +638,8 @@
             <div class="empty-state" id="emptyState">
                 <div class="empty-state-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                     </svg>
                 </div>
                 <h2>Start a conversation</h2>
@@ -616,16 +657,12 @@
         </div>
 
         <div class="input-area">
-            <textarea
-                class="input-field"
-                id="messageInput"
-                placeholder="Type a message..."
-                rows="1"
-            ></textarea>
+            <textarea class="input-field" id="messageInput" placeholder="Type a message..." rows="1"></textarea>
             <button class="send-button" id="sendButton" disabled>
                 <span>Send</span>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
             </button>
         </div>
@@ -655,7 +692,7 @@
 
         // Generate session ID
         function generateSessionId() {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
                 const r = Math.random() * 16 | 0;
                 const v = c === 'x' ? r : (r & 0x3 | 0x8);
                 return v.toString(16);
@@ -776,7 +813,7 @@
                 // Update the most recent tool call indicator for this tool
                 const toolEl = activeToolCalls.get(toolName);
                 const resultPreview = data.result_preview || '';
-                
+
                 if (toolEl) {
                     const isSuccess = data.status === 'success';
                     toolEl.className = `tool-call ${data.status}`;
@@ -784,16 +821,16 @@
                         <div class="tool-call-header">
                             <svg class="tool-call-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 ${isSuccess
-                                    ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />'
-                                    : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />'
-                                }
+                            ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />'
+                            : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />'
+                        }
                             </svg>
                             <div style="display: flex; flex-direction: column; flex: 1;">
                                 <div><span class="tool-call-name">${toolName}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</div>
                             </div>
                             <span class="tool-call-status">${isSuccess ? `${data.duration_ms}ms` : 'failed'}</span>
                         </div>
-                        ${resultPreview && (resultPreview.length > 50 || resultPreview.includes('\\n')) ? `<div class="tool-call-details">${escapeHtml(resultPreview)}</div>` : ''}
+                        ${resultPreview && (resultPreview.length > 50 || resultPreview.includes('\\n') || !isSuccess) ? `<div class="tool-call-details ${!isSuccess ? 'error-text' : ''}">${escapeHtml(resultPreview)}</div>` : ''}
                     `;
                     activeToolCalls.delete(toolName);
                 }
@@ -971,4 +1008,5 @@
         connect();
     </script>
 </body>
+
 </html>
