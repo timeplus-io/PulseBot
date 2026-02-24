@@ -40,6 +40,7 @@ class AgentConfig(BaseModel):
     provider: str = "anthropic"
     temperature: float = 0.7
     max_tokens: int = 4096
+    max_iterations: int = 15
     verbose_tools: bool = False
 
 
@@ -62,6 +63,13 @@ class ProviderConfig(BaseModel):
     """LLM provider configuration."""
     api_key: str = ""
     default_model: str = ""
+
+
+class GeminiConfig(BaseModel):
+    """Gemini API configuration."""
+    api_key: str = ""
+    default_model: str = "gemini-2.5-flash"
+    timeout_seconds: int = 120
 
 
 class OllamaConfig(BaseModel):
@@ -88,6 +96,7 @@ class ProvidersConfig(BaseModel):
     anthropic: ProviderConfig = Field(default_factory=ProviderConfig)
     openai: ProviderConfig = Field(default_factory=ProviderConfig)
     openrouter: ProviderConfig = Field(default_factory=ProviderConfig)
+    gemini: GeminiConfig = Field(default_factory=GeminiConfig)
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     nvidia: NvidiaConfig = Field(default_factory=NvidiaConfig)
 
@@ -259,6 +268,10 @@ providers:
     api_key: "${NVIDIA_API_KEY}"
     default_model: "moonshotai/kimi-k2.5"
     enable_thinking: false
+
+  gemini:
+    api_key: "${GEMINI_API_KEY}"
+    default_model: "gemini-2.5-flash"
 
 channels:
   telegram:

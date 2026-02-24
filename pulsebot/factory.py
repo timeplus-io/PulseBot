@@ -63,6 +63,15 @@ def create_provider(config: "Config") -> "LLMProvider":
             timeout_seconds=config.providers.ollama.timeout_seconds,
         )
 
+    elif provider_name == "gemini":
+        from pulsebot.providers.gemini import GeminiProvider
+        return GeminiProvider(
+            api_key=config.providers.gemini.api_key,
+            model=model,
+            default_temperature=config.agent.temperature,
+            default_max_tokens=config.agent.max_tokens,
+        )
+
     elif provider_name == "nvidia":
         from pulsebot.providers.nvidia import NvidiaProvider
         return NvidiaProvider(
@@ -75,7 +84,7 @@ def create_provider(config: "Config") -> "LLMProvider":
         )
 
     else:
-        raise ValueError(f"Unknown provider: {provider_name}. Supported: anthropic, openai, openrouter, ollama, nvidia")
+        raise ValueError(f"Unknown provider: {provider_name}. Supported: anthropic, openai, openrouter, ollama, nvidia, gemini")
 
 def create_skill_loader(config: "Config") -> "SkillLoader":
     """Create a SkillLoader with all configured builtin and custom skills.

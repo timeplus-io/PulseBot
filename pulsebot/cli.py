@@ -112,6 +112,7 @@ def run(config: str):
             memory_manager=memory,
             agent_name=cfg.agent.name,
             model_info=f"Model: {cfg.agent.model}\nProvider: {cfg.agent.provider}",
+            max_iterations=cfg.agent.max_iterations,
             timeplus_config=cfg.timeplus,
             verbose_tools=cfg.agent.verbose_tools,
         )

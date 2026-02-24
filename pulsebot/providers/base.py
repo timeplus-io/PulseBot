@@ -14,6 +14,7 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
