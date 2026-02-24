@@ -12,7 +12,7 @@ Only reachable from the API server on the internal network.
 Routes
 ------
   GET   /health
-  POST  /query                              → Proton:3218 streaming proxy
+  POST  /                              → Proton:3218 streaming proxy
   GET   /{session_id}/list
   GET   /{session_id}/{task_id}/
   GET   /{session_id}/{task_id}/index.html
@@ -23,7 +23,7 @@ Proton query proxy
 ------------------
 Frontend apps call:
 
-  const resp = await fetch('http://localhost:8001/query', {
+  const resp = await fetch('http://localhost:8001/', {
     method: 'POST',
     body: 'SELECT * FROM my_stream'
   });
@@ -101,11 +101,11 @@ def create_workspace_server(
 
     # ── Proton streaming SQL proxy ────────────────────────────────────────
     #
-    # POST /query  — accepts raw SQL in body, streams NDJSON back.
+    # POST /  — accepts raw SQL in body, streams NDJSON back.
     # Mirrors proxy.ts exactly (same path, same protocol).
     # Auth uses TIMEPLUS_USER / TIMEPLUS_PASSWORD via proton_username/password args.
 
-    @app.post("/query")
+    @app.post("/")
     async def proton_query(request: Request) -> StreamingResponse:
         """Proxy raw SQL to Proton and stream NDJSON results back."""
         body = await request.body()
@@ -116,7 +116,7 @@ def create_workspace_server(
             raise HTTPException(status_code=400, detail="Request body must be a SQL query string.")
 
         target = f"{_proton_url.rstrip('/')}/?default_format={fmt}"
-        logger.debug(f"[workspace] /query sql={sql[:80]!r} → {_proton_url}")
+        logger.debug(f"[workspace] / sql={sql[:80]!r} → {_proton_url}")
 
         async def stream() -> AsyncIterator[bytes]:
             try:
