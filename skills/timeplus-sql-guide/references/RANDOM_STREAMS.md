@@ -22,15 +22,6 @@ The `_tp_time` column is automatically set to ingestion time.
 
 ---
 
-## CRITICAL: Function Naming Convention
-
-Timeplus functions are mostly compatible with ClickHouse, but **ALL function names use `snake_case` instead of `camelCase`**.
-
-✅ Correct: `array_element()`, `to_string()`, `rand_normal()`, `random_printable_ascii()`  
-❌ Wrong: `arrayElement()`, `toString()`, `randNormal()`
-
----
-
 ## Supported Data Types
 
 | Category | Types |

@@ -117,8 +117,7 @@ FROM table(sensor_data_archive);
 ```bash
 echo "INSERT INTO sensor_data (device_id, temperature) VALUES ('dev-1', 22.0)" | \
   curl "http://${TIMEPLUS_HOST}:8123/" \
-    -H "X-ClickHouse-User: ${TIMEPLUS_USER}" \
-    -H "X-ClickHouse-Key: ${TIMEPLUS_PASSWORD}" \
+    -u "${TIMEPLUS_USER}:${TIMEPLUS_PASSWORD}" \
     --data-binary @-
 ```
 
@@ -132,6 +131,7 @@ Push JSON batch payloads directly.
 # Push a batch of rows
 curl -s -X POST "http://${TIMEPLUS_HOST}:3218/proton/v1/ingest/streams/sensor_data" \
   -H "Content-Type: application/json" \
+  -u "${TIMEPLUS_USER}:${TIMEPLUS_PASSWORD}" \
   -d '{
     "columns": ["device_id", "temperature", "humidity"],
     "data": [
