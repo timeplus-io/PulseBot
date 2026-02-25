@@ -238,6 +238,4 @@ TELEGRAM_BOT_TOKEN=...    # For Telegram channel
 - [Memory System](docs/memory.md) - Vector memory and embeddings
 - [Skills System](docs/skills.md) - Plugin architecture
 
-## 📄 License
 
-MIT License - see [LICENSE](LICENSE) for details.
