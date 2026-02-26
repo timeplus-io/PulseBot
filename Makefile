@@ -3,7 +3,7 @@
 
 # Variables
 IMAGE_NAME := pulsebot
-IMAGE_TAG ?= 0.2.1
+IMAGE_TAG ?= 0.3.0
 DOCKER_REPO := timeplus
 FULL_IMAGE_NAME := $(DOCKER_REPO)/$(IMAGE_NAME):$(IMAGE_TAG)
 ALL_IN_ONE_PROTON_NAME := $(DOCKER_REPO)/$(IMAGE_NAME)-proton:$(IMAGE_TAG)
@@ -131,3 +131,10 @@ info:
 	@echo "Registry: $(REGISTRY)"
 	@echo "Single Platform: $(SINGLE_PLATFORM)"
 	@echo "Multi Platforms: $(PLATFORMS)"
+
+# Publish to PyPI
+.PHONY: publish
+publish:
+	rm -rf dist/*
+	uvx --from build pyproject-build --installer uv
+	uvx --from twine twine upload --config-file .pypirc dist/*
