@@ -37,6 +37,7 @@ Timeplus SQL and execute it via the ClickHouse-compatible HTTP API.
 | Full SQL syntax, types, functions | `references/SQL_REFERENCE.md` |
 | Random streams (simulated data) | `references/RANDOM_STREAMS.md` |
 | Python & JavaScript UDFs | `references/UDFS.md` |
+| Python Table Functions | `references/Python_TABLE_FUNCTION.md` |
 
 ---
 
@@ -275,3 +276,5 @@ Load the relevant reference file when the user's request requires deeper knowled
 - **Data types, full function catalog, query settings, all DDL** → `references/SQL_REFERENCE.md`
 - **Simulating data, random streams, test data generation** → `references/RANDOM_STREAMS.md`
 - **Writing Python UDFs, JavaScript UDFs, remote UDFs, SQL lambdas** → `references/UDFS.md`
+- **Python Table Functions** → `references/Python_TABLE_FUNCTION.md`
+
