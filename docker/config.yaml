@@ -44,6 +44,8 @@ agent:
   model: "${PULSEBOT_MODEL:-claude-sonnet-4-20250514}"
   temperature: 0.7
   max_tokens: 4096
+  max_iterations: 15
+  verbose_tools: false
 
 # ---------------------------------------------------------------------------
 # Timeplus / Proton database connection
@@ -92,6 +94,12 @@ providers:
     default_model: "moonshotai/kimi-k2.5"
     timeout_seconds: 120
     enable_thinking: false
+
+  # Gemini API
+  gemini:
+    api_key: "${GEMINI_API_KEY:-}"
+    default_model: "gemini-2.5-flash"
+    timeout_seconds: 120
 
 # ---------------------------------------------------------------------------
 # Input channels

@@ -1,4 +1,5 @@
 workspaces/
+.pypirc
 
 # Python
 __pycache__/

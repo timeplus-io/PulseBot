@@ -25,6 +25,8 @@ General identity and behavioral settings for the AI agent.
 | `provider` | `anthropic` | The primary LLM provider (e.g., `openai`, `ollama`). |
 | `temperature` | `0.7` | Controls randomness (0.0=deterministic, 1.0=creative). |
 | `max_tokens` | `4096` | Maximum length of agent responses. |
+| `max_iterations` | `15` | Maximum number of reasoning iterations per task. |
+| `verbose_tools` | `false` | Enable detailed logging of tool execution. |
 
 ### Timeplus
 Connection settings for the Timeplus / Proton database.
@@ -39,13 +41,16 @@ Connection settings for the Timeplus / Proton database.
 ### Providers
 Configurations for specific LLM providers.
 
-- **Anthropic / OpenAI / OpenRouter / NVIDIA**:
+- **Anthropic / OpenAI / OpenRouter / NVIDIA / Gemini**:
   - `api_key`: Secret API key for the service.
   - `default_model`: Override model for this specific provider.
+  - `timeout_seconds`: Timeout limit for requests (default `120`; applicable to Gemini and NVIDIA).
+  - `enable_thinking`: Set to `true` to enable deep thinking mode (applicable to NVIDIA only).
 - **Ollama (Local LLM)**:
   - `enabled`: Set to `true` to enable local LLM support.
   - `host`: Address of the Ollama server (default `http://localhost:11434`).
   - `default_model`: Local model name (e.g., `llama3`).
+  - `timeout_seconds`: Timeout limit for requests (default `120`).
 
 ### Channels
 Settings for different user interaction interfaces.
@@ -86,6 +91,10 @@ Vector-based memory for context retention and duplicate detection.
 | `similarity_threshold`| `0.95` | Sensitivity for finding similar items (0.0 to 1.0). |
 | `embedding_provider` | `openai` | Provider for vector embeddings (`openai` or `ollama`). |
 | `embedding_model` | `text-embedding-3-small` | Model used for generating embeddings. |
+| `embedding_api_key` | `""` | Override API key for OpenAI embeddings (optional). |
+| `embedding_host` | `""` | Override host for Ollama embeddings (optional). |
+| `embedding_dimensions` | `""` | Dimension of the embeddings (auto-detected if unset). |
+| `embedding_timeout_seconds` | `30` | Timeout limit for embedding requests. |
 
 ### Workspace
 Orchestration settings for the agent-side workspaces.
@@ -94,8 +103,10 @@ Orchestration settings for the agent-side workspaces.
 | :--- | :--- | :--- |
 | `base_dir` | `./workspaces` | Directory where workspace artifacts are stored. |
 | `workspace_port` | `8001` | Port for the agent's internal workspace server. |
-| `internal_api_key` | `""` | Shared secret for agent-to-API-server registration. |
 | `agent_host` | `localhost` | Hostname the API server uses to reach the agent. |
+| `api_server_url` | `http://localhost:8000` | API server base URL for agent to register artifacts. |
+| `backend_boot_timeout`| `3.0` | Seconds to wait after spawning a backend subprocess before health-checking. |
+| `internal_api_key` | `""` | Shared secret for agent-to-API-server registration. |
 
 ### Other Sections
 - **API**: Controls the main API server (`host`, `port`, `cors_origins`).
