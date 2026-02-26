@@ -222,14 +222,12 @@ Python UDFs run in an embedded Python 3.10 interpreter. They receive
 ```bash
 echo "SYSTEM INSTALL PYTHON PACKAGE 'numpy'" | \
   curl "http://${TIMEPLUS_HOST}:8123/" \
-    -H "X-ClickHouse-User: ${TIMEPLUS_USER}" \
-    -H "X-ClickHouse-Key: ${TIMEPLUS_PASSWORD}" \
+    -u "${TIMEPLUS_USER}:${TIMEPLUS_PASSWORD}" \
     --data-binary @-
 
 echo "SYSTEM INSTALL PYTHON PACKAGE 'scikit-learn'" | \
   curl "http://${TIMEPLUS_HOST}:8123/" \
-    -H "X-ClickHouse-User: ${TIMEPLUS_USER}" \
-    -H "X-ClickHouse-Key: ${TIMEPLUS_PASSWORD}" \
+    -u "${TIMEPLUS_USER}:${TIMEPLUS_PASSWORD}" \
     --data-binary @-
 ```
 
@@ -322,8 +320,7 @@ $$;
 
 ```bash
 cat <<'EOF' | curl "http://${TIMEPLUS_HOST}:8123/" \
-  -H "X-ClickHouse-User: ${TIMEPLUS_USER}" \
-  -H "X-ClickHouse-Key: ${TIMEPLUS_PASSWORD}" \
+  -u "${TIMEPLUS_USER}:${TIMEPLUS_PASSWORD}" \
   --data-binary @-
 CREATE OR REPLACE FUNCTION add_prefix(s string)
 RETURNS string
@@ -336,49 +333,7 @@ EOF
 
 ---
 
-## 4. Remote UDF (HTTP Webhook)
-
-Remote UDFs call an external HTTP endpoint. Timeplus POSTs a JSON batch and
-expects a JSON array of results back.
-
-```sql
-CREATE REMOTE FUNCTION geo_lookup(ip string)
-RETURNS string
-URL 'https://api.ipgeo.example.com/lookup'
-AUTH_METHOD 'auth_header'
-AUTH_HEADER 'Authorization'
-AUTH_KEY 'Bearer my-api-token'
-EXECUTION_TIMEOUT 5000;    -- ms, default 10000
-```
-
-**Auth methods:** `none`, `auth_header`, `query_param`.
-
-**Request format** (Timeplus → your service):
-```json
-{ "input": [["192.168.1.1"], ["10.0.0.1"]] }
-```
-
-**Response format** (your service → Timeplus):
-```json
-{ "output": ["US", "DE"] }
-```
-
-**Create via curl:**
-```bash
-echo "CREATE REMOTE FUNCTION sentiment(text string)
-RETURNS float32
-URL 'https://your-ml-api.example.com/sentiment'
-AUTH_METHOD 'none'
-EXECUTION_TIMEOUT 3000" | \
-curl "http://${TIMEPLUS_HOST}:8123/" \
-  -H "X-ClickHouse-User: ${TIMEPLUS_USER}" \
-  -H "X-ClickHouse-Key: ${TIMEPLUS_PASSWORD}" \
-  --data-binary @-
-```
-
----
-
-## 5. SQL Lambda UDF
+## 4. SQL Lambda UDF
 
 Pure SQL expressions — no external code, no runtime overhead.
 
@@ -410,8 +365,7 @@ CREATE FUNCTION rgb_to_hex AS (r, g, b) ->
 ```bash
 echo "CREATE OR REPLACE FUNCTION c2f AS (c) -> c * 9 / 5 + 32" | \
   curl "http://${TIMEPLUS_HOST}:8123/" \
-    -H "X-ClickHouse-User: ${TIMEPLUS_USER}" \
-    -H "X-ClickHouse-Key: ${TIMEPLUS_PASSWORD}" \
+    -u "${TIMEPLUS_USER}:${TIMEPLUS_PASSWORD}" \
     --data-binary @-
 ```
 
@@ -419,23 +373,21 @@ echo "CREATE OR REPLACE FUNCTION c2f AS (c) -> c * 9 / 5 + 32" | \
 
 ## Managing UDFs
 
-```bash
-# List all functions
-echo "SHOW FUNCTIONS" | curl "http://${TIMEPLUS_HOST}:8123/" \
-  -H "X-ClickHouse-User: ${TIMEPLUS_USER}" \
-  -H "X-ClickHouse-Key: ${TIMEPLUS_PASSWORD}" \
-  --data-binary @-
+```sql
+-- List all functions
+SHOW FUNCTIONS;
 
-# Drop a function
-echo "DROP FUNCTION IF EXISTS mask_email" | curl "http://${TIMEPLUS_HOST}:8123/" \
-  -H "X-ClickHouse-User: ${TIMEPLUS_USER}" \
-  -H "X-ClickHouse-Key: ${TIMEPLUS_PASSWORD}" \
-  --data-binary @-
+-- Drop a function
+DROP FUNCTION IF EXISTS mask_email;
+
+-- Test a UDF immediately
+SELECT mask_email('gang@timeplus.com');
+```
+
 
 # Test a UDF immediately
 echo "SELECT mask_email('gang@timeplus.com')" | curl "http://${TIMEPLUS_HOST}:8123/" \
-  -H "X-ClickHouse-User: ${TIMEPLUS_USER}" \
-  -H "X-ClickHouse-Key: ${TIMEPLUS_PASSWORD}" \
+  -u "${TIMEPLUS_USER}:${TIMEPLUS_PASSWORD}" \
   --data-binary @-
 ```
 

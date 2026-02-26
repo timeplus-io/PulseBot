@@ -121,7 +121,7 @@ class GeminiProvider(LLMProvider):
                     part_kwargs = {"function_call": fc}
                     
                     if "thought_signature" in tc["function"]:
-                        part_kwargs["thought_signature"] = tc["function"]["thought_signature"]
+                        part_kwargs["thought_signature"] = base64.b64decode(tc["function"]["thought_signature"])
                         
                     parts.append(types.Part(**part_kwargs))
                     
