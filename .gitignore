@@ -1,5 +1,6 @@
 workspaces/
 .pypirc
+docs/plans/
 
 # Python
 __pycache__/
