@@ -758,6 +758,9 @@
                 isConnected = false;
                 updateStatus(false);
                 console.log('Disconnected from PulseBot');
+                // Clear any in-progress thinking timers
+                activeLlmThinking.forEach(entry => clearInterval(entry.interval));
+                activeLlmThinking.clear();
                 // Attempt to reconnect after 3 seconds
                 setTimeout(connect, 3000);
             };
