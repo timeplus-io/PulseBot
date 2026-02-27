@@ -439,6 +439,24 @@
             color: #9B2C2C;
         }
 
+        /* LLM Thinking Indicator */
+        .llm-thinking .tool-call-name {
+            color: var(--gray-600);
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        .llm-thinking.completed .tool-call-name {
+            color: var(--gray-500);
+        }
+
+        .llm-thinking.completed {
+            background: var(--gray-50);
+            border-color: var(--gray-200);
+            opacity: 0.75;
+        }
+
         /* Tool header layout to support wrapping details below it */
         .tool-call-header {
             display: flex;
@@ -730,6 +748,9 @@
                 } else if (data.type === 'tool_call') {
                     hideTyping();
                     handleToolCall(data);
+                } else if (data.type === 'llm_thinking') {
+                    hideTyping();
+                    handleLlmThinking(data);
                 }
             };
 
@@ -782,6 +803,9 @@
         // Track active tool calls by tool name (for updating status)
         const activeToolCalls = new Map();
 
+        // Track active LLM thinking calls by iteration (for updating when completed)
+        const activeLlmThinking = new Map(); // iteration → {el, timerInterval, startMs}
+
         // Handle tool call events
         function handleToolCall(data) {
             // Hide empty state
@@ -833,6 +857,66 @@
                         ${resultPreview && (resultPreview.length > 50 || resultPreview.includes('\\n') || !isSuccess) ? `<div class="tool-call-details ${!isSuccess ? 'error-text' : ''}">${escapeHtml(resultPreview)}</div>` : ''}
                     `;
                     activeToolCalls.delete(toolName);
+                }
+            }
+        }
+
+        // Handle LLM thinking events
+        function handleLlmThinking(data) {
+            // Hide empty state
+            emptyStateEl.style.display = 'none';
+
+            const iteration = data.iteration || 1;
+
+            if (data.status === 'started') {
+                const startMs = Date.now();
+
+                const thinkingEl = document.createElement('div');
+                thinkingEl.className = 'tool-call started llm-thinking';
+                thinkingEl.innerHTML = `
+                    <div class="tool-call-header">
+                        <svg class="tool-call-icon spinning" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.346.346a.5.5 0 01-.16.113l-.342.15a.5.5 0 01-.195.04H9.5a.5.5 0 01-.195-.04l-.342-.15a.5.5 0 01-.16-.113l-.346-.346z"/>
+                        </svg>
+                        <div style="display: flex; flex-direction: column; flex: 1;">
+                            <span class="tool-call-name">Thinking</span>
+                        </div>
+                        <span class="tool-call-status" id="llm-thinking-timer-${iteration}">0.0s...</span>
+                    </div>
+                `;
+
+                messagesEl.appendChild(thinkingEl);
+                scrollToBottom();
+
+                // Update timer every 100ms
+                const timerEl = thinkingEl.querySelector(`#llm-thinking-timer-${iteration}`);
+                const interval = setInterval(() => {
+                    const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
+                    timerEl.textContent = `${elapsed}s...`;
+                }, 100);
+
+                activeLlmThinking.set(iteration, { el: thinkingEl, interval, startMs });
+
+            } else {
+                // Completed - stop timer, show final duration
+                const entry = activeLlmThinking.get(iteration);
+                if (entry) {
+                    clearInterval(entry.interval);
+                    const durationS = (data.duration_ms / 1000).toFixed(1);
+
+                    entry.el.className = 'tool-call llm-thinking completed';
+                    entry.el.innerHTML = `
+                        <div class="tool-call-header">
+                            <svg class="tool-call-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.346.346a.5.5 0 01-.16.113l-.342.15a.5.5 0 01-.195.04H9.5a.5.5 0 01-.195-.04l-.342-.15a.5.5 0 01-.16-.113l-.346-.346z"/>
+                            </svg>
+                            <div style="display: flex; flex-direction: column; flex: 1;">
+                                <span class="tool-call-name">Thinking</span>
+                            </div>
+                            <span class="tool-call-status">${durationS}s</span>
+                        </div>
+                    `;
+                    activeLlmThinking.delete(iteration);
                 }
             }
         }
