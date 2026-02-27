@@ -828,7 +828,7 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
                         <div style="display: flex; flex-direction: column; flex: 1;">
-                            <div><span class="tool-call-name">${toolName}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</div>
+                            <div><span class="tool-call-name">${escapeHtml(toolName)}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</div>
                         </div>
                         <span class="tool-call-status">running...</span>
                     </div>
@@ -853,7 +853,7 @@
                         }
                             </svg>
                             <div style="display: flex; flex-direction: column; flex: 1;">
-                                <div><span class="tool-call-name">${toolName}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</div>
+                                <div><span class="tool-call-name">${escapeHtml(toolName)}</span>${argsSummary ? ` <span class="tool-call-args">${escapeHtml(argsSummary)}</span>` : ''}</div>
                             </div>
                             <span class="tool-call-status">${isSuccess ? `${data.duration_ms}ms` : 'failed'}</span>
                         </div>
@@ -930,6 +930,9 @@
         function removeToolCallIndicators() {
             // Clear the tracking map - indicators stay visible to show the process
             activeToolCalls.clear();
+            // Stop any in-progress thinking timers whose 'completed' event was missed
+            activeLlmThinking.forEach(entry => clearInterval(entry.interval));
+            activeLlmThinking.clear();
         }
 
         // Format message with markdown support
