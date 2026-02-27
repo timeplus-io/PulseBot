@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import TYPE_CHECKING, Any
 
 from pulsebot.core.context import ContextBuilder
@@ -219,14 +220,13 @@ class Agent:
         tools = self.llm.get_tool_definitions(raw_tools)
 
         # Agent loop: keep calling LLM until no more tool calls
+        source = message.get("source", "webchat")
         iteration = 0
 
         while iteration < self.max_iterations:
             iteration += 1
 
             # Call LLM
-            import time
-            source = message.get("source", "webchat")
             await self._broadcast_llm_thinking(session_id, source, iteration, "started")
             start_time = time.time()
 
@@ -261,14 +261,13 @@ class Agent:
                     # Broadcast tool call start to UI/CLI
                     await self._broadcast_tool_call(
                         session_id=session_id,
-                        source=message.get("source", "webchat"),
+                        source=source,
                         tool_name=tool_call.name,
                         arguments=tool_call.arguments,
                         status="started",
                     )
 
                     # Execute and time the tool
-                    import time
                     tool_start = time.time()
                     result = await self.executor.execute(
                         tool_name=tool_call.name,
@@ -286,7 +285,7 @@ class Agent:
                     # Broadcast tool result to UI/CLI
                     await self._broadcast_tool_call(
                         session_id=session_id,
-                        source=message.get("source", "webchat"),
+                        source=source,
                         tool_name=tool_call.name,
                         arguments=tool_call.arguments,
                         status="success" if tool_success else "error",
