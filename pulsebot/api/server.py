@@ -238,7 +238,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
             SELECT * FROM pulsebot.messages
             WHERE session_id = '{session_id}'
               AND target = 'channel:webchat'
-              AND message_type IN ('agent_response', 'tool_call')
+              AND message_type IN ('agent_response', 'tool_call', 'llm_thinking')
             SETTINGS seek_to='latest'
         """
 
@@ -273,6 +273,16 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
                             "message_id": message.get("id", ""),
                         })
                         logger.debug(f"Sent tool_call to WebSocket: {content.get('tool_name')}")
+                    elif message_type == "llm_thinking":
+                        # Send LLM thinking event
+                        await websocket.send_json({
+                            "type": "llm_thinking",
+                            "status": content.get("status", ""),
+                            "iteration": content.get("iteration", 1),
+                            "duration_ms": content.get("duration_ms", 0),
+                            "message_id": message.get("id", ""),
+                        })
+                        logger.debug(f"Sent llm_thinking to WebSocket: iteration={content.get('iteration')} status={content.get('status')}")
                     else:
                         # Send regular response
                         text = content.get("text", "")
