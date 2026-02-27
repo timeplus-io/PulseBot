@@ -902,7 +902,9 @@
                 const entry = activeLlmThinking.get(iteration);
                 if (entry) {
                     clearInterval(entry.interval);
-                    const durationS = (data.duration_ms / 1000).toFixed(1);
+                    const durationS = (data.duration_ms != null)
+                        ? (data.duration_ms / 1000).toFixed(1)
+                        : null;
 
                     entry.el.className = 'tool-call llm-thinking completed';
                     entry.el.innerHTML = `
@@ -913,7 +915,7 @@
                             <div style="display: flex; flex-direction: column; flex: 1;">
                                 <span class="tool-call-name">Thinking</span>
                             </div>
-                            <span class="tool-call-status">${durationS}s</span>
+                            <span class="tool-call-status">${durationS != null ? durationS + 's' : 'done'}</span>
                         </div>
                     `;
                     activeLlmThinking.delete(iteration);
