@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import TYPE_CHECKING, Any
 
 from pulsebot.core.context import ContextBuilder
@@ -219,13 +220,14 @@ class Agent:
         tools = self.llm.get_tool_definitions(raw_tools)
 
         # Agent loop: keep calling LLM until no more tool calls
+        source = message.get("source", "webchat")
         iteration = 0
 
         while iteration < self.max_iterations:
             iteration += 1
 
             # Call LLM
-            import time
+            await self._broadcast_llm_thinking(session_id, source, iteration, "started")
             start_time = time.time()
 
             response = await self.llm.chat(
@@ -235,6 +237,7 @@ class Agent:
             )
 
             latency_ms = (time.time() - start_time) * 1000
+            await self._broadcast_llm_thinking(session_id, source, iteration, "completed", int(latency_ms))
 
             # Log to observability stream
             await self._log_llm_call(session_id, context, response, latency_ms)
@@ -258,14 +261,13 @@ class Agent:
                     # Broadcast tool call start to UI/CLI
                     await self._broadcast_tool_call(
                         session_id=session_id,
-                        source=message.get("source", "webchat"),
+                        source=source,
                         tool_name=tool_call.name,
                         arguments=tool_call.arguments,
                         status="started",
                     )
 
                     # Execute and time the tool
-                    import time
                     tool_start = time.time()
                     result = await self.executor.execute(
                         tool_name=tool_call.name,
@@ -283,7 +285,7 @@ class Agent:
                     # Broadcast tool result to UI/CLI
                     await self._broadcast_tool_call(
                         session_id=session_id,
-                        source=message.get("source", "webchat"),
+                        source=source,
                         tool_name=tool_call.name,
                         arguments=tool_call.arguments,
                         status="success" if tool_success else "error",
@@ -492,6 +494,41 @@ class Agent:
         logger.debug(
             f"Tool call broadcast: {tool_name} ({status})",
             extra={"session_id": session_id, "tool": tool_name},
+        )
+
+    async def _broadcast_llm_thinking(
+        self,
+        session_id: str,
+        source: str,
+        iteration: int,
+        status: str,
+        duration_ms: int = 0,
+    ) -> None:
+        """Broadcast LLM thinking event to UI/CLI via messages stream.
+
+        Args:
+            session_id: Session identifier
+            source: Original message source (for routing response)
+            iteration: Agent loop iteration number (1-based)
+            status: 'started' or 'completed'
+            duration_ms: LLM call duration in milliseconds (for completed events)
+        """
+        content: dict[str, Any] = {"status": status, "iteration": iteration}
+        if duration_ms:
+            content["duration_ms"] = duration_ms
+
+        await self.messages_writer.write({
+            "source": "agent",
+            "target": f"channel:{source}",
+            "session_id": session_id,
+            "message_type": "llm_thinking",
+            "content": json.dumps(content),
+            "priority": 0,
+        })
+
+        logger.debug(
+            f"LLM thinking broadcast: iteration={iteration} ({status})",
+            extra={"session_id": session_id, "iteration": iteration},
         )
 
     def _format_tool_args(self, tool_name: str, arguments: dict[str, Any]) -> str:
