@@ -930,8 +930,24 @@
         function removeToolCallIndicators() {
             // Clear the tracking map - indicators stay visible to show the process
             activeToolCalls.clear();
-            // Stop any in-progress thinking timers whose 'completed' event was missed
-            activeLlmThinking.forEach(entry => clearInterval(entry.interval));
+            // Visually complete any in-progress thinking elements whose 'completed' event was missed
+            // (e.g. when the LLM errors out before the backend sends a 'completed' event)
+            activeLlmThinking.forEach((entry, iteration) => {
+                clearInterval(entry.interval);
+                const elapsed = ((Date.now() - entry.startMs) / 1000).toFixed(1);
+                entry.el.className = 'tool-call llm-thinking completed';
+                entry.el.innerHTML = `
+                    <div class="tool-call-header">
+                        <svg class="tool-call-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.346.346a.5.5 0 01-.16.113l-.342.15a.5.5 0 01-.195.04H9.5a.5.5 0 01-.195-.04l-.342-.15a.5.5 0 01-.16-.113l-.346-.346z"/>
+                        </svg>
+                        <div style="display: flex; flex-direction: column; flex: 1;">
+                            <span class="tool-call-name">Thinking</span>
+                        </div>
+                        <span class="tool-call-status">${elapsed}s</span>
+                    </div>
+                `;
+            });
             activeLlmThinking.clear();
         }
 

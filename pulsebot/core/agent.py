@@ -230,11 +230,24 @@ class Agent:
             await self._broadcast_llm_thinking(session_id, source, iteration, "started")
             start_time = time.time()
 
-            response = await self.llm.chat(
-                messages=context.messages,
-                tools=tools if tools else None,
-                system=context.system_prompt,
-            )
+            try:
+                response = await self.llm.chat(
+                    messages=context.messages,
+                    tools=tools if tools else None,
+                    system=context.system_prompt,
+                )
+            except Exception as e:
+                latency_ms = int((time.time() - start_time) * 1000)
+                logger.error(f"LLM call failed (iteration {iteration}): {e}", exc_info=True)
+                # Signal UI that thinking is done so the spinner clears
+                await self._broadcast_llm_thinking(session_id, source, iteration, "completed", latency_ms)
+                # Send user-visible error response and exit the loop
+                await self._send_response(
+                    session_id=session_id,
+                    source_message=message,
+                    response_text=f"Sorry, an error occurred while processing your request: {e}",
+                )
+                return
 
             latency_ms = (time.time() - start_time) * 1000
             await self._broadcast_llm_thinking(session_id, source, iteration, "completed", int(latency_ms))
