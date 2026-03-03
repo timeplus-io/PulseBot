@@ -390,3 +390,24 @@ class TestOpenClawMetadata:
         assert meta.openclaw.requires.env == []
         assert meta.openclaw.requires.bins == []
         assert meta.openclaw.always is False
+
+    def test_openclaw_null_requires_fields_default_to_empty(self, tmp_path: Path):
+        """Explicit YAML null for requires sub-keys should yield empty lists, not None."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Tests null handling.\n"
+            "metadata:\n"
+            "  openclaw:\n"
+            "    requires:\n"
+            "      env:\n"  # YAML null (no value)
+            "      bins: ~\n"  # Explicit YAML null
+            "---\n\nBody.\n"
+        )
+        meta = load_skill_metadata(tmp_path / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is not None
+        assert meta.openclaw.requires.env == []
+        assert meta.openclaw.requires.bins == []

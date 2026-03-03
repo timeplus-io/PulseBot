@@ -51,10 +51,10 @@ def _parse_openclaw_metadata(metadata: dict) -> OpenClawMetadata | None:
 
     req_raw = raw.get("requires", {}) or {}
     requires = SkillRequirements(
-        env=req_raw.get("env", []),
-        bins=req_raw.get("bins", []),
-        any_bins=req_raw.get("anyBins", req_raw.get("anyOf", [])),
-        configs=req_raw.get("config", req_raw.get("configs", [])),
+        env=req_raw.get("env") or [],
+        bins=req_raw.get("bins") or [],
+        any_bins=req_raw.get("anyBins") or req_raw.get("anyOf") or [],
+        configs=req_raw.get("config") or req_raw.get("configs") or [],
     )
     return OpenClawMetadata(
         requires=requires,
