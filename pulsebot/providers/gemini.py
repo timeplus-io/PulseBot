@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 from typing import Any
 
@@ -101,35 +100,60 @@ class GeminiProvider(LLMProvider):
             
         # Convert messages from PulseBot format ({role, content/tool_calls}) to Gemini types.Content
         contents = []
+        # Carry the latest thought_signature forward across all messages in this request.
+        # Gemini thinking models may produce multiple assistant messages with tool_calls (one
+        # per tool call), but only the first stores _thought_signature.  All subsequent
+        # function_call Parts still need it, so we propagate the last seen value.
+        latest_thought_sig: bytes | None = None
+
         for msg in messages:
             role = msg["role"]
             gemini_role = "user" if role in ("user", "system") else "model"
-            
+
             parts = []
             if "content" in msg and msg["content"]:
                 parts.append(types.Part.from_text(text=msg["content"]))
-                
+
             if role == "assistant" and "tool_calls" in msg:
-                for tc in msg["tool_calls"]:
-                    args = tc["function"]["arguments"]
+                # Prefer the per-message thought_signature; fall back to carry-forward value.
+                msg_thought_sig: bytes | None = (
+                    msg.get("tool_calls", [{}])[0].get("function", {}).get("_thought_signature")
+                )
+                if msg_thought_sig:
+                    latest_thought_sig = msg_thought_sig  # update carry-forward
+                effective_sig = msg_thought_sig or latest_thought_sig
+
+                if effective_sig:
+                    source = "" if msg_thought_sig else " (carried forward)"
+                    logger.info(
+                        f"Replaying function_call Parts with thought_signature"
+                        f" (len={len(effective_sig)}){source}"
+                    )
+                else:
+                    logger.info("No thought_signature for function_call Parts")
+
+                for tc in msg.get("tool_calls", []):
+                    func = tc.get("function", {})
+                    args = func.get("arguments", {})
                     if isinstance(args, str):
                         try:
                             args = json.loads(args)
                         except json.JSONDecodeError:
                             args = {}
-                    fc = types.FunctionCall(name=tc["function"]["name"], args=args)
-                    part_kwargs = {"function_call": fc}
-                    
-                    if "thought_signature" in tc["function"]:
-                        part_kwargs["thought_signature"] = base64.b64decode(tc["function"]["thought_signature"])
-                        
-                    parts.append(types.Part(**part_kwargs))
+
+                    fc = types.FunctionCall(name=func.get("name", "unknown_tool"), args=args)
+                    if effective_sig:
+                        parts.append(types.Part(function_call=fc, thought_signature=effective_sig))
+                    else:
+                        parts.append(types.Part(function_call=fc))
                     
             if role == "tool" and "tool_call_id" in msg:
-                # the agent doesn't pass tool name here, we have to fake it or rely on context
                 content_val = msg.get("content", "Success")
+                # tool_call_id is set to "call_{tool_name}" — extract the actual name
+                tool_call_id = msg["tool_call_id"]
+                tool_name = tool_call_id[len("call_"):] if tool_call_id.startswith("call_") else tool_call_id
                 parts.append(types.Part.from_function_response(
-                    name="tool_call",  # Gemini SDK needs a name, but OpenAI history lacks it here
+                    name=tool_name,
                     response={"result": content_val}
                 ))
                 
@@ -152,25 +176,43 @@ class GeminiProvider(LLMProvider):
         
         if response.parts:
             for part in response.parts:
-                if part.text:
+                # Skip thought parts in text content (they're model-internal reasoning)
+                if part.text and not part.thought:
                     content_text += part.text
                 if part.function_call:
                     fc = part.function_call
-                    # Create a deterministic ID since Gemini doesn't always provide one like OpenAI does
-                    call_id = f"call_{fc.name}" 
-                    
-                    extra = {}
-                    if hasattr(part, "thought_signature") and part.thought_signature:
-                        extra["thought_signature"] = base64.b64encode(part.thought_signature).decode("utf-8")
-                        
+                    # Gemini thinking models (e.g. gemini-3-pro-preview) prefix tool names
+                    # with a namespace like "default_api:" — strip it for the executor
+                    # but keep the original name in the call_id so from_function_response
+                    # sends back the matching namespaced name the model expects.
+                    fc_name = fc.name or "unknown_tool"
+                    executor_name = fc_name.split(":", 1)[-1] if ":" in fc_name else fc_name
+                    call_id = f"call_{fc_name}"
                     tool_calls.append(
                         ToolCall(
                             id=call_id,
-                            name=fc.name,
+                            name=executor_name,
                             arguments=fc.args or {},
-                            extra=extra,
                         )
                     )
+
+        # Extract and store thought_signature bytes for use in subsequent requests.
+        # Gemini thinking models return thought_signature on thought Parts; the API
+        # requires it on function_call Parts in the next turn.  Store as raw bytes
+        # to avoid base64 encoding/decoding complexity.
+        if tool_calls and response.candidates:
+            raw_content = response.candidates[0].content
+            if raw_content:
+                thought_sig: bytes | None = None
+                for part in (raw_content.parts or []):
+                    if part.thought_signature:
+                        thought_sig = part.thought_signature
+                        break
+                if thought_sig:
+                    logger.info(f"Storing thought_signature (len={len(thought_sig)}) for next turn")
+                    tool_calls[0].extra["_thought_signature"] = thought_sig
+                else:
+                    logger.info("No thought_signature in response parts (non-thinking model?)")
 
         # Map Usage
         usage = Usage(0, 0)

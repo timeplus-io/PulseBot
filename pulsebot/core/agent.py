@@ -23,6 +23,27 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _strip_internal_fields(messages: list[dict]) -> list[dict]:
+    """Return messages with internal fields (prefixed '_') removed from tool_call dicts.
+
+    Internal fields such as ``_thought_signature`` store non-JSON-serializable
+    objects (bytes) used by specific LLM providers.  They must be stripped
+    before the message list is serialised for any purpose other than direct
+    LLM chat calls.
+    """
+    result = []
+    for msg in messages:
+        if "tool_calls" in msg:
+            sanitized_tcs = []
+            for tc in msg["tool_calls"]:
+                func = {k: v for k, v in tc.get("function", {}).items() if not k.startswith("_")}
+                sanitized_tcs.append({**tc, "function": func})
+            result.append({**msg, "tool_calls": sanitized_tcs})
+        else:
+            result.append(msg)
+    return result
+
+
 class Agent:
     """
     The main agent that:
@@ -230,11 +251,24 @@ class Agent:
             await self._broadcast_llm_thinking(session_id, source, iteration, "started")
             start_time = time.time()
 
-            response = await self.llm.chat(
-                messages=context.messages,
-                tools=tools if tools else None,
-                system=context.system_prompt,
-            )
+            try:
+                response = await self.llm.chat(
+                    messages=context.messages,
+                    tools=tools if tools else None,
+                    system=context.system_prompt,
+                )
+            except Exception as e:
+                latency_ms = int((time.time() - start_time) * 1000)
+                logger.error(f"LLM call failed (iteration {iteration}): {e}", exc_info=True)
+                # Signal UI that thinking is done so the spinner clears
+                await self._broadcast_llm_thinking(session_id, source, iteration, "completed", latency_ms)
+                # Send user-visible error response and exit the loop
+                await self._send_response(
+                    session_id=session_id,
+                    source_message=message,
+                    response_text=f"Sorry, an error occurred while processing your request: {e}",
+                )
+                return
 
             latency_ms = (time.time() - start_time) * 1000
             await self._broadcast_llm_thinking(session_id, source, iteration, "completed", int(latency_ms))
@@ -629,7 +663,9 @@ class Agent:
         extraction_prompt = build_memory_extraction_prompt()
 
         # Log the conversation being analyzed
-        conversation_text = json.dumps(recent_messages, indent=2)
+        # Strip internal fields (prefixed with _) from tool_call dicts before serializing —
+        # they may contain non-JSON-serializable objects like bytes (e.g. _thought_signature).
+        conversation_text = json.dumps(_strip_internal_fields(recent_messages), indent=2)
         logger.debug(
             f"Analyzing conversation for memory extraction",
             extra={
