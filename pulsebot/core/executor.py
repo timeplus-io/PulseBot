@@ -60,6 +60,21 @@ class ToolExecutor:
         )
         
         try:
+            if not tool_name:
+                inferred_name = self._infer_tool_from_args(arguments)
+                if inferred_name:
+                    logger.warning(
+                        "Inferred empty tool name from arguments",
+                        extra={"inferred_tool": inferred_name, "arguments": arguments}
+                    )
+                    tool_name = inferred_name
+                else:
+                    return {
+                        "success": False,
+                        "output": None,
+                        "error": "Invalid tool call: tool name is empty and could not be inferred.",
+                    }
+                
             # Find the skill that provides this tool
             skill = self.skills.get_skill_for_tool(tool_name)
             
@@ -137,6 +152,38 @@ class ToolExecutor:
             List of tool definitions in OpenAI format
         """
         return self.skills.get_tool_definitions()
+    
+    def _infer_tool_from_args(self, arguments: dict[str, Any]) -> str | None:
+        """Attempt to infer the missing tool name based on provided argument keys.
+        
+        Matches argument keys against tool schemas. Returns tool name if exactly one matches.
+        """
+        if not arguments:
+            return None
+            
+        arg_keys = set(arguments.keys())
+        definitions = self.get_tool_definitions()
+        
+        possible_tools = []
+        for d in definitions:
+            if d.get("type") == "function":
+                func = d.get("function", {})
+                name = func.get("name")
+                params = func.get("parameters", {})
+                
+                required_keys = set(params.get("required", []))
+                allowed_keys = set(params.get("properties", {}).keys())
+                
+                # Check if this tool is a valid match
+                # 1. All provided arguments must be known parameters for this tool
+                # 2. All required parameters must be present in the provided arguments
+                if arg_keys.issubset(allowed_keys) and required_keys.issubset(arg_keys):
+                    possible_tools.append(name)
+                    
+        if len(possible_tools) == 1:
+            return possible_tools[0]
+            
+        return None
     
     @property
     def execution_count(self) -> int:

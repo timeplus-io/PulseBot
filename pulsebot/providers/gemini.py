@@ -177,9 +177,22 @@ class GeminiProvider(LLMProvider):
 
         # Store the complete raw Content for any tool-call response so that thought parts
         # (which carry thought_signature) are preserved and replayed in subsequent requests.
+        # Critically: the API returns thought_signature on the thought Part but requires it
+        # on the function_call Part in subsequent turns — propagate it before storing.
         if tool_calls and response.candidates:
             raw_content = response.candidates[0].content
-            tool_calls[0].extra["_gemini_content"] = raw_content.model_dump(mode="json")
+            if raw_content:
+                raw_dict = raw_content.model_dump(mode="json")
+                parts_data = raw_dict.get("parts") or []
+                thought_sig_val = next(
+                    (p.get("thought_signature") for p in parts_data if p.get("thought_signature")),
+                    None,
+                )
+                if thought_sig_val:
+                    for p in parts_data:
+                        if p.get("function_call") and not p.get("thought_signature"):
+                            p["thought_signature"] = thought_sig_val
+                tool_calls[0].extra["_gemini_content"] = raw_dict
 
         # Map Usage
         usage = Usage(0, 0)
