@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 from typing import Any
 
@@ -110,26 +109,16 @@ class GeminiProvider(LLMProvider):
                 parts.append(types.Part.from_text(text=msg["content"]))
                 
             if role == "assistant" and "tool_calls" in msg:
-                # If we saved the raw Gemini Content from the original response, replay it
-                # directly to preserve thought parts and their thought_signatures.
-                raw_content_dict = msg.get("tool_calls", [{}])[0].get("function", {}).get("_gemini_content")
-                if raw_content_dict:
-                    try:
-                        contents.append(types.Content.model_validate(raw_content_dict))
-                        continue
-                    except Exception as e:
-                        logger.error(f"Failed to replay raw Gemini content: {e}, falling back to reconstruction")
-
-                # Fallback: reconstruct function_call Parts manually.
-                # If raw_content_dict exists, extract thought_signature (stored as base64)
-                # and attach it to each Part — Gemini thinking models require it.
-                thought_sig_b64: str | None = None
-                if raw_content_dict:
-                    for p in raw_content_dict.get("parts") or []:
-                        val = p.get("thought_signature")
-                        if val:
-                            thought_sig_b64 = val
-                            break
+                # Retrieve the thought_signature bytes stored from the previous LLM response.
+                # Gemini thinking models require thought_signature on function_call Parts
+                # in subsequent turns — store as raw bytes so no encoding/decoding is needed.
+                thought_sig: bytes | None = (
+                    msg.get("tool_calls", [{}])[0].get("function", {}).get("_thought_signature")
+                )
+                if thought_sig:
+                    logger.info(f"Replaying function_call Parts with thought_signature (len={len(thought_sig)})")
+                else:
+                    logger.info("No thought_signature stored — sending function_call Parts without it")
 
                 for tc in msg.get("tool_calls", []):
                     func = tc.get("function", {})
@@ -141,14 +130,8 @@ class GeminiProvider(LLMProvider):
                             args = {}
 
                     fc = types.FunctionCall(name=func.get("name", "unknown_tool"), args=args)
-                    if thought_sig_b64:
-                        try:
-                            parts.append(types.Part(
-                                function_call=fc,
-                                thought_signature=base64.b64decode(thought_sig_b64),
-                            ))
-                        except Exception:
-                            parts.append(types.Part(function_call=fc))
+                    if thought_sig:
+                        parts.append(types.Part(function_call=fc, thought_signature=thought_sig))
                     else:
                         parts.append(types.Part(function_call=fc))
                     
@@ -201,24 +184,23 @@ class GeminiProvider(LLMProvider):
                         )
                     )
 
-        # Store the complete raw Content for any tool-call response so that thought parts
-        # (which carry thought_signature) are preserved and replayed in subsequent requests.
-        # Critically: the API returns thought_signature on the thought Part but requires it
-        # on the function_call Part in subsequent turns — propagate it before storing.
+        # Extract and store thought_signature bytes for use in subsequent requests.
+        # Gemini thinking models return thought_signature on thought Parts; the API
+        # requires it on function_call Parts in the next turn.  Store as raw bytes
+        # to avoid base64 encoding/decoding complexity.
         if tool_calls and response.candidates:
             raw_content = response.candidates[0].content
             if raw_content:
-                raw_dict = raw_content.model_dump(mode="json")
-                parts_data = raw_dict.get("parts") or []
-                thought_sig_val = next(
-                    (p.get("thought_signature") for p in parts_data if p.get("thought_signature")),
-                    None,
-                )
-                if thought_sig_val:
-                    for p in parts_data:
-                        if p.get("function_call") and not p.get("thought_signature"):
-                            p["thought_signature"] = thought_sig_val
-                tool_calls[0].extra["_gemini_content"] = raw_dict
+                thought_sig: bytes | None = None
+                for part in (raw_content.parts or []):
+                    if part.thought_signature:
+                        thought_sig = part.thought_signature
+                        break
+                if thought_sig:
+                    logger.info(f"Storing thought_signature (len={len(thought_sig)}) for next turn")
+                    tool_calls[0].extra["_thought_signature"] = thought_sig
+                else:
+                    logger.info("No thought_signature in response parts (non-thinking model?)")
 
         # Map Usage
         usage = Usage(0, 0)
