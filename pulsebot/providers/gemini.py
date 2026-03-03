@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 from typing import Any
 
@@ -110,26 +109,35 @@ class GeminiProvider(LLMProvider):
                 parts.append(types.Part.from_text(text=msg["content"]))
                 
             if role == "assistant" and "tool_calls" in msg:
-                for tc in msg["tool_calls"]:
-                    args = tc["function"]["arguments"]
+                # If we saved the raw Gemini Content from the original response, replay it
+                # directly to preserve thought parts and their thought_signatures.
+                raw_content_dict = msg.get("tool_calls", [{}])[0].get("function", {}).get("_gemini_content")
+                if raw_content_dict:
+                    try:
+                        contents.append(types.Content.model_validate(raw_content_dict))
+                        continue
+                    except Exception as e:
+                        logger.warning(f"Failed to replay raw Gemini content: {e}, falling back to reconstruction")
+
+                for tc in msg.get("tool_calls", []):
+                    func = tc.get("function", {})
+                    args = func.get("arguments", {})
                     if isinstance(args, str):
                         try:
                             args = json.loads(args)
                         except json.JSONDecodeError:
                             args = {}
-                    fc = types.FunctionCall(name=tc["function"]["name"], args=args)
-                    part_kwargs = {"function_call": fc}
-                    
-                    if "thought_signature" in tc["function"]:
-                        part_kwargs["thought_signature"] = base64.b64decode(tc["function"]["thought_signature"])
-                        
-                    parts.append(types.Part(**part_kwargs))
+
+                    fc = types.FunctionCall(name=func.get("name", "unknown_tool"), args=args)
+                    parts.append(types.Part(function_call=fc))
                     
             if role == "tool" and "tool_call_id" in msg:
-                # the agent doesn't pass tool name here, we have to fake it or rely on context
                 content_val = msg.get("content", "Success")
+                # tool_call_id is set to "call_{tool_name}" — extract the actual name
+                tool_call_id = msg["tool_call_id"]
+                tool_name = tool_call_id[len("call_"):] if tool_call_id.startswith("call_") else tool_call_id
                 parts.append(types.Part.from_function_response(
-                    name="tool_call",  # Gemini SDK needs a name, but OpenAI history lacks it here
+                    name=tool_name,
                     response={"result": content_val}
                 ))
                 
@@ -152,25 +160,26 @@ class GeminiProvider(LLMProvider):
         
         if response.parts:
             for part in response.parts:
-                if part.text:
+                # Skip thought parts in text content (they're model-internal reasoning)
+                if part.text and not part.thought:
                     content_text += part.text
                 if part.function_call:
                     fc = part.function_call
                     # Create a deterministic ID since Gemini doesn't always provide one like OpenAI does
-                    call_id = f"call_{fc.name}" 
-                    
-                    extra = {}
-                    if hasattr(part, "thought_signature") and part.thought_signature:
-                        extra["thought_signature"] = base64.b64encode(part.thought_signature).decode("utf-8")
-                        
+                    call_id = f"call_{fc.name}"
                     tool_calls.append(
                         ToolCall(
                             id=call_id,
                             name=fc.name,
                             arguments=fc.args or {},
-                            extra=extra,
                         )
                     )
+
+        # Store the complete raw Content for any tool-call response so that thought parts
+        # (which carry thought_signature) are preserved and replayed in subsequent requests.
+        if tool_calls and response.candidates:
+            raw_content = response.candidates[0].content
+            tool_calls[0].extra["_gemini_content"] = raw_content.model_dump(mode="json")
 
         # Map Usage
         usage = Usage(0, 0)
