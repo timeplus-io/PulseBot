@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
@@ -117,7 +118,18 @@ class GeminiProvider(LLMProvider):
                         contents.append(types.Content.model_validate(raw_content_dict))
                         continue
                     except Exception as e:
-                        logger.warning(f"Failed to replay raw Gemini content: {e}, falling back to reconstruction")
+                        logger.error(f"Failed to replay raw Gemini content: {e}, falling back to reconstruction")
+
+                # Fallback: reconstruct function_call Parts manually.
+                # If raw_content_dict exists, extract thought_signature (stored as base64)
+                # and attach it to each Part — Gemini thinking models require it.
+                thought_sig_b64: str | None = None
+                if raw_content_dict:
+                    for p in raw_content_dict.get("parts") or []:
+                        val = p.get("thought_signature")
+                        if val:
+                            thought_sig_b64 = val
+                            break
 
                 for tc in msg.get("tool_calls", []):
                     func = tc.get("function", {})
@@ -129,7 +141,16 @@ class GeminiProvider(LLMProvider):
                             args = {}
 
                     fc = types.FunctionCall(name=func.get("name", "unknown_tool"), args=args)
-                    parts.append(types.Part(function_call=fc))
+                    if thought_sig_b64:
+                        try:
+                            parts.append(types.Part(
+                                function_call=fc,
+                                thought_signature=base64.b64decode(thought_sig_b64),
+                            ))
+                        except Exception:
+                            parts.append(types.Part(function_call=fc))
+                    else:
+                        parts.append(types.Part(function_call=fc))
                     
             if role == "tool" and "tool_call_id" in msg:
                 content_val = msg.get("content", "Success")
