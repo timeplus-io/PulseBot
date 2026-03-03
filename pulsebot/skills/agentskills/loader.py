@@ -8,7 +8,13 @@ from pathlib import Path
 
 import yaml
 
-from pulsebot.skills.agentskills.models import SkillContent, SkillMetadata, SkillSource
+from pulsebot.skills.agentskills.models import (
+    OpenClawMetadata,
+    SkillContent,
+    SkillMetadata,
+    SkillRequirements,
+    SkillSource,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +25,46 @@ FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)", re.DOTALL)
 NAME_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 
 # Valid frontmatter fields per agentskills.io spec
-VALID_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
+VALID_FIELDS = {
+    "name", "description", "license", "compatibility", "metadata", "allowed-tools",
+    # OpenClaw top-level extensions
+    "version", "homepage", "user-invocable", "disable-model-invocation",
+    "command-dispatch", "command-tool", "command-arg-mode",
+}
+
+OPENCLAW_METADATA_ALIASES = ("openclaw", "clawdbot", "clawdis", "moltbot")
+
+
+def _parse_openclaw_metadata(metadata: dict) -> OpenClawMetadata | None:
+    """Extract OpenClaw metadata from any known alias key in the metadata block."""
+    if not isinstance(metadata, dict):
+        return None
+    raw = None
+    for alias in OPENCLAW_METADATA_ALIASES:
+        if alias in metadata:
+            raw = metadata[alias]
+            break
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        return None
+
+    req_raw = raw.get("requires", {}) or {}
+    requires = SkillRequirements(
+        env=req_raw.get("env", []),
+        bins=req_raw.get("bins", []),
+        any_bins=req_raw.get("anyBins", req_raw.get("anyOf", [])),
+        configs=req_raw.get("config", req_raw.get("configs", [])),
+    )
+    return OpenClawMetadata(
+        requires=requires,
+        primary_env=raw.get("primaryEnv"),
+        always=raw.get("always", False),
+        emoji=raw.get("emoji"),
+        homepage=raw.get("homepage"),
+        os=raw.get("os", []),
+        skill_key=raw.get("skillKey"),
+    )
 
 
 def parse_frontmatter(skill_md_path: Path) -> tuple[dict, str]:
@@ -71,6 +116,9 @@ def load_skill_metadata(skill_dir: Path) -> SkillMetadata | None:
             logger.warning("Skill '%s' has validation errors: %s", skill_dir.name, errors)
             return None
 
+        raw_metadata = fm.get("metadata", {}) or {}
+        openclaw = _parse_openclaw_metadata(raw_metadata)
+
         return SkillMetadata(
             name=fm["name"],
             description=fm["description"],
@@ -78,8 +126,10 @@ def load_skill_metadata(skill_dir: Path) -> SkillMetadata | None:
             path=skill_dir,
             license=fm.get("license"),
             compatibility=fm.get("compatibility"),
-            metadata=fm.get("metadata", {}),
+            metadata=raw_metadata,
             allowed_tools=fm.get("allowed-tools"),
+            version=fm.get("version"),
+            openclaw=openclaw,
         )
     except Exception as e:
         logger.warning("Failed to load skill metadata from %s: %s", skill_dir, e)

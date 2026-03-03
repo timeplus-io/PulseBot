@@ -286,3 +286,107 @@ class TestSkillLoaderIntegration:
         assert "my-skill" not in loader.external_skills
         # Bridge should not be loaded since no external skills found
         assert "agentskills_bridge" not in loader.loaded_skills
+
+
+@pytest.fixture
+def openclaw_skill_dir(tmp_path: Path) -> Path:
+    """Create a skill with OpenClaw metadata."""
+    skill = tmp_path / "my-skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"
+        "name: my-skill\n"
+        "description: A test skill with OpenClaw metadata.\n"
+        "version: '1.2.3'\n"
+        "metadata:\n"
+        "  openclaw:\n"
+        "    requires:\n"
+        "      env:\n"
+        "        - MY_API_KEY\n"
+        "      bins:\n"
+        "        - curl\n"
+        "      anyBins:\n"
+        "        - jq\n"
+        "        - python3\n"
+        "    primaryEnv: MY_API_KEY\n"
+        "    always: false\n"
+        "    emoji: '🔧'\n"
+        "    os:\n"
+        "      - darwin\n"
+        "      - linux\n"
+        "---\n\n"
+        "# My Skill\n\nInstructions here.\n"
+    )
+    return tmp_path
+
+
+class TestOpenClawMetadata:
+    def test_load_openclaw_metadata(self, openclaw_skill_dir: Path):
+        meta = load_skill_metadata(openclaw_skill_dir / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is not None
+        assert meta.openclaw.requires.env == ["MY_API_KEY"]
+        assert meta.openclaw.requires.bins == ["curl"]
+        assert meta.openclaw.requires.any_bins == ["jq", "python3"]
+        assert meta.openclaw.primary_env == "MY_API_KEY"
+        assert meta.openclaw.always is False
+        assert meta.openclaw.emoji == "🔧"
+        assert meta.openclaw.os == ["darwin", "linux"]
+
+    def test_plain_skill_has_no_openclaw(self, skill_dir: Path):
+        """Backward compat: plain agentskills.io skill has openclaw=None."""
+        meta = load_skill_metadata(skill_dir / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is None
+
+    def test_openclaw_alias_clawdbot(self, tmp_path: Path):
+        """metadata.clawdbot is an alias for metadata.openclaw."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Uses clawdbot alias.\n"
+            "metadata:\n"
+            "  clawdbot:\n"
+            "    always: true\n"
+            "---\n\nBody.\n"
+        )
+        meta = load_skill_metadata(tmp_path / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is not None
+        assert meta.openclaw.always is True
+
+    def test_version_field_accepted(self, tmp_path: Path):
+        """OpenClaw adds 'version' as a top-level frontmatter field."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Has version.\n"
+            "version: '2.0.0'\n"
+            "---\n\nBody.\n"
+        )
+        meta = load_skill_metadata(tmp_path / "my-skill")
+        assert meta is not None  # must not fail validation
+        assert meta.version == "2.0.0"
+
+    def test_openclaw_optional_fields_default(self, tmp_path: Path):
+        """All OpenClaw fields are optional; empty block works fine."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Empty openclaw block.\n"
+            "metadata:\n"
+            "  openclaw: {}\n"
+            "---\n\nBody.\n"
+        )
+        meta = load_skill_metadata(tmp_path / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is not None
+        assert meta.openclaw.requires.env == []
+        assert meta.openclaw.requires.bins == []
+        assert meta.openclaw.always is False
