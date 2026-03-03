@@ -165,12 +165,17 @@ class GeminiProvider(LLMProvider):
                     content_text += part.text
                 if part.function_call:
                     fc = part.function_call
-                    # Create a deterministic ID since Gemini doesn't always provide one like OpenAI does
-                    call_id = f"call_{fc.name}"
+                    # Gemini thinking models (e.g. gemini-3-pro-preview) prefix tool names
+                    # with a namespace like "default_api:" — strip it for the executor
+                    # but keep the original name in the call_id so from_function_response
+                    # sends back the matching namespaced name the model expects.
+                    fc_name = fc.name or "unknown_tool"
+                    executor_name = fc_name.split(":", 1)[-1] if ":" in fc_name else fc_name
+                    call_id = f"call_{fc_name}"
                     tool_calls.append(
                         ToolCall(
                             id=call_id,
-                            name=fc.name,
+                            name=executor_name,
                             arguments=fc.args or {},
                         )
                     )
