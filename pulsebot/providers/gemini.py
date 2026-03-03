@@ -100,25 +100,37 @@ class GeminiProvider(LLMProvider):
             
         # Convert messages from PulseBot format ({role, content/tool_calls}) to Gemini types.Content
         contents = []
+        # Carry the latest thought_signature forward across all messages in this request.
+        # Gemini thinking models may produce multiple assistant messages with tool_calls (one
+        # per tool call), but only the first stores _thought_signature.  All subsequent
+        # function_call Parts still need it, so we propagate the last seen value.
+        latest_thought_sig: bytes | None = None
+
         for msg in messages:
             role = msg["role"]
             gemini_role = "user" if role in ("user", "system") else "model"
-            
+
             parts = []
             if "content" in msg and msg["content"]:
                 parts.append(types.Part.from_text(text=msg["content"]))
-                
+
             if role == "assistant" and "tool_calls" in msg:
-                # Retrieve the thought_signature bytes stored from the previous LLM response.
-                # Gemini thinking models require thought_signature on function_call Parts
-                # in subsequent turns — store as raw bytes so no encoding/decoding is needed.
-                thought_sig: bytes | None = (
+                # Prefer the per-message thought_signature; fall back to carry-forward value.
+                msg_thought_sig: bytes | None = (
                     msg.get("tool_calls", [{}])[0].get("function", {}).get("_thought_signature")
                 )
-                if thought_sig:
-                    logger.info(f"Replaying function_call Parts with thought_signature (len={len(thought_sig)})")
+                if msg_thought_sig:
+                    latest_thought_sig = msg_thought_sig  # update carry-forward
+                effective_sig = msg_thought_sig or latest_thought_sig
+
+                if effective_sig:
+                    source = "" if msg_thought_sig else " (carried forward)"
+                    logger.info(
+                        f"Replaying function_call Parts with thought_signature"
+                        f" (len={len(effective_sig)}){source}"
+                    )
                 else:
-                    logger.info("No thought_signature stored — sending function_call Parts without it")
+                    logger.info("No thought_signature for function_call Parts")
 
                 for tc in msg.get("tool_calls", []):
                     func = tc.get("function", {})
@@ -130,8 +142,8 @@ class GeminiProvider(LLMProvider):
                             args = {}
 
                     fc = types.FunctionCall(name=func.get("name", "unknown_tool"), args=args)
-                    if thought_sig:
-                        parts.append(types.Part(function_call=fc, thought_signature=thought_sig))
+                    if effective_sig:
+                        parts.append(types.Part(function_call=fc, thought_signature=effective_sig))
                     else:
                         parts.append(types.Part(function_call=fc))
                     
