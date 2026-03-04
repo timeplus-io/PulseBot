@@ -45,6 +45,9 @@ class SkillLoader:
         self._skills: dict[str, BaseSkill] = {}
         self._tool_to_skill: dict[str, str] = {}
         self._external_skills: dict[str, SkillMetadata] = {}
+        # Stored for hot-reload
+        self._skill_dirs: list[str] = []
+        self._disabled_skills: list[str] = []
 
     @classmethod
     def from_config(cls, config: "SkillsConfig", **skill_configs: dict[str, Any]) -> "SkillLoader":
@@ -76,6 +79,8 @@ class SkillLoader:
 
         # Discover external agentskills.io skills
         if config.skill_dirs:
+            loader._skill_dirs = list(config.skill_dirs)
+            loader._disabled_skills = list(config.disabled_skills or [])
             loader._discover_external_skills(
                 skill_dirs=config.skill_dirs,
                 disabled=config.disabled_skills,
@@ -98,9 +103,12 @@ class SkillLoader:
         discovered = discover_skills(skill_dirs)
         checker = RequirementChecker()
 
+        new_skills: list[str] = []
         for meta in discovered:
             if meta.name in disabled_set:
                 continue
+            if meta.name in self._external_skills:
+                continue  # Already loaded
             satisfied, reason = checker.check(meta)
             if not satisfied:
                 logger.info(
@@ -109,6 +117,7 @@ class SkillLoader:
                 )
                 continue
             self._external_skills[meta.name] = meta
+            new_skills.append(meta.name)
 
         if self._external_skills:
             from pulsebot.skills.builtin.agentskills_bridge import AgentSkillsBridge
@@ -117,11 +126,25 @@ class SkillLoader:
             for tool in bridge.get_tools():
                 self._tool_to_skill[tool.name] = "agentskills_bridge"
 
+        if new_skills:
             logger.info(
-                f"Discovered {len(self._external_skills)} external skill(s): "
-                f"{list(self._external_skills.keys())}"
+                f"Loaded {len(new_skills)} new external skill(s): {new_skills}"
             )
     
+    def reload_external_skills(self) -> bool:
+        """Re-scan skill directories and register any newly installed skills.
+
+        Only picks up skills added since last load — never removes existing ones.
+
+        Returns:
+            True if at least one new skill was registered.
+        """
+        if not self._skill_dirs:
+            return False
+        before = set(self._external_skills.keys())
+        self._discover_external_skills(self._skill_dirs, self._disabled_skills)
+        return set(self._external_skills.keys()) != before
+
     def load_builtin(self, name: str, **config: Any) -> None:
         """Load a built-in skill by name.
         

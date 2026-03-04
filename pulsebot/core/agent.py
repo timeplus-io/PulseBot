@@ -133,12 +133,31 @@ class Agent:
 
         logger.info(f"Initialized agent: {agent_id}")
 
+    async def _watch_skills(self, interval: int = 30) -> None:
+        """Background task: hot-reload newly installed external skills."""
+        while self._running:
+            await asyncio.sleep(interval)
+            try:
+                changed = self.skills.reload_external_skills()
+                if changed:
+                    self.context_builder.skills_index = (
+                        self.skills.format_skills_for_prompt()
+                    )
+                    logger.info("Hot-reloaded new skills; system prompt updated")
+            except Exception as e:
+                logger.warning("Skills hot-reload failed: %s", e)
+
     async def run(self) -> None:
         """Main event loop - listen for messages targeting this agent."""
         self._running = True
 
         # Ensure all required streams exist before starting
         await self._ensure_streams_exist()
+
+        # Start background skill watcher if skill dirs are configured
+        skill_watcher: asyncio.Task | None = None
+        if self.skills._skill_dirs:
+            skill_watcher = asyncio.create_task(self._watch_skills())
 
         query = """
         SELECT * FROM pulsebot.messages
@@ -161,6 +180,8 @@ class Agent:
                     await self._log_error(message, e)
         finally:
             self._running = False
+            if skill_watcher:
+                skill_watcher.cancel()
             logger.info(f"Agent {self.agent_id} stopped")
 
     async def stop(self) -> None:
