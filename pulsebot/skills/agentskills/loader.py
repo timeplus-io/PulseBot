@@ -84,15 +84,11 @@ def validate_metadata(fm: dict, dir_name: str) -> list[str]:
 
     for key in fm:
         if key not in VALID_FIELDS:
-            errors.append(f"Unknown frontmatter field: {key}")
+            logger.debug("Unknown frontmatter field in '%s': %s", dir_name, key)
 
     name = fm.get("name")
     if not name:
         errors.append("Missing required field: name")
-    elif not NAME_RE.match(name) or len(name) > 64:
-        errors.append(f"Invalid name: {name}")
-    elif name != dir_name:
-        errors.append(f"name '{name}' doesn't match directory '{dir_name}'")
 
     desc = fm.get("description")
     if not desc:
@@ -101,6 +97,20 @@ def validate_metadata(fm: dict, dir_name: str) -> list[str]:
         errors.append("description exceeds 1024 characters")
 
     return errors
+
+
+def _resolve_skill_name(fm: dict, dir_name: str) -> str:
+    """Return the canonical skill name to use for a skill package.
+
+    Prefers the frontmatter ``name`` when it is a valid slug; otherwise falls
+    back to the directory name (which is always a valid slug when installed by
+    ``pulsebot skill install``).
+    """
+    name = str(fm.get("name", "")).strip()
+    if name and NAME_RE.match(name) and len(name) <= 64:
+        return name
+    # Frontmatter name is display-only (e.g. "Polymarket") — use dir slug
+    return dir_name
 
 
 def load_skill_metadata(skill_dir: Path) -> SkillMetadata | None:
@@ -118,9 +128,10 @@ def load_skill_metadata(skill_dir: Path) -> SkillMetadata | None:
 
         raw_metadata = fm.get("metadata", {}) or {}
         openclaw = _parse_openclaw_metadata(raw_metadata)
+        skill_name = _resolve_skill_name(fm, skill_dir.name)
 
         return SkillMetadata(
-            name=fm["name"],
+            name=skill_name,
             description=fm["description"],
             source=SkillSource.EXTERNAL,
             path=skill_dir,

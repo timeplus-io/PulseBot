@@ -105,25 +105,31 @@ class TestValidateMetadata:
         errors = validate_metadata(fm, "some-dir")
         assert any("Missing required field: name" in e for e in errors)
 
-    def test_name_mismatch(self):
+    def test_name_mismatch_is_allowed(self):
+        # Name no longer needs to match the directory — ClawHub slugs differ from
+        # the display name inside SKILL.md (e.g. dir=polymarket-odds, name=Polymarket)
         fm = {"name": "wrong-name", "description": "Mismatch."}
         errors = validate_metadata(fm, "correct-name")
-        assert any("doesn't match directory" in e for e in errors)
+        assert errors == []
 
-    def test_invalid_name_format(self):
+    def test_invalid_name_format_is_allowed(self):
+        # Invalid slug format falls back to dir name via _resolve_skill_name,
+        # so validate_metadata itself no longer rejects it
         fm = {"name": "Invalid_Name", "description": "Bad format."}
-        errors = validate_metadata(fm, "Invalid_Name")
-        assert any("Invalid name" in e for e in errors)
+        errors = validate_metadata(fm, "some-dir")
+        assert errors == []
 
     def test_description_too_long(self):
         fm = {"name": "my-skill", "description": "x" * 1025}
         errors = validate_metadata(fm, "my-skill")
         assert any("exceeds 1024" in e for e in errors)
 
-    def test_unknown_fields(self):
+    def test_unknown_fields_are_ignored(self):
+        # Unknown fields emit a debug log but are not hard errors, so that
+        # ClawHub skills with extra frontmatter keys still load
         fm = {"name": "my-skill", "description": "OK.", "bogus_field": "bad"}
         errors = validate_metadata(fm, "my-skill")
-        assert any("Unknown frontmatter field" in e for e in errors)
+        assert errors == []
 
 
 class TestLoadSkillMetadata:
@@ -142,10 +148,15 @@ class TestLoadSkillMetadata:
         assert load_skill_metadata(empty_dir) is None
 
     def test_load_invalid_returns_none(self, invalid_skill_dir: Path):
-        # Missing name field
+        # Missing name field — still a hard error
         assert load_skill_metadata(invalid_skill_dir / "bad-skill-1") is None
-        # Name mismatch
-        assert load_skill_metadata(invalid_skill_dir / "bad-skill-2") is None
+
+    def test_load_name_mismatch_uses_frontmatter_name(self, invalid_skill_dir: Path):
+        # Name mismatch (dir=bad-skill-2, name=wrong-name) is allowed;
+        # skill loads using the frontmatter name
+        meta = load_skill_metadata(invalid_skill_dir / "bad-skill-2")
+        assert meta is not None
+        assert meta.name == "wrong-name"
 
 
 class TestLoadSkillContent:
@@ -174,9 +185,13 @@ class TestDiscoverSkills:
         skills = discover_skills([str(skill_dir), str(skill_dir)])
         assert len(skills) == 1
 
-    def test_discover_skips_invalid(self, invalid_skill_dir: Path):
+    def test_discover_skips_truly_invalid(self, invalid_skill_dir: Path):
+        # bad-skill-1: missing name → skipped
+        # bad-skill-2: name mismatch → loaded (frontmatter name used)
+        # bad-skill-3: no frontmatter → skipped
         skills = discover_skills([str(invalid_skill_dir)])
-        assert len(skills) == 0
+        assert len(skills) == 1
+        assert skills[0].name == "wrong-name"
 
 
 class TestAgentSkillsBridge:
