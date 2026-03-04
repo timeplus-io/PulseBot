@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 import tempfile
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -166,8 +167,7 @@ class ClawHubClient:
         Returns the installed skill directory path.
         """
         version_info = self.get_version(slug, version)
-        resp = self._client.get(version_info.download_url, follow_redirects=True)
-        resp.raise_for_status()
+        resp = self._get_with_retry(version_info.download_url)
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -187,6 +187,21 @@ class ClawHubClient:
             shutil.move(str(extract_dir), str(target))
 
         return target
+
+    def _get_with_retry(self, url: str, max_retries: int = 3) -> httpx.Response:
+        """GET with exponential back-off on 429 Too Many Requests."""
+        for attempt in range(max_retries):
+            resp = self._client.get(url, follow_redirects=True)
+            if resp.status_code == 429:
+                wait = int(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            return resp
+        # Final attempt — let raise_for_status surface the 429
+        resp = self._client.get(url, follow_redirects=True)
+        resp.raise_for_status()
+        return resp
 
     def _validate_contents(self, directory: Path) -> None:
         """Reject ZIPs that contain non-text files."""
