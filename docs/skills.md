@@ -2,36 +2,43 @@
 
 ## Overview
 
-PulseBot's skills system provides two ways to extend the agent's capabilities:
+PulseBot's skills system provides three ways to extend the agent's capabilities:
 
 1. **Built-in Skills** - Python classes that register tools directly with the LLM (web search, file ops, shell)
 2. **External Skills (agentskills.io)** - Markdown-based skill packages discovered from the filesystem, following the [agentskills.io](https://agentskills.io) open standard
+3. **OpenClaw Skills** - Enhanced agentskills.io packages with runtime requirements, ClawHub registry integration, and automatic dependency checking
 
-Both types coexist seamlessly. Built-in skills expose tools the LLM can call directly. External skills use a **metadata-first loading pattern** where only name + description enter the system prompt at startup (~24 tokens per skill), and full instructions are loaded on demand via the `load_skill` tool.
+All three types coexist seamlessly. Built-in skills expose tools the LLM can call directly. External skills use a **metadata-first loading pattern** where only name + description enter the system prompt at startup (~24 tokens per skill), and full instructions are loaded on demand via the `load_skill` tool.
 
 ## Architecture
 
 ```
 pulsebot/skills/
-├── base.py                  # BaseSkill, ToolDefinition, ToolResult
-├── loader.py                # SkillLoader (built-in + external discovery)
+├── base.py                 # BaseSkill, ToolDefinition, ToolResult
+├── loader.py               # SkillLoader (built-in + external discovery)
+├── lock.py                 # LockFile manager for ClawHub-installed skills
+├── clawhub_client.py       # ClawHub registry REST API client
 ├── __init__.py
-├── agentskills/             # agentskills.io integration
+├── agentskills/            # agentskills.io integration
 │   ├── __init__.py
-│   ├── models.py            # SkillMetadata, SkillContent
-│   └── loader.py            # SKILL.md parser, validator, directory scanner
-└── builtin/                 # Built-in skill implementations
+│   ├── models.py           # SkillMetadata, SkillContent, OpenClawMetadata
+│   ├── loader.py           # SKILL.md parser, validator, directory scanner
+│   └── requirements.py     # Runtime requirement checker
+└── builtin/                # Built-in skill implementations
     ├── __init__.py
     ├── web_search.py
     ├── file_ops.py
     ├── shell.py
     └── agentskills_bridge.py  # Bridge: load_skill + read_skill_file tools
 
-skills/                      # Default directory for external skill packages
-└── timeplus-sql-guide/      # Example skill
+skills/                     # Default directory for external skill packages
+└── timeplus-sql-guide/     # Example skill
     ├── SKILL.md
     └── references/
         └── syntax-cheatsheet.md
+
+.clawhub/                   # ClawHub registry metadata
+└── lock.json               # Tracks installed skills with content hashes
 ```
 
 ## How Skills Work
@@ -40,16 +47,17 @@ skills/                      # Default directory for external skill packages
 
 ```
 Startup
-  │
-  ├─ Load built-in skills (Python classes → tools registered directly)
-  │    web_search, file_ops, shell
-  │
-  ├─ Discover external skills (scan skill_dirs for SKILL.md files)
-  │    Parse YAML frontmatter → SkillMetadata (name + description only)
-  │
-  └─ If external skills found:
-       Register AgentSkillsBridge skill → load_skill + read_skill_file tools
-       Inject skill index into system prompt
+│
+├─ Load built-in skills (Python classes → tools registered directly)
+│   web_search, file_ops, shell
+│
+├─ Discover external skills (scan skill_dirs for SKILL.md files)
+│   Parse YAML frontmatter → SkillMetadata (name + description only)
+│   Check OpenClaw requirements → Skip if not satisfied
+│
+└─ If external skills found:
+    Register AgentSkillsBridge skill → load_skill + read_skill_file tools
+    Inject skill index into system prompt
 ```
 
 ### Two-Tier Loading (External Skills)
@@ -65,16 +73,16 @@ This means 25 external skills add only ~630 tokens to the base prompt, instead o
 
 ```
 User Message → Agent
-                    ↓
-            LLM with Tools
-                    ↓
-            Tool Call Request
-                    ↓
-            SkillLoader.get_skill_for_tool()
-                    ↓
-            Skill.execute()
-                    ↓
-            ToolResult → LLM → Final Response
+↓
+LLM with Tools
+↓
+Tool Call Request
+↓
+SkillLoader.get_skill_for_tool()
+↓
+Skill.execute()
+↓
+ToolResult → LLM → Final Response
 ```
 
 ## Configuration
@@ -88,6 +96,7 @@ skills:
     - web_search
     - file_ops
     - shell
+    - workspace
 
   # Custom Python skill classes (module paths)
   custom: []
@@ -99,14 +108,24 @@ skills:
 
   # Skill names to skip during discovery
   disabled_skills: []
+
+# ClawHub registry settings
+clawhub:
+  # Directory to install ClawHub skills (defaults to first skill_dirs entry)
+  install_dir: "./skills"
+  
+  # Auto-update installed skills on startup
+  auto_update: false
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `builtin` | list[str] | `["web_search", "file_ops", "shell"]` | Built-in skill names to load |
-| `custom` | list[str] | `[]` | Module paths to custom Python skill classes |
-| `skill_dirs` | list[str] | `[]` | Directories to scan for agentskills.io packages |
-| `disabled_skills` | list[str] | `[]` | Skill names to skip (by `name` field in SKILL.md) |
+| `skills.builtin` | list[str] | `["web_search", "file_ops", "shell", "workspace"]` | Built-in skill names to load |
+| `skills.custom` | list[str] | `[]` | Module paths to custom Python skill classes |
+| `skills.skill_dirs` | list[str] | `[]` | Directories to scan for agentskills.io packages |
+| `skills.disabled_skills` | list[str] | `[]` | Skill names to skip (by `name` field in SKILL.md) |
+| `clawhub.install_dir` | str | First `skill_dirs` entry | Default directory for `pulsebot skill install` |
+| `clawhub.auto_update` | bool | `false` | Auto-update installed skills on startup |
 
 ### Enabling/Disabling External Skills
 
@@ -116,6 +135,7 @@ skills:
 | Disable all external skills | Set `skill_dirs: []` or omit it |
 | Disable specific skills | Add names to `disabled_skills` |
 | Add more skill sources | Add more paths to `skill_dirs` |
+| Auto-update ClawHub skills | Set `clawhub.auto_update: true` |
 
 ### Docker Deployment
 
@@ -162,6 +182,16 @@ Execute shell commands with safety controls.
 
 **Safety Features**: Blocked commands list (`rm`, `sudo`, etc.), dangerous pattern detection, timeout protection (30s default), output size limits.
 
+### Workspace (`workspace`)
+
+Manages isolated workspace directories for sessions and tasks.
+
+**Tools**:
+- `create_workspace` - Create a new workspace
+- `list_workspaces` - List available workspaces
+- `get_workspace_files` - List files in a workspace
+- `read_workspace_file` - Read a file from a workspace
+
 ## External Skills (agentskills.io)
 
 ### The agentskills.io Standard
@@ -172,10 +202,10 @@ A skill is a directory containing a `SKILL.md` file with YAML frontmatter for me
 
 ```
 my-skill/
-├── SKILL.md          # Required: metadata + instructions
-├── scripts/          # Optional: executable code
-├── references/       # Optional: supplementary docs
-└── assets/           # Optional: templates, data files
+├── SKILL.md              # Required: metadata + instructions
+├── scripts/              # Optional: executable code
+├── references/           # Optional: supplementary docs
+└── assets/               # Optional: templates, data files
 ```
 
 ### SKILL.md Format
@@ -267,6 +297,200 @@ echo "# Cheatsheet" > skills/my-skill/references/cheatsheet.md
 
 4. Restart PulseBot - the skill is automatically discovered.
 
+## OpenClaw-Compatible Skills
+
+OpenClaw extends the agentskills.io standard with runtime requirements and ClawHub registry integration. Skills can declare what they need (binaries, environment variables, OS) and PulseBot will only load them if requirements are satisfied.
+
+### OpenClaw Metadata Block
+
+Add an `openclaw` (or `clawdbot`, `clawdis`, `moltbot`) block to your SKILL.md frontmatter:
+
+```markdown
+---
+name: my-advanced-skill
+description: A skill that requires specific tools and environment.
+metadata:
+  openclaw:
+    # Requirements that must ALL be satisfied
+    requires:
+      # Required environment variables
+      env:
+        - MY_API_KEY
+        - DATABASE_URL
+      
+      # Required binaries (all must exist in PATH)
+      bins:
+        - docker
+        - kubectl
+      
+      # At least ONE of these must exist
+      anyBins:
+        - jq
+        - python3
+      
+      # Required config files
+      configs:
+        - ~/.myapp/config.yaml
+    
+    # Primary env var shown in error messages
+    primaryEnv: MY_API_KEY
+    
+    # Bypass requirement checks (use with caution)
+    always: false
+    
+    # Emoji for display
+    emoji: 🔧
+    
+    # Supported operating systems
+    os:
+      - darwin
+      - linux
+    
+    # ClawHub skill key for updates
+    skillKey: my-team/my-advanced-skill
+---
+```
+
+### OpenClaw Frontmatter Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `openclaw.requires.env` | list[str] | Required environment variables |
+| `openclaw.requires.bins` | list[str] | Required binaries (all must exist) |
+| `openclaw.requires.anyBins` | list[str] | Alternative binaries (at least one must exist) |
+| `openclaw.requires.configs` | list[str] | Required configuration files |
+| `openclaw.primaryEnv` | str | Primary env var to show in error messages |
+| `openclaw.always` | bool | If true, bypass all requirement checks |
+| `openclaw.emoji` | str | Emoji for display in skill listings |
+| `openclaw.homepage` | str | URL to skill documentation |
+| `openclaw.os` | list[str] | Supported OS: `darwin`, `linux`, `win32` |
+| `openclaw.skillKey` | str | ClawHub registry key for auto-updates |
+
+### Aliases for OpenClaw Block
+
+The following top-level keys are all aliases for the OpenClaw metadata block:
+
+- `openclaw` (preferred)
+- `clawdbot`
+- `clawdis`
+- `moltbot`
+
+Example with alias:
+
+```markdown
+---
+name: my-skill
+metadata:
+  clawdbot:
+    requires:
+      env: [API_KEY]
+      bins: [curl]
+---
+```
+
+### How Requirement Checking Works
+
+When PulseBot discovers an external skill:
+
+1. Parse SKILL.md frontmatter
+2. If `openclaw` metadata exists:
+   - Check OS compatibility
+   - Verify all required binaries exist in PATH
+   - Check that at least one of `anyBins` exists
+   - Verify all required environment variables are set
+   - Check that required config files exist
+3. If `always: true`, skip all checks
+4. If any check fails, the skill is skipped with a warning logged
+5. If no `openclaw` metadata, the skill loads normally (backward compatible)
+
+Binary lookups are cached per startup for performance.
+
+## ClawHub Registry
+
+ClawHub is a public registry for OpenClaw-compatible skills. Install skills directly from the registry with automatic dependency checking.
+
+### CLI Commands
+
+```bash
+# Search for skills in ClawHub
+pulsebot skill search <query>
+
+# Install a skill from ClawHub
+pulsebot skill install <slug> [--version VERSION] [--dir DIR]
+
+# List installed ClawHub skills
+pulsebot skill list [--dir WORKDIR]
+
+# Remove an installed skill
+pulsebot skill remove <slug> [--dir DIR] [--workdir WORKDIR]
+```
+
+### Installing from ClawHub
+
+```bash
+# Install latest version
+pulsebot skill install timeplus/sql-guide
+
+# Install specific version
+pulsebot skill install timeplus/sql-guide --version 1.2.0
+
+# Install to custom directory
+pulsebot skill install timeplus/sql-guide --dir /shared/skills
+```
+
+When you install a skill:
+1. Downloads the skill ZIP from ClawHub registry
+2. Validates only allowed text file types are present
+3. Verifies SHA256 checksum matches the registry
+4. Installs atomically (all-or-nothing)
+5. Records the installation in `.clawhub/lock.json`
+6. Scans the new skill directory and loads the skill
+
+### Lock File (`.clawhub/lock.json`)
+
+The lock file tracks ClawHub-installed skills with content hashes for integrity:
+
+```json
+{
+  "version": 1,
+  "skills": {
+    "timeplus/sql-guide": {
+      "slug": "timeplus/sql-guide",
+      "version": "1.2.0",
+      "content_hash": "sha256:abc123...",
+      "installed_at": "2024-01-15T09:30:00Z",
+      "source": "clawhub"
+    }
+  }
+}
+```
+
+The lock file enables:
+- **Integrity verification**: Detect if skill files were modified
+- **Auto-updates**: Compare installed version with registry latest
+- **Team synchronization**: Share `lock.json` to ensure consistent installations
+
+### Auto-Updates
+
+Enable automatic skill updates on startup:
+
+```yaml
+clawhub:
+  auto_update: true
+```
+
+When enabled:
+1. On startup, check all locked skills against ClawHub registry
+2. If newer version available, download and install
+3. Only updates if content hash differs (prevents unnecessary reinstalls)
+4. Logs updates to console
+
+### Allowed File Types
+
+For security, ClawHub only allows text file types. Binary files (images, executables, etc.) are rejected during installation:
+
+**Allowed extensions**: `.md`, `.txt`, `.yaml`, `.yml`, `.json`, `.toml`, `.js`, `.mjs`, `.cjs`, `.ts`, `.jsx`, `.tsx`, `.py`, `.sh`, `.bash`, `.css`, `.html`, `.svg`, `.xml`, `.csv`, `.ini`, `.cfg`, `.conf`, `.env`, `.gitignore`, `.editorconfig`, `.rs`, `.go`, `.java`, `.c`, `.cpp`, `.h`, `.hpp`, `.rb`, `.php`, `.swift`, `.kt`, `.scala`, `.sql`, `.r`, `.R`, `.jl`, `.lua`, `.pl`, `.pm`
+
 ## Custom Python Skills
 
 For capabilities that require code execution (API calls, database queries), create a Python skill class.
@@ -331,6 +555,8 @@ skills:
 |----------|----------|
 | Need to call APIs, run code, access databases | Custom Python skill |
 | Procedural knowledge, guides, SQL templates | External agentskills.io skill |
+| Skills with runtime dependencies (binaries, env vars) | OpenClaw-compatible skill |
+| Share skills via registry | ClawHub-published skill |
 | Team-shared domain knowledge | External skill in a shared `skill_dirs` path |
 | Portable across AI platforms | External skill (agentskills.io standard) |
 | Core agent capability | Built-in skill |
@@ -343,13 +569,14 @@ skills:
 - Ensure the directory is inside a path listed in `skill_dirs`
 - Check that the skill name is not in `disabled_skills`
 - Look for validation warnings in logs
+- For OpenClaw skills, check requirement checker warnings
 
 **`load_skill` / `read_skill_file` tools not available**:
 - These only appear when at least one external skill is discovered
 - Verify `skill_dirs` is configured and contains valid skill packages
 
 **"Unknown built-in skill" error**:
-- Check that the skill name matches one of: `web_search`, `file_ops`, `shell`
+- Check that the skill name matches one of: `web_search`, `file_ops`, `shell`, `workspace`
 
 **"Failed to load custom skill" error**:
 - Ensure the module path is importable (in Python path)
@@ -360,3 +587,15 @@ skills:
 - Check tool description is clear and specific
 - Ensure parameter schema is correct JSON Schema
 - Verify tool name is unique across all skills
+
+**ClawHub install fails**:
+- Check network connectivity to `https://clawhub.ai`
+- Verify the skill slug exists in the registry
+- Ensure `--dir` points to a writable directory
+- Check for disallowed file type errors (only text files allowed)
+
+**Skill requirements not satisfied**:
+- Check logs for specific missing binaries or env vars
+- Verify required binaries are in PATH
+- Set missing environment variables
+- Use `always: true` in OpenClaw metadata to bypass checks (with caution)

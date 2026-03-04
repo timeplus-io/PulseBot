@@ -11,7 +11,7 @@ PulseBot is a lightweight, extensible AI agent framework that uses Timeplus stre
 - **Vector Memory** - Semantic search using embeddings stored in Timeplus
 - **SQL-Native Scheduling** - Timeplus Tasks replace traditional cron jobs
 - **Interactive Workspaces** - Build and publish dynamic artifacts and runnable web apps
-- **Extensible Skills** - Plugin-based tool system (web search, file ops, shell, workspace)
+- **Extensible Skills** - Plugin-based tool system with OpenClaw compatibility and ClawHub registry
 - **Multi-Channel** - Telegram, webchat, with easy extension to Slack/WhatsApp
 - **Real-Time Observability** - All LLM calls and tool executions logged to streams
 - **Production Ready** - Docker deployment, async architecture, structured logging
@@ -118,6 +118,10 @@ This starts:
 | `pulsebot chat` | Interactive CLI chat |
 | `pulsebot init` | Generate config.yaml |
 | `pulsebot task list` | List scheduled tasks |
+| `pulsebot skill search <query>` | Search ClawHub registry for skills |
+| `pulsebot skill install <slug>` | Install skill from ClawHub |
+| `pulsebot skill list` | List installed ClawHub skills |
+| `pulsebot skill remove <slug>` | Remove installed skill |
 
 ## 🔧 Built-in Skills
 
@@ -128,9 +132,16 @@ This starts:
 | `shell` | `run_command` | Shell execution with security guards |
 | `workspace` | `workspace_create_app`, `workspace_write_file`, ... | Create and publish dynamic artifacts and web apps |
 
-### AgentSkills.io Support
+### AgentSkills.io & OpenClaw Support
 
-PulseBot supports the [agentskills.io](https://agentskills.io) standard for external skill packages. Skills are discovered from configured directories by scanning for `SKILL.md` files.
+PulseBot supports the [agentskills.io](https://agentskills.io) standard and **OpenClaw extensions** for external skill packages.
+
+**OpenClaw** adds runtime requirement checking and [ClawHub](https://clawhub.ai) registry integration:
+
+- Declare required binaries, environment variables, and OS support in SKILL.md
+- Install skills directly from ClawHub with `pulsebot skill install <slug>`
+- Automatic integrity verification with SHA256 checksums
+- Auto-update support for installed skills
 
 **Configure skill directories** in `config.yaml`:
 
@@ -140,6 +151,23 @@ skills:
     - "./skills"
     - "/shared/skills"
   disabled_skills: []
+
+clawhub:
+  install_dir: "./skills"    # Default install location
+  auto_update: false          # Auto-update on startup
+```
+
+**Install from ClawHub**:
+
+```bash
+# Search for skills
+pulsebot skill search python
+
+# Install a skill
+pulsebot skill install timeplus/sql-guide
+
+# List installed skills
+pulsebot skill list
 ```
 
 **Create a skill package** as a directory with a `SKILL.md` file:
@@ -147,17 +175,25 @@ skills:
 ```
 skills/
   my-skill/
-    SKILL.md          # Required: YAML frontmatter + instructions
-    scripts/          # Optional: executable code
-    references/       # Optional: supplementary docs
+    SKILL.md              # Required: YAML frontmatter + instructions
+    scripts/              # Optional: executable code
+    references/           # Optional: supplementary docs
 ```
 
-The `SKILL.md` uses YAML frontmatter for metadata and Markdown body for instructions:
+The `SKILL.md` uses YAML frontmatter for metadata and Markdown body for instructions. Add an `openclaw` block to declare runtime requirements:
 
 ```markdown
 ---
 name: my-skill
 description: Does something useful when the user asks about X.
+metadata:
+  openclaw:
+    requires:
+      env: [MY_API_KEY]
+      bins: [docker, kubectl]
+      anyBins: [jq, python3]
+    primaryEnv: MY_API_KEY
+    emoji: 🔧
 ---
 
 # My Skill
@@ -165,7 +201,7 @@ description: Does something useful when the user asks about X.
 Full instructions loaded on demand by the agent.
 ```
 
-Only skill name and description are loaded into the system prompt at startup (~24 tokens per skill). Full instructions are loaded on demand when the agent calls the `load_skill` tool.
+Only skill name and description are loaded into the system prompt at startup (~24 tokens per skill). Full instructions are loaded on demand when the agent calls the `load_skill` tool. Skills with unsatisfied OpenClaw requirements are automatically skipped.
 
 ### Adding Custom Code Skills
 
