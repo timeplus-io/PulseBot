@@ -170,57 +170,19 @@ pulsebot skill install timeplus/sql-guide
 pulsebot skill list
 ```
 
-**Create a skill package** as a directory with a `SKILL.md` file:
+**Timeplus Related Skills Install**
 
-```
-skills/
-  my-skill/
-    SKILL.md              # Required: YAML frontmatter + instructions
-    scripts/              # Optional: executable code
-    references/           # Optional: supplementary docs
+```bash
+pulsebot skill install timeplus-sql-guide 
+pulsebot skill install timeplus-app-builder 
+pulsebot skill install cisco-asa-syslog 
 ```
 
-The `SKILL.md` uses YAML frontmatter for metadata and Markdown body for instructions. Add an `openclaw` block to declare runtime requirements:
+refer to
 
-```markdown
----
-name: my-skill
-description: Does something useful when the user asks about X.
-metadata:
-  openclaw:
-    requires:
-      env: [MY_API_KEY]
-      bins: [docker, kubectl]
-      anyBins: [jq, python3]
-    primaryEnv: MY_API_KEY
-    emoji: 🔧
----
-
-# My Skill
-
-Full instructions loaded on demand by the agent.
-```
-
-Only skill name and description are loaded into the system prompt at startup (~24 tokens per skill). Full instructions are loaded on demand when the agent calls the `load_skill` tool. Skills with unsatisfied OpenClaw requirements are automatically skipped.
-
-### Adding Custom Code Skills
-
-```python
-from pulsebot.skills import BaseSkill, ToolDefinition, ToolResult
-
-class MySkill(BaseSkill):
-    name = "my_skill"
-
-    def get_tools(self) -> list[ToolDefinition]:
-        return [ToolDefinition(
-            name="my_tool",
-            description="Does something useful",
-            parameters={"type": "object", "properties": {}}
-        )]
-
-    async def execute(self, tool_name: str, args: dict) -> ToolResult:
-        return ToolResult.ok("Success!")
-```
+- https://clawhub.ai/gangtao/cisco-asa-syslog
+- https://clawhub.ai/gangtao/timeplus-app-builder
+- https://clawhub.ai/gangtao/timeplus-sql-guide
 
 ## 📡 API Endpoints
 
