@@ -415,5 +415,129 @@ def list_tasks(config: str):
     console.print(table)
 
 
+@cli.group()
+def skill():
+    """Manage PulseBot skills from ClawHub."""
+    pass
+
+
+@skill.command()
+@click.argument("query")
+@click.option("--limit", default=20, show_default=True, help="Max results to show")
+def search(query: str, limit: int):
+    """Search ClawHub for skills matching QUERY."""
+    from pulsebot.skills.clawhub_client import ClawHubClient
+
+    with ClawHubClient() as client:
+        try:
+            results = client.search(query, limit=limit)
+        except Exception as e:
+            console.print(f"[red]Search failed: {e}[/]")
+            raise SystemExit(1)
+
+    if not results:
+        console.print("[yellow]No skills found.[/]")
+        return
+
+    from rich.table import Table
+    table = Table(title=f"ClawHub results for '{query}'")
+    table.add_column("Slug")
+    table.add_column("Version")
+    table.add_column("Summary")
+    table.add_column("Author")
+    for s in results:
+        table.add_row(s.slug, s.latest_version, s.summary, s.owner_handle)
+    console.print(table)
+
+
+@skill.command()
+@click.argument("slug")
+@click.option("--version", default="latest", show_default=True)
+@click.option("--dir", "install_dir", default="./skills", show_default=True,
+              help="Directory to install the skill into")
+def install(slug: str, version: str, install_dir: str):
+    """Install a skill from ClawHub by SLUG."""
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from pulsebot.skills.clawhub_client import ClawHubClient, IntegrityError, SecurityError
+    from pulsebot.skills.lock import LockFile, LockedSkill
+
+    skills_dir = Path(install_dir)
+    skills_dir.mkdir(parents=True, exist_ok=True)
+
+    console.print(f"Installing [bold]{slug}[/] @ {version} into {skills_dir}...")
+    with ClawHubClient() as client:
+        try:
+            target = client.download_and_install(slug, skills_dir, version)
+        except SecurityError as e:
+            console.print(f"[red]Security error: {e}[/]")
+            raise SystemExit(1)
+        except IntegrityError as e:
+            console.print(f"[red]Integrity error: {e}[/]")
+            raise SystemExit(1)
+        except Exception as e:
+            console.print(f"[red]Install failed: {e}[/]")
+            raise SystemExit(1)
+
+    lock = LockFile(Path("."))
+    content_hash = LockFile.compute_content_hash(target)
+    lock.add(LockedSkill(
+        slug=slug,
+        version=version,
+        content_hash=content_hash,
+        installed_at=datetime.now(timezone.utc).isoformat(),
+        source="clawhub",
+    ))
+    console.print(f"[green]Installed {slug} to {target}[/]")
+
+
+@skill.command(name="list")
+@click.option("--dir", "workdir", default=".", show_default=True,
+              help="Working directory containing .clawhub/lock.json")
+def list_skills(workdir: str):
+    """List installed ClawHub skills."""
+    from pathlib import Path
+    from pulsebot.skills.lock import LockFile
+
+    lock = LockFile(Path(workdir))
+    skills = lock.read()
+    if not skills:
+        console.print("[yellow]No ClawHub skills installed.[/]")
+        return
+
+    from rich.table import Table
+    table = Table(title="Installed Skills")
+    table.add_column("Slug")
+    table.add_column("Version")
+    table.add_column("Source")
+    table.add_column("Installed At")
+    for entry in skills.values():
+        table.add_row(entry.slug, entry.version, entry.source, entry.installed_at)
+    console.print(table)
+
+
+@skill.command()
+@click.argument("slug")
+@click.option("--dir", "install_dir", default="./skills", show_default=True)
+@click.option("--workdir", default=".", show_default=True)
+def remove(slug: str, install_dir: str, workdir: str):
+    """Remove an installed skill by SLUG."""
+    import shutil
+    from pathlib import Path
+    from pulsebot.skills.lock import LockFile
+
+    target = Path(install_dir) / slug
+    if target.exists():
+        shutil.rmtree(target)
+        console.print(f"Removed skill directory: {target}")
+    else:
+        console.print(f"[yellow]Skill directory not found: {target}[/]")
+
+    lock = LockFile(Path(workdir))
+    lock.remove(slug)
+    console.print(f"[green]Removed {slug} from lock file.[/]")
+
+
 if __name__ == "__main__":
     cli()

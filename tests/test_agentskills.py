@@ -508,3 +508,26 @@ class TestClawHubConfig:
         assert config.clawhub.enabled is False
         assert config.clawhub.site_url == "https://my-registry.example.com"
         assert config.clawhub.install_dir == "./my-skills"
+
+
+class TestSkillCLI:
+    def test_skill_list_no_skills(self, tmp_path: Path):
+        """pulsebot skill list with no installed skills prints a message."""
+        from click.testing import CliRunner
+        from pulsebot.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(cli, ["skill", "list"])
+        assert result.exit_code == 0
+        assert "No ClawHub skills" in result.output
+
+    def test_skill_remove_nonexistent(self, tmp_path: Path):
+        """pulsebot skill remove with a slug not in lock file exits cleanly."""
+        from click.testing import CliRunner
+        from pulsebot.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(cli, ["skill", "remove", "nonexistent-skill"])
+        assert result.exit_code == 0
