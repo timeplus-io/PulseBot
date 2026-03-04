@@ -120,12 +120,24 @@ class ChannelsConfig(BaseModel):
     webchat: WebchatChannelConfig = Field(default_factory=WebchatChannelConfig)
 
 
+class ClawHubConfig(BaseModel):
+    """ClawHub registry integration configuration."""
+    enabled: bool = True
+    site_url: str = "https://clawhub.ai"
+    registry_url: str | None = None      # Auto-discovered from .well-known if None
+    install_dir: str | None = None       # Defaults to first skill_dir if None
+    auth_token_path: str | None = None   # Path to file containing auth token
+    verify_checksums: bool = True        # Verify SHA256 checksums on download
+    auto_update: bool = False            # Auto-update installed skills on startup
+
+
 class SkillsConfig(BaseModel):
     """Skills configuration."""
     builtin: list[str] = Field(default_factory=lambda: ["web_search", "file_ops", "shell"])
     custom: list[str] = Field(default_factory=list)
     skill_dirs: list[str] = Field(default_factory=list)
     disabled_skills: list[str] = Field(default_factory=list)
+    clawhub: ClawHubConfig = Field(default_factory=ClawHubConfig)
 
 
 class MCPServerConfig(BaseModel):

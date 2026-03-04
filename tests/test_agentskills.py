@@ -105,25 +105,31 @@ class TestValidateMetadata:
         errors = validate_metadata(fm, "some-dir")
         assert any("Missing required field: name" in e for e in errors)
 
-    def test_name_mismatch(self):
+    def test_name_mismatch_is_allowed(self):
+        # Name no longer needs to match the directory — ClawHub slugs differ from
+        # the display name inside SKILL.md (e.g. dir=polymarket-odds, name=Polymarket)
         fm = {"name": "wrong-name", "description": "Mismatch."}
         errors = validate_metadata(fm, "correct-name")
-        assert any("doesn't match directory" in e for e in errors)
+        assert errors == []
 
-    def test_invalid_name_format(self):
+    def test_invalid_name_format_is_allowed(self):
+        # Invalid slug format falls back to dir name via _resolve_skill_name,
+        # so validate_metadata itself no longer rejects it
         fm = {"name": "Invalid_Name", "description": "Bad format."}
-        errors = validate_metadata(fm, "Invalid_Name")
-        assert any("Invalid name" in e for e in errors)
+        errors = validate_metadata(fm, "some-dir")
+        assert errors == []
 
     def test_description_too_long(self):
         fm = {"name": "my-skill", "description": "x" * 1025}
         errors = validate_metadata(fm, "my-skill")
         assert any("exceeds 1024" in e for e in errors)
 
-    def test_unknown_fields(self):
+    def test_unknown_fields_are_ignored(self):
+        # Unknown fields emit a debug log but are not hard errors, so that
+        # ClawHub skills with extra frontmatter keys still load
         fm = {"name": "my-skill", "description": "OK.", "bogus_field": "bad"}
         errors = validate_metadata(fm, "my-skill")
-        assert any("Unknown frontmatter field" in e for e in errors)
+        assert errors == []
 
 
 class TestLoadSkillMetadata:
@@ -142,10 +148,15 @@ class TestLoadSkillMetadata:
         assert load_skill_metadata(empty_dir) is None
 
     def test_load_invalid_returns_none(self, invalid_skill_dir: Path):
-        # Missing name field
+        # Missing name field — still a hard error
         assert load_skill_metadata(invalid_skill_dir / "bad-skill-1") is None
-        # Name mismatch
-        assert load_skill_metadata(invalid_skill_dir / "bad-skill-2") is None
+
+    def test_load_name_mismatch_uses_frontmatter_name(self, invalid_skill_dir: Path):
+        # Name mismatch (dir=bad-skill-2, name=wrong-name) is allowed;
+        # skill loads using the frontmatter name
+        meta = load_skill_metadata(invalid_skill_dir / "bad-skill-2")
+        assert meta is not None
+        assert meta.name == "wrong-name"
 
 
 class TestLoadSkillContent:
@@ -174,9 +185,13 @@ class TestDiscoverSkills:
         skills = discover_skills([str(skill_dir), str(skill_dir)])
         assert len(skills) == 1
 
-    def test_discover_skips_invalid(self, invalid_skill_dir: Path):
+    def test_discover_skips_truly_invalid(self, invalid_skill_dir: Path):
+        # bad-skill-1: missing name → skipped
+        # bad-skill-2: name mismatch → loaded (frontmatter name used)
+        # bad-skill-3: no frontmatter → skipped
         skills = discover_skills([str(invalid_skill_dir)])
-        assert len(skills) == 0
+        assert len(skills) == 1
+        assert skills[0].name == "wrong-name"
 
 
 class TestAgentSkillsBridge:
@@ -286,3 +301,248 @@ class TestSkillLoaderIntegration:
         assert "my-skill" not in loader.external_skills
         # Bridge should not be loaded since no external skills found
         assert "agentskills_bridge" not in loader.loaded_skills
+
+
+@pytest.fixture
+def openclaw_skill_dir(tmp_path: Path) -> Path:
+    """Create a skill with OpenClaw metadata."""
+    skill = tmp_path / "my-skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"
+        "name: my-skill\n"
+        "description: A test skill with OpenClaw metadata.\n"
+        "version: '1.2.3'\n"
+        "metadata:\n"
+        "  openclaw:\n"
+        "    requires:\n"
+        "      env:\n"
+        "        - MY_API_KEY\n"
+        "      bins:\n"
+        "        - curl\n"
+        "      anyBins:\n"
+        "        - jq\n"
+        "        - python3\n"
+        "    primaryEnv: MY_API_KEY\n"
+        "    always: false\n"
+        "    emoji: '🔧'\n"
+        "    os:\n"
+        "      - darwin\n"
+        "      - linux\n"
+        "---\n\n"
+        "# My Skill\n\nInstructions here.\n"
+    )
+    return tmp_path
+
+
+class TestOpenClawMetadata:
+    def test_load_openclaw_metadata(self, openclaw_skill_dir: Path):
+        meta = load_skill_metadata(openclaw_skill_dir / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is not None
+        assert meta.openclaw.requires.env == ["MY_API_KEY"]
+        assert meta.openclaw.requires.bins == ["curl"]
+        assert meta.openclaw.requires.any_bins == ["jq", "python3"]
+        assert meta.openclaw.primary_env == "MY_API_KEY"
+        assert meta.openclaw.always is False
+        assert meta.openclaw.emoji == "🔧"
+        assert meta.openclaw.os == ["darwin", "linux"]
+
+    def test_plain_skill_has_no_openclaw(self, skill_dir: Path):
+        """Backward compat: plain agentskills.io skill has openclaw=None."""
+        meta = load_skill_metadata(skill_dir / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is None
+
+    def test_openclaw_alias_clawdbot(self, tmp_path: Path):
+        """metadata.clawdbot is an alias for metadata.openclaw."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Uses clawdbot alias.\n"
+            "metadata:\n"
+            "  clawdbot:\n"
+            "    always: true\n"
+            "---\n\nBody.\n"
+        )
+        meta = load_skill_metadata(tmp_path / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is not None
+        assert meta.openclaw.always is True
+
+    def test_version_field_accepted(self, tmp_path: Path):
+        """OpenClaw adds 'version' as a top-level frontmatter field."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Has version.\n"
+            "version: '2.0.0'\n"
+            "---\n\nBody.\n"
+        )
+        meta = load_skill_metadata(tmp_path / "my-skill")
+        assert meta is not None  # must not fail validation
+        assert meta.version == "2.0.0"
+
+    def test_openclaw_optional_fields_default(self, tmp_path: Path):
+        """All OpenClaw fields are optional; empty block works fine."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Empty openclaw block.\n"
+            "metadata:\n"
+            "  openclaw: {}\n"
+            "---\n\nBody.\n"
+        )
+        meta = load_skill_metadata(tmp_path / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is not None
+        assert meta.openclaw.requires.env == []
+        assert meta.openclaw.requires.bins == []
+        assert meta.openclaw.always is False
+
+    def test_openclaw_null_requires_fields_default_to_empty(self, tmp_path: Path):
+        """Explicit YAML null for requires sub-keys should yield empty lists, not None."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Tests null handling.\n"
+            "metadata:\n"
+            "  openclaw:\n"
+            "    requires:\n"
+            "      env:\n"  # YAML null (no value)
+            "      bins: ~\n"  # Explicit YAML null
+            "---\n\nBody.\n"
+        )
+        meta = load_skill_metadata(tmp_path / "my-skill")
+        assert meta is not None
+        assert meta.openclaw is not None
+        assert meta.openclaw.requires.env == []
+        assert meta.openclaw.requires.bins == []
+
+
+class TestSkillLoaderRequirementFiltering:
+    def test_skill_filtered_when_binary_missing(self, tmp_path: Path):
+        """Skills whose required binary is absent should not appear in external_skills."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Needs a rare binary.\n"
+            "metadata:\n"
+            "  openclaw:\n"
+            "    requires:\n"
+            "      bins:\n"
+            "        - totally-nonexistent-bin-xyz\n"
+            "---\n\nBody.\n"
+        )
+        from pulsebot.config import SkillsConfig
+        from pulsebot.skills.loader import SkillLoader
+
+        config = SkillsConfig(builtin=[], skill_dirs=[str(tmp_path)])
+        loader = SkillLoader.from_config(config)
+
+        assert "my-skill" not in loader.external_skills
+
+    def test_skill_passes_when_requirements_met(self, tmp_path: Path):
+        """Skill with satisfied requirements should appear in external_skills."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Needs python3.\n"
+            "metadata:\n"
+            "  openclaw:\n"
+            "    requires:\n"
+            "      bins:\n"
+            "        - python3\n"
+            "---\n\nBody.\n"
+        )
+        from pulsebot.config import SkillsConfig
+        from pulsebot.skills.loader import SkillLoader
+        from unittest.mock import patch
+
+        config = SkillsConfig(builtin=[], skill_dirs=[str(tmp_path)])
+        with patch("shutil.which", return_value="/usr/bin/python3"):
+            loader = SkillLoader.from_config(config)
+
+        assert "my-skill" in loader.external_skills
+
+    def test_always_true_skill_never_filtered(self, tmp_path: Path):
+        """Skills with always=true pass regardless of env/bins."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Always active.\n"
+            "metadata:\n"
+            "  openclaw:\n"
+            "    always: true\n"
+            "    requires:\n"
+            "      env:\n"
+            "        - NONEXISTENT_ENV_XYZ\n"
+            "---\n\nBody.\n"
+        )
+        from pulsebot.config import SkillsConfig
+        from pulsebot.skills.loader import SkillLoader
+
+        config = SkillsConfig(builtin=[], skill_dirs=[str(tmp_path)])
+        loader = SkillLoader.from_config(config)
+
+        assert "my-skill" in loader.external_skills
+
+
+class TestClawHubConfig:
+    def test_default_clawhub_config(self):
+        from pulsebot.config import SkillsConfig
+        config = SkillsConfig()
+        assert config.clawhub.enabled is True
+        assert config.clawhub.site_url == "https://clawhub.ai"
+        assert config.clawhub.install_dir is None
+        assert config.clawhub.verify_checksums is True
+
+    def test_clawhub_config_from_dict(self):
+        from pulsebot.config import SkillsConfig
+        config = SkillsConfig(
+            clawhub={
+                "enabled": False,
+                "site_url": "https://my-registry.example.com",
+                "install_dir": "./my-skills",
+            }
+        )
+        assert config.clawhub.enabled is False
+        assert config.clawhub.site_url == "https://my-registry.example.com"
+        assert config.clawhub.install_dir == "./my-skills"
+
+
+class TestSkillCLI:
+    def test_skill_list_no_skills(self, tmp_path: Path):
+        """pulsebot skill list with no installed skills prints a message."""
+        from click.testing import CliRunner
+        from pulsebot.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(cli, ["skill", "list"])
+        assert result.exit_code == 0
+        assert "No ClawHub skills" in result.output
+
+    def test_skill_remove_nonexistent(self, tmp_path: Path):
+        """pulsebot skill remove with a slug not in lock file exits cleanly."""
+        from click.testing import CliRunner
+        from pulsebot.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = runner.invoke(cli, ["skill", "remove", "nonexistent-skill"])
+        assert result.exit_code == 0
