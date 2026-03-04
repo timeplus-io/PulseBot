@@ -1,6 +1,7 @@
 workspaces/
 .pypirc
 docs/plans/
+.clawhub
 
 # Python
 __pycache__/
