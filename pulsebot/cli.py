@@ -12,7 +12,7 @@ console = Console()
 
 
 @click.group()
-@click.version_option(version="0.2.1", prog_name="pulsebot")
+@click.version_option(version="0.4.0", prog_name="pulsebot")
 def cli():
     """PulseBot - Stream-native AI Agent powered by Timeplus."""
     pass
