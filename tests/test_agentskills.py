@@ -485,3 +485,26 @@ class TestSkillLoaderRequirementFiltering:
         loader = SkillLoader.from_config(config)
 
         assert "my-skill" in loader.external_skills
+
+
+class TestClawHubConfig:
+    def test_default_clawhub_config(self):
+        from pulsebot.config import SkillsConfig
+        config = SkillsConfig()
+        assert config.clawhub.enabled is True
+        assert config.clawhub.site_url == "https://clawhub.ai"
+        assert config.clawhub.install_dir is None
+        assert config.clawhub.verify_checksums is True
+
+    def test_clawhub_config_from_dict(self):
+        from pulsebot.config import SkillsConfig
+        config = SkillsConfig(
+            clawhub={
+                "enabled": False,
+                "site_url": "https://my-registry.example.com",
+                "install_dir": "./my-skills",
+            }
+        )
+        assert config.clawhub.enabled is False
+        assert config.clawhub.site_url == "https://my-registry.example.com"
+        assert config.clawhub.install_dir == "./my-skills"
