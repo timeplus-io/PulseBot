@@ -79,11 +79,17 @@ class ClawHubClient:
         return self._registry_url
 
     def _discover_registry(self) -> str:
-        """Discover registry URL from the .well-known/clawhub.json endpoint."""
+        """Discover registry URL from the .well-known/clawhub.json endpoint.
+
+        The well-known endpoint returns a base URL (e.g. "https://clawhub.ai")
+        under the "apiBase" key. The actual REST API lives at <apiBase>/api/v1.
+        """
         try:
             resp = self._client.get(f"{self.site_url}{self.WELL_KNOWN_PATH}")
             resp.raise_for_status()
-            return resp.json().get("registry", f"{self.site_url}/api/v1")
+            data = resp.json()
+            base = data.get("apiBase") or data.get("registry") or self.site_url
+            return f"{base.rstrip('/')}/api/v1"
         except Exception:
             return f"{self.site_url}/api/v1"
 
@@ -101,7 +107,9 @@ class ClawHubClient:
             headers=self._headers(),
         )
         resp.raise_for_status()
-        return [self._parse_skill_info(s) for s in resp.json().get("skills", [])]
+        data = resp.json()
+        # ClawHub API returns results under "items" key
+        return [self._parse_skill_info(s) for s in data.get("items", data.get("skills", []))]
 
     def get_skill(self, slug: str) -> ClawHubSkillInfo:
         """Fetch metadata for a skill by slug."""
