@@ -307,12 +307,20 @@ skills:
 
   custom: []
 
-# Directories to scan for agentskills.io skill packages
-skill_dirs:
-  - "./skills"
+  # Directories to scan for agentskills.io skill packages
+  skill_dirs:
+    - "./skills"
 
-# Skill names to disable
-disabled_skills: []
+  # Skill names to disable
+  disabled_skills: []
+
+# ClawHub registry for OpenClaw-compatible skills
+clawhub:
+  # Authentication token for ClawHub (defaults to CLAWHUB_AUTH_TOKEN env var)
+  # auth_token_path: "~/.clawhub/token"
+
+  # Auto-update installed skills on startup
+  auto_update: false
 
 mcp_servers: []
 

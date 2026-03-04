@@ -116,6 +116,9 @@ clawhub:
   
   # Auto-update installed skills on startup
   auto_update: false
+  
+  # Optional: Path to file containing auth token (defaults to CLAWHUB_AUTH_TOKEN env var)
+  auth_token_path: "~/.clawhub/token"
 ```
 
 | Field | Type | Default | Description |
@@ -126,6 +129,7 @@ clawhub:
 | `skills.disabled_skills` | list[str] | `[]` | Skill names to skip (by `name` field in SKILL.md) |
 | `clawhub.install_dir` | str | First `skill_dirs` entry | Default directory for `pulsebot skill install` |
 | `clawhub.auto_update` | bool | `false` | Auto-update installed skills on startup |
+| `clawhub.auth_token_path` | str | `None` | Path to file containing ClawHub auth token |
 
 ### Enabling/Disabling External Skills
 
@@ -424,6 +428,20 @@ pulsebot skill list [--dir WORKDIR]
 # Remove an installed skill
 pulsebot skill remove <slug> [--dir DIR] [--workdir WORKDIR]
 ```
+
+### Authentication
+
+To install skills from ClawHub, you need to set the `CLAWHUB_AUTH_TOKEN` environment variable:
+
+```bash
+# Set the authentication token
+export CLAWHUB_AUTH_TOKEN=your_token_here
+
+# Or use a .env file
+CLAWHUB_AUTH_TOKEN=your_token_here
+```
+
+The token is used to authenticate with the ClawHub registry when searching and installing skills. Without a valid token, skill installation will fail.
 
 ### Installing from ClawHub
 

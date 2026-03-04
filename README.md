@@ -214,17 +214,20 @@ Access the built-in web chat interface at `http://localhost:8000/` after startin
 
 ```bash
 # Required (one LLM provider)
-ANTHROPIC_API_KEY=...     # For Claude models
+ANTHROPIC_API_KEY=... # For Claude models
 # or
-OPENAI_API_KEY=...        # For OpenAI models
+OPENAI_API_KEY=... # For OpenAI models
 
 # Timeplus
 TIMEPLUS_HOST=localhost
 TIMEPLUS_PASSWORD=...
 
+# ClawHub (for installing skills from registry)
+CLAWHUB_AUTH_TOKEN=... # Authentication token for ClawHub skill installation
+
 # Optional
-OPENAI_API_KEY=...        # Also used for memory embeddings
-TELEGRAM_BOT_TOKEN=...    # For Telegram channel
+OPENAI_API_KEY=... # Also used for memory embeddings
+TELEGRAM_BOT_TOKEN=... # For Telegram channel
 ```
 
 ## 📚 Documentation
