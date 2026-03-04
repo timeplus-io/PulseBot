@@ -411,3 +411,77 @@ class TestOpenClawMetadata:
         assert meta.openclaw is not None
         assert meta.openclaw.requires.env == []
         assert meta.openclaw.requires.bins == []
+
+
+class TestSkillLoaderRequirementFiltering:
+    def test_skill_filtered_when_binary_missing(self, tmp_path: Path):
+        """Skills whose required binary is absent should not appear in external_skills."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Needs a rare binary.\n"
+            "metadata:\n"
+            "  openclaw:\n"
+            "    requires:\n"
+            "      bins:\n"
+            "        - totally-nonexistent-bin-xyz\n"
+            "---\n\nBody.\n"
+        )
+        from pulsebot.config import SkillsConfig
+        from pulsebot.skills.loader import SkillLoader
+
+        config = SkillsConfig(builtin=[], skill_dirs=[str(tmp_path)])
+        loader = SkillLoader.from_config(config)
+
+        assert "my-skill" not in loader.external_skills
+
+    def test_skill_passes_when_requirements_met(self, tmp_path: Path):
+        """Skill with satisfied requirements should appear in external_skills."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Needs python3.\n"
+            "metadata:\n"
+            "  openclaw:\n"
+            "    requires:\n"
+            "      bins:\n"
+            "        - python3\n"
+            "---\n\nBody.\n"
+        )
+        from pulsebot.config import SkillsConfig
+        from pulsebot.skills.loader import SkillLoader
+        from unittest.mock import patch
+
+        config = SkillsConfig(builtin=[], skill_dirs=[str(tmp_path)])
+        with patch("shutil.which", return_value="/usr/bin/python3"):
+            loader = SkillLoader.from_config(config)
+
+        assert "my-skill" in loader.external_skills
+
+    def test_always_true_skill_never_filtered(self, tmp_path: Path):
+        """Skills with always=true pass regardless of env/bins."""
+        skill = tmp_path / "my-skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: my-skill\n"
+            "description: Always active.\n"
+            "metadata:\n"
+            "  openclaw:\n"
+            "    always: true\n"
+            "    requires:\n"
+            "      env:\n"
+            "        - NONEXISTENT_ENV_XYZ\n"
+            "---\n\nBody.\n"
+        )
+        from pulsebot.config import SkillsConfig
+        from pulsebot.skills.loader import SkillLoader
+
+        config = SkillsConfig(builtin=[], skill_dirs=[str(tmp_path)])
+        loader = SkillLoader.from_config(config)
+
+        assert "my-skill" in loader.external_skills

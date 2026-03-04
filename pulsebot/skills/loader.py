@@ -92,12 +92,23 @@ class SkillLoader:
             skill_dirs: Directories to scan for SKILL.md files
             disabled: Skill names to skip
         """
+        from pulsebot.skills.agentskills.requirements import RequirementChecker
+
         disabled_set = set(disabled or [])
         discovered = discover_skills(skill_dirs)
+        checker = RequirementChecker()
 
         for meta in discovered:
-            if meta.name not in disabled_set:
-                self._external_skills[meta.name] = meta
+            if meta.name in disabled_set:
+                continue
+            satisfied, reason = checker.check(meta)
+            if not satisfied:
+                logger.info(
+                    "Skill '%s' skipped: %s", meta.name, reason,
+                    extra={"skill": meta.name, "reason": reason},
+                )
+                continue
+            self._external_skills[meta.name] = meta
 
         if self._external_skills:
             from pulsebot.skills.builtin.agentskills_bridge import AgentSkillsBridge
