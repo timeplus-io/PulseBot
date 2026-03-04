@@ -15,7 +15,7 @@ import httpx
 # Allowed text file extensions — mirrors ClawHub's TEXT_FILE_EXTENSIONS allowlist
 TEXT_FILE_EXTENSIONS = {
     ".md", ".txt", ".yaml", ".yml", ".json", ".toml",
-    ".js", ".ts", ".jsx", ".tsx", ".py", ".sh", ".bash",
+    ".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx", ".py", ".sh", ".bash",
     ".css", ".html", ".svg", ".xml", ".csv", ".ini",
     ".cfg", ".conf", ".env", ".gitignore", ".editorconfig",
     ".rs", ".go", ".java", ".c", ".cpp", ".h", ".hpp",
