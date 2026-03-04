@@ -35,12 +35,16 @@ def skill_zip_bytes() -> bytes:
 
 class TestClawHubClientSearch:
     def test_search_returns_skill_list(self, mock_client: ClawHubClient):
+        # /api/v1/search returns flat items under "results" key
         payload = {
-            "skills": [
+            "results": [
                 {
-                    "skill": {"slug": "hello", "displayName": "Hello", "summary": "A hello skill", "tags": {}},
-                    "latestVersion": {"version": "1.0.0"},
-                    "owner": {"handle": "alice"},
+                    "score": 3.7,
+                    "slug": "hello",
+                    "displayName": "Hello",
+                    "summary": "A hello skill",
+                    "version": "1.0.0",
+                    "updatedAt": 1000000,
                 }
             ]
         }
@@ -54,12 +58,11 @@ class TestClawHubClientSearch:
         assert len(results) == 1
         assert results[0].slug == "hello"
         assert results[0].latest_version == "1.0.0"
-        assert results[0].owner_handle == "alice"
 
     def test_search_empty_result(self, mock_client: ClawHubClient):
         with patch.object(mock_client._client, "get") as mock_get:
             resp = MagicMock()
-            resp.json.return_value = {"skills": []}
+            resp.json.return_value = {"results": []}
             resp.raise_for_status = MagicMock()
             mock_get.return_value = resp
             results = mock_client.search("nonexistent")
@@ -86,13 +89,14 @@ class TestClawHubClientGetSkill:
 
 class TestClawHubClientGetVersion:
     def test_get_version_info(self, mock_client: ClawHubClient):
+        # get_version() calls /api/v1/skills/{slug} and constructs the download URL
         payload = {
-            "version": {
+            "skill": {"slug": "my-skill", "displayName": "My Skill", "summary": "Does things", "tags": {}},
+            "latestVersion": {
                 "version": "1.0.0",
                 "changelog": "Initial release",
-                "files": [{"path": "SKILL.md", "sha256": "abc", "size": 100}],
-                "downloadUrl": "https://clawhub.ai/downloads/my-skill-1.0.0.zip",
-            }
+            },
+            "owner": {"handle": "bob"},
         }
         with patch.object(mock_client._client, "get") as mock_get:
             resp = MagicMock()
@@ -102,8 +106,8 @@ class TestClawHubClientGetVersion:
             info = mock_client.get_version("my-skill")
 
         assert info.version == "1.0.0"
-        assert info.download_url == "https://clawhub.ai/downloads/my-skill-1.0.0.zip"
-        assert len(info.files) == 1
+        assert info.download_url == "https://clawhub.ai/api/v1/download?slug=my-skill&version=1.0.0"
+        assert info.changelog == "Initial release"
 
 
 class TestClawHubClientInstall:

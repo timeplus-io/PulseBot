@@ -100,16 +100,19 @@ class ClawHubClient:
         return headers
 
     def search(self, query: str, limit: int = 20) -> list[ClawHubSkillInfo]:
-        """Search ClawHub for skills matching the query."""
+        """Search ClawHub for skills matching the query.
+
+        Uses the /api/v1/search endpoint which performs semantic similarity
+        search via embeddings. Returns results under the "results" key.
+        """
         resp = self._client.get(
-            f"{self.registry_url}/skills",
+            f"{self.registry_url}/search",
             params={"q": query, "limit": limit},
             headers=self._headers(),
         )
         resp.raise_for_status()
         data = resp.json()
-        # ClawHub API returns results under "items" key
-        return [self._parse_skill_info(s) for s in data.get("items", data.get("skills", []))]
+        return [self._parse_search_result(s) for s in data.get("results", [])]
 
     def get_skill(self, slug: str) -> ClawHubSkillInfo:
         """Fetch metadata for a skill by slug."""
@@ -121,19 +124,27 @@ class ClawHubClient:
         return self._parse_skill_info(resp.json())
 
     def get_version(self, slug: str, version: str = "latest") -> ClawHubVersionInfo:
-        """Fetch version details (download URL, file checksums)."""
+        """Fetch version details and construct the download URL.
+
+        Calls /api/v1/skills/{slug} to resolve the latest version number,
+        then constructs the download URL using /api/v1/download?slug=&version=.
+        """
         resp = self._client.get(
-            f"{self.registry_url}/skills/{slug}/{version}",
+            f"{self.registry_url}/skills/{slug}",
             headers=self._headers(),
         )
         resp.raise_for_status()
         data = resp.json()
-        ver = data.get("version", {})
+        latest = data.get("latestVersion", {})
+        resolved_version = latest.get("version") or version
+        download_url = (
+            f"{self.site_url}/api/v1/download?slug={slug}&version={resolved_version}"
+        )
         return ClawHubVersionInfo(
-            version=ver.get("version", version),
-            changelog=ver.get("changelog", ""),
-            files=ver.get("files", []),
-            download_url=ver.get("downloadUrl", ""),
+            version=resolved_version,
+            changelog=latest.get("changelog", ""),
+            files=latest.get("files", []),
+            download_url=download_url,
         )
 
     def download_and_install(
@@ -202,6 +213,17 @@ class ClawHubClient:
                         f"SHA256 mismatch for {rel_path}: "
                         f"expected {expected}, got {actual}"
                     )
+
+    def _parse_search_result(self, data: dict) -> ClawHubSkillInfo:
+        """Parse a flat search result item from /api/v1/search."""
+        return ClawHubSkillInfo(
+            slug=data.get("slug", ""),
+            display_name=data.get("displayName", ""),
+            summary=data.get("summary", ""),
+            latest_version=data.get("version") or "",
+            owner_handle="",
+            tags={},
+        )
 
     def _parse_skill_info(self, data: dict) -> ClawHubSkillInfo:
         skill = data.get("skill", data)
