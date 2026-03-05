@@ -11,8 +11,10 @@ from rich.panel import Panel
 console = Console()
 
 
+from pulsebot import __version__
+
 @click.group()
-@click.version_option(version="0.4.0", prog_name="pulsebot")
+@click.version_option(version=__version__, prog_name="pulsebot")
 def cli():
     """PulseBot - Stream-native AI Agent powered by Timeplus."""
     pass

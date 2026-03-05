@@ -1,6 +1,6 @@
 [project]
 name = "pulsebot"
-version = "0.4.0"
+dynamic = ["version"]
 description = "A lightweight, stream-native AI agent powered by Timeplus"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -54,8 +54,14 @@ dev = [
 pulsebot = "pulsebot.cli:cli"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "pulsebot/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pulsebot"]
