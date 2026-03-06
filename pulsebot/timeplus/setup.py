@@ -126,17 +126,43 @@ EVENTS_STREAM_DDL = """
 CREATE STREAM IF NOT EXISTS pulsebot.events (
     id string DEFAULT uuid(),
     timestamp datetime64(3) DEFAULT now64(3),
-    
+
     event_type string,          -- 'heartbeat', 'channel_connected', 'skill_loaded', 'error', 'alert'
     source string,
     severity string,            -- 'debug', 'info', 'warning', 'error', 'critical'
-    
+
     payload string,             -- JSON event data
-    
+
     -- For filtering
     tags array(string)
 )
 SETTINGS event_time_column='timestamp';
+"""
+
+TASKS_STREAM_DDL = """
+CREATE STREAM IF NOT EXISTS pulsebot.tasks (
+    task_id     string DEFAULT uuid(),
+    task_name   string,
+    task_type   string,   -- 'interval' | 'cron'
+    prompt      string,
+    schedule    string,   -- e.g. '15m' or '0 8 * * *'
+    status      string,   -- 'active' | 'paused' | 'deleted'
+    created_at  datetime64(3) DEFAULT now64(3),
+    created_by  string DEFAULT 'user'
+)
+SETTINGS event_time_column='created_at';
+"""
+
+TASK_TRIGGERS_STREAM_DDL = """
+CREATE STREAM IF NOT EXISTS pulsebot.task_triggers (
+    trigger_id   string DEFAULT uuid(),
+    task_id      string,
+    task_name    string,
+    prompt       string,
+    execution_id string DEFAULT '',
+    triggered_at datetime64(3) DEFAULT now64(3)
+)
+SETTINGS event_time_column='triggered_at';
 """
 
 async def create_database(client: "TimeplusClient") -> None:
@@ -167,11 +193,13 @@ async def create_streams(client: "TimeplusClient") -> None:
     
     # Create streams
     streams = [
-        ("messages", MESSAGES_STREAM_DDL),
-        ("llm_logs", LLM_LOGS_STREAM_DDL),
-        ("tool_logs", TOOL_LOGS_STREAM_DDL),
-        ("memory", MEMORY_STREAM_DDL),
-        ("events", EVENTS_STREAM_DDL),
+        ("messages",       MESSAGES_STREAM_DDL),
+        ("llm_logs",       LLM_LOGS_STREAM_DDL),
+        ("tool_logs",      TOOL_LOGS_STREAM_DDL),
+        ("memory",         MEMORY_STREAM_DDL),
+        ("events",         EVENTS_STREAM_DDL),
+        ("tasks",          TASKS_STREAM_DDL),
+        ("task_triggers",  TASK_TRIGGERS_STREAM_DDL),
     ]
     
     for name, ddl in streams:
@@ -193,7 +221,7 @@ async def drop_streams(client: "TimeplusClient") -> None:
     logger.warning("Dropping all Timeplus streams...")
 
     # Drop streams
-    streams = ["pulsebot.messages", "pulsebot.llm_logs", "pulsebot.tool_logs", "pulsebot.memory", "pulsebot.events"]
+    streams = ["pulsebot.messages", "pulsebot.llm_logs", "pulsebot.tool_logs", "pulsebot.memory", "pulsebot.events", "pulsebot.tasks", "pulsebot.task_triggers"]
     for stream in streams:
         try:
             client.execute(f"DROP STREAM IF EXISTS {stream}")
@@ -213,7 +241,7 @@ def verify_streams(client: "TimeplusClient") -> dict[str, bool]:
     Returns:
         Dictionary mapping stream names to existence status
     """
-    required_streams = ["pulsebot.messages", "pulsebot.llm_logs", "pulsebot.tool_logs", "pulsebot.memory", "pulsebot.events"]
+    required_streams = ["pulsebot.messages", "pulsebot.llm_logs", "pulsebot.tool_logs", "pulsebot.memory", "pulsebot.events", "pulsebot.tasks", "pulsebot.task_triggers"]
     results = {}
     
     for stream in required_streams:
