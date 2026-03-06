@@ -58,14 +58,6 @@ timeplus:
   password: "${TIMEPLUS_PASSWORD:-}"
 
 # ---------------------------------------------------------------------------
-# Web search
-# ---------------------------------------------------------------------------
-search:
-  provider: "${SEARCH_PROVIDER:-searxng}"   # "brave" or "searxng"
-  brave_api_key: "${BRAVE_API_KEY:-}"
-  searxng_url: "${SEARXNG_URL:-http://localhost:8080}"
-
-# ---------------------------------------------------------------------------
 # LLM providers – set the API key for whichever provider you use.
 # ---------------------------------------------------------------------------
 providers:
@@ -120,7 +112,6 @@ channels:
 # ---------------------------------------------------------------------------
 skills:
   builtin:
-    - web_search
     - file_ops
     - shell
     - workspace

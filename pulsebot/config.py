@@ -52,13 +52,6 @@ class TimeplusConfig(BaseModel):
     password: str = ""
 
 
-class SearchConfig(BaseModel):
-    """Search provider configuration."""
-    provider: str = "brave"  # "brave" or "searxng"
-    brave_api_key: str = ""
-    searxng_url: str = "http://localhost:8080"
-
-
 class ProviderConfig(BaseModel):
     """LLM provider configuration."""
     api_key: str = ""
@@ -133,7 +126,7 @@ class ClawHubConfig(BaseModel):
 
 class SkillsConfig(BaseModel):
     """Skills configuration."""
-    builtin: list[str] = Field(default_factory=lambda: ["web_search", "file_ops", "shell"])
+    builtin: list[str] = Field(default_factory=lambda: ["file_ops", "shell"])
     custom: list[str] = Field(default_factory=list)
     skill_dirs: list[str] = Field(default_factory=list)
     disabled_skills: list[str] = Field(default_factory=list)
@@ -198,7 +191,6 @@ class Config(BaseSettings):
     
     agent: AgentConfig = Field(default_factory=AgentConfig)
     timeplus: TimeplusConfig = Field(default_factory=TimeplusConfig)
-    search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
@@ -300,7 +292,6 @@ channels:
 
 skills:
   builtin:
-    - web_search
     - file_ops
     - shell
     - workspace

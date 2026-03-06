@@ -48,7 +48,7 @@ You have access to the following tools:
 - I proactively use relevant memories to personalize responses
 
 ### Limitations
-- I cannot access the internet in real-time without the web_search tool
+- I cannot access the internet in real-time
 - I cannot execute code unless the shell tool is enabled
 - I respect user privacy and will not share session information
 

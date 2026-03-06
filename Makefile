@@ -17,7 +17,7 @@ PLATFORMS ?= linux/amd64,linux/arm64
 SINGLE_PLATFORM ?= linux/amd64
 
 # Docker build arguments
-DOCKER_BUILD_ARGS ?=
+DOCKER_BUILD_ARGS ?= --build-arg SETUPTOOLS_SCM_PRETEND_VERSION=$(IMAGE_TAG)
 
 # Help target
 .PHONY: help
