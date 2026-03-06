@@ -22,9 +22,12 @@ def mock_writer():
 
 
 class TestTaskTriggerEndpoint:
-    def test_valid_interval_trigger(self, app, mock_writer):
+    @pytest.fixture(autouse=True)
+    def patch_writer(self, mock_writer, monkeypatch):
         import pulsebot.api.server as srv
-        srv._writer = mock_writer
+        monkeypatch.setattr(srv, "_writer", mock_writer)
+
+    def test_valid_interval_trigger(self, app, mock_writer):
         client = TestClient(app, raise_server_exceptions=True)
 
         resp = client.post("/api/v1/task-trigger", json={
@@ -40,8 +43,6 @@ class TestTaskTriggerEndpoint:
         assert body["session_id"] == "global_task_weather_report"
 
     def test_missing_prompt_returns_422(self, app, mock_writer):
-        import pulsebot.api.server as srv
-        srv._writer = mock_writer
         client = TestClient(app)
 
         resp = client.post("/api/v1/task-trigger", json={
@@ -53,8 +54,6 @@ class TestTaskTriggerEndpoint:
         assert resp.status_code == 422
 
     def test_message_written_with_correct_fields(self, app, mock_writer):
-        import pulsebot.api.server as srv
-        srv._writer = mock_writer
         client = TestClient(app)
 
         client.post("/api/v1/task-trigger", json={
@@ -69,3 +68,12 @@ class TestTaskTriggerEndpoint:
         assert call_args["message_type"] == "scheduled_task"
         assert call_args["target"] == "agent"
         assert "Do something" in call_args["content"]
+
+    def test_returns_500_when_not_initialized(self, app, monkeypatch):
+        import pulsebot.api.server as srv
+        monkeypatch.setattr(srv, "_writer", None)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/task-trigger", json={
+            "task_id": "t1", "task_name": "n", "prompt": "p"
+        })
+        assert resp.status_code == 500

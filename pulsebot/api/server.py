@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pulsebot.config import Config, load_config
 from pulsebot.timeplus.streams import StreamReader, StreamWriter
@@ -61,7 +61,7 @@ class TaskTriggerRequest(BaseModel):
     prompt: str
     trigger_type: str = "interval"          # 'interval' | 'cron'
     cron_expression: str | None = None
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskTriggerResponse(BaseModel):
@@ -74,7 +74,7 @@ class TaskTriggerResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global _config, _writer, _reader, _proxy_registrys
+    global _config, _writer, _reader, _proxy_registry
     
     # Startup
     logger.info("Starting PulseBot API server")
