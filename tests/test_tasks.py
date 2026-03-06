@@ -61,8 +61,7 @@ class TestCreateIntervalTask:
             api_url="http://localhost:8000",
         )
         task_sql = mock_client.execute.call_args_list[1][0][0]
-        # hyphens/special chars → underscores, prefixed with user_
-        assert "user_my_task__1" in task_sql or "user_my_task_1" in task_sql
+        assert "user_my_task_1" in task_sql
 
     def test_returns_sanitised_name(self, task_mgr, mock_client):
         result = task_mgr.create_interval_task(
@@ -94,6 +93,7 @@ class TestCreateCronTask:
         udf_sql = mock_client.execute.call_args_list[0][0][0]
         assert "check_cron_and_trigger" in udf_sql
         assert "matches_cron" in udf_sql
+        assert "http://localhost:8000" in udf_sql  # ← add this line
 
     def test_task_uses_1m_schedule(self, task_mgr, mock_client):
         task_mgr.create_cron_task(

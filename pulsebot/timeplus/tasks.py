@@ -330,7 +330,7 @@ class TaskManager:
             The sanitised internal task name.
         """
         task_name = self._sanitise_task_name(name)
-        safe_prompt = prompt.replace("'", "''").replace('"', '\\"')
+        safe_prompt = prompt.replace("'", "''")
 
         # 1. Create the Python UDF
         udf_sql = _INTERVAL_UDF_TEMPLATE.format(api_url=api_url)
@@ -379,7 +379,7 @@ class TaskManager:
             The sanitised internal task name.
         """
         task_name = self._sanitise_task_name(name)
-        safe_prompt = prompt.replace("'", "''").replace('"', '\\"')
+        safe_prompt = prompt.replace("'", "''")
         safe_cron = cron.replace("'", "''")
 
         # 1. Create the cron-matching Python UDF
