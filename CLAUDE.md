@@ -56,7 +56,7 @@ All components communicate via Timeplus streams (unbounded append-only data):
 
 - `pulsebot/core/` - Agent loop, context building, tool execution, routing
 - `pulsebot/providers/` - LLM provider implementations (Anthropic, OpenAI, OpenRouter, Ollama, NVIDIA)
-- `pulsebot/skills/` - Tool/skill system with builtin skills (web_search, file_ops, shell)
+- `pulsebot/skills/` - Tool/skill system with builtin skills (file_ops, shell)
 - `pulsebot/channels/` - Input channels (Telegram bot integration)
 - `pulsebot/timeplus/` - Timeplus client, stream reader/writer, vector memory, scheduled tasks
 - `pulsebot/api/` - FastAPI server with REST and WebSocket endpoints

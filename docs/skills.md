@@ -26,7 +26,7 @@ pulsebot/skills/
 │   └── requirements.py     # Runtime requirement checker
 └── builtin/                # Built-in skill implementations
     ├── __init__.py
-    ├── web_search.py
+
     ├── file_ops.py
     ├── shell.py
     └── agentskills_bridge.py  # Bridge: load_skill + read_skill_file tools
@@ -49,7 +49,7 @@ skills/                     # Default directory for external skill packages
 Startup
 │
 ├─ Load built-in skills (Python classes → tools registered directly)
-│   web_search, file_ops, shell
+│   file_ops, shell
 │
 ├─ Discover external skills (scan skill_dirs for SKILL.md files)
 │   Parse YAML frontmatter → SkillMetadata (name + description only)
@@ -93,7 +93,7 @@ ToolResult → LLM → Final Response
 skills:
   # Built-in Python skills to load
   builtin:
-    - web_search
+
     - file_ops
     - shell
     - workspace
@@ -123,7 +123,7 @@ clawhub:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `skills.builtin` | list[str] | `["web_search", "file_ops", "shell", "workspace"]` | Built-in skill names to load |
+| `skills.builtin` | list[str] | `["file_ops", "shell", "workspace"]` | Built-in skill names to load |
 | `skills.custom` | list[str] | `[]` | Module paths to custom Python skill classes |
 | `skills.skill_dirs` | list[str] | `[]` | Directories to scan for agentskills.io packages |
 | `skills.disabled_skills` | list[str] | `[]` | Skill names to skip (by `name` field in SKILL.md) |
@@ -154,16 +154,6 @@ pulsebot-agent:
 ```
 
 ## Built-in Skills
-
-### Web Search (`web_search`)
-
-Searches the web using Brave Search API or SearXNG.
-
-**Tool**: `web_search`
-- **Parameters**: `query` (string), `count` (integer, 1-10)
-- **Returns**: List of search results with title, URL, and description
-
-**Configuration**: Set `search.provider` to `"brave"` or `"searxng"` in config.yaml.
 
 ### File Operations (`file_ops`)
 
@@ -594,7 +584,7 @@ skills:
 - Verify `skill_dirs` is configured and contains valid skill packages
 
 **"Unknown built-in skill" error**:
-- Check that the skill name matches one of: `web_search`, `file_ops`, `shell`, `workspace`
+- Check that the skill name matches one of: `file_ops`, `shell`, `workspace`
 
 **"Failed to load custom skill" error**:
 - Ensure the module path is importable (in Python path)

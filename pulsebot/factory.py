@@ -103,13 +103,7 @@ def create_skill_loader(config: "Config") -> "SkillLoader":
     from pulsebot.skills import SkillLoader
 
     # Standard kwargs for non-workspace builtins
-    skill_configs: dict = {
-        "web_search": {
-            "provider": config.search.provider,
-            "api_key": config.search.brave_api_key,
-            "searxng_url": config.search.searxng_url,
-        },
-    }
+    skill_configs: dict = {}
 
     # Build loader for all skills except workspace
     non_workspace = config.skills.model_copy(

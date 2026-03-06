@@ -20,7 +20,7 @@ class ToolExecutor:
     
     Example:
         >>> executor = ToolExecutor(skill_loader)
-        >>> result = await executor.execute("web_search", {"query": "weather"})
+        >>> result = await executor.execute("shell", {"command": "ls -l"})
     """
     
     def __init__(self, skill_loader: "SkillLoader"):

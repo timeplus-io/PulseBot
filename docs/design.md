@@ -96,7 +96,7 @@ PulseBot is an ultra-lightweight personal AI agent that leverages Timeplus's str
 │  │               │  │ • Anthropic   │  │ • Skills      │                    │
 │  │ • History     │  │ • OpenAI      │  │   - shell     │                    │
 │  │ • Memory      │  │ • Ollama      │  │   - file_ops  │                    │
-│  │ • System      │  │ • OpenRouter  │  │   - web_search│                    │
+│  │ • System      │  │ • OpenRouter  │  │               │                    │
 │  │   prompt      │  │ • NVIDIA      │  │               │                    │
 │  └───────────────┘  └───────────────┘  └───────────────┘                    │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -324,7 +324,7 @@ Pluggable tool system with base interface:
 |-------|-------|-------------|
 | shell | run_command | Shell execution with security guards |
 | file_ops | read_file, write_file, list_directory | Sandboxed file operations |
-| web_search | web_search | Brave Search API integration |
+
 
 ### Skill Interface
 
@@ -417,7 +417,6 @@ skills:
   builtin:
     - shell
     - file_ops
-    - web_search
 ```
 
 ---

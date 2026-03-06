@@ -68,19 +68,10 @@ Control which tools the agent can access.
 
 | Field | Description |
 | :--- | :--- |
-| `builtin` | List of standard skills (e.g., `web_search`, `file_ops`, `shell`, `workspace`). |
+| `builtin` | List of standard skills (e.g., `file_ops`, `shell`, `workspace`). |
 | `custom` | List of additional skill names to load. |
 | `skill_dirs` | Directories to scan for custom skill packages. |
 | `disabled_skills` | Specific skills to skip during loading. |
-
-### Search
-Web search provider settings.
-
-| Field | Default | Description |
-| :--- | :--- | :--- |
-| `provider` | `brave` | Search engine to use (`brave` or `searxng`). |
-| `brave_api_key` | `""` | API key for Brave Search. |
-| `searxng_url` | `http://localhost:8080` | URL for the SearXNG instance. |
 
 ### Memory
 Vector-based memory for context retention and duplicate detection.
