@@ -1,5 +1,11 @@
 # PulseBot
 
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![Timeplus Powered](https://img.shields.io/badge/Powered%20by-Timeplus-green)](https://github.com/timeplus-io/timeplus)
+[![GitHub stars](https://img.shields.io/github/stars/timeplus-io/PulseBot)](https://github.com/timeplus-io/PulseBot/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/timeplus-io/PulseBot)](https://github.com/timeplus-io/PulseBot/issues)
+[![GitHub forks](https://img.shields.io/github/forks/timeplus-io/PulseBot)](https://github.com/timeplus-io/PulseBot/network)
+
 **Stream-native AI Agent powered by Timeplus**
 
 PulseBot is a lightweight, extensible AI agent framework that uses Timeplus streaming database as its backbone for real-time message routing, observability, and memory storage.
