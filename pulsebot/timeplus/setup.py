@@ -221,7 +221,15 @@ async def drop_streams(client: "TimeplusClient") -> None:
     logger.warning("Dropping all Timeplus streams...")
 
     # Drop streams
-    streams = ["pulsebot.messages", "pulsebot.llm_logs", "pulsebot.tool_logs", "pulsebot.memory", "pulsebot.events", "pulsebot.tasks", "pulsebot.task_triggers"]
+    streams = [
+        "pulsebot.messages",
+        "pulsebot.llm_logs",
+        "pulsebot.tool_logs",
+        "pulsebot.memory",
+        "pulsebot.events",
+        "pulsebot.tasks",
+        "pulsebot.task_triggers",
+    ]
     for stream in streams:
         try:
             client.execute(f"DROP STREAM IF EXISTS {stream}")
@@ -241,7 +249,15 @@ def verify_streams(client: "TimeplusClient") -> dict[str, bool]:
     Returns:
         Dictionary mapping stream names to existence status
     """
-    required_streams = ["pulsebot.messages", "pulsebot.llm_logs", "pulsebot.tool_logs", "pulsebot.memory", "pulsebot.events", "pulsebot.tasks", "pulsebot.task_triggers"]
+    required_streams = [
+        "pulsebot.messages",
+        "pulsebot.llm_logs",
+        "pulsebot.tool_logs",
+        "pulsebot.memory",
+        "pulsebot.events",
+        "pulsebot.tasks",
+        "pulsebot.task_triggers",
+    ]
     results = {}
     
     for stream in required_streams:

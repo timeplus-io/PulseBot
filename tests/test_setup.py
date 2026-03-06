@@ -1,4 +1,6 @@
 """Tests for Timeplus stream setup DDL."""
+from __future__ import annotations
+
 from pulsebot.timeplus.setup import (
     TASKS_STREAM_DDL,
     TASK_TRIGGERS_STREAM_DDL,
