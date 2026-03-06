@@ -54,6 +54,23 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class TaskTriggerRequest(BaseModel):
+    """Incoming callback from a Timeplus Python UDF."""
+    task_id: str
+    task_name: str
+    prompt: str
+    trigger_type: str = "interval"          # 'interval' | 'cron'
+    cron_expression: str | None = None
+    metadata: dict[str, Any] = {}
+
+
+class TaskTriggerResponse(BaseModel):
+    """Response to the Timeplus Python UDF callback."""
+    execution_id: str
+    session_id: str
+    status: str = "triggered"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
@@ -183,6 +200,44 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
     )
     
     return ChatResponse(session_id=session_id, message_id=message_id)
+
+
+@router.post("/api/v1/task-trigger", response_model=TaskTriggerResponse)
+async def trigger_task(request: TaskTriggerRequest) -> TaskTriggerResponse:
+    """Receive a scheduled task callback from a Timeplus Python UDF.
+
+    Writes a 'scheduled_task' message into the messages stream so the
+    agent loop processes it under the task's global session.
+    """
+    if _writer is None:
+        raise HTTPException(status_code=500, detail="Server not initialized")
+
+    session_id = f"global_task_{request.task_name}"
+
+    execution_id = await _writer.write({
+        "source": "scheduler",
+        "target": "agent",
+        "session_id": session_id,
+        "message_type": "scheduled_task",
+        "content": json.dumps({
+            "text": request.prompt,
+            "task_id": request.task_id,
+            "task_name": request.task_name,
+            "trigger_type": request.trigger_type,
+        }),
+        "user_id": "system",
+        "priority": 1,
+    })
+
+    logger.info(
+        "Task trigger received",
+        extra={"task_name": request.task_name, "session_id": session_id},
+    )
+
+    return TaskTriggerResponse(
+        execution_id=execution_id,
+        session_id=session_id,
+    )
 
 
 @router.websocket("/ws/{session_id}")
