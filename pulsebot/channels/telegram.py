@@ -83,10 +83,11 @@ class TelegramChannel(BaseChannel):
         self._app.add_handler(CommandHandler("help", self._handle_help))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         
-        # Start listening for responses (async task)
+        # Start listening for responses and task notifications (async tasks)
         import asyncio
         asyncio.create_task(self._listen_for_responses())
-        
+        asyncio.create_task(self._listen_for_task_notifications())
+
         # Start polling
         logger.info("Starting Telegram bot polling")
         await self._app.initialize()
@@ -228,6 +229,55 @@ class TelegramChannel(BaseChannel):
         except Exception as e:
             logger.error(f"Error in Telegram response listener: {e}")
     
+    async def _handle_task_notification(self, payload_json: str) -> None:
+        """Fan out a task_notification event to all active Telegram chats."""
+        try:
+            payload = json.loads(payload_json)
+        except Exception:
+            logger.warning("Invalid task_notification payload: %s", payload_json)
+            return
+
+        text = payload.get("text", "")
+        task_name = payload.get("task_name", "")
+
+        if not self._sessions:
+            logger.debug("No active Telegram chats for task broadcast: %s", task_name)
+            return
+
+        for chat_id in list(self._sessions.keys()):
+            try:
+                if self._app:
+                    await self._app.bot.send_message(chat_id=chat_id, text=text)
+            except Exception as e:
+                logger.warning("Task broadcast failed for chat %s: %s", chat_id, e)
+
+    async def _listen_for_task_notifications(self) -> None:
+        """Subscribe to pulsebot.events for task_notification events."""
+        from pulsebot.timeplus.client import TimeplusClient
+        from pulsebot.timeplus.streams import StreamReader
+
+        events_client = TimeplusClient(
+            host=self.tp.host,
+            port=self.tp.port,
+            username=self.tp.username,
+            password=self.tp.password,
+        )
+        events_reader = StreamReader(events_client, "events")
+
+        query = """
+            SELECT * FROM pulsebot.events
+            WHERE event_type = 'task_notification'
+            SETTINGS seek_to='latest'
+        """
+        try:
+            async for event in events_reader.stream(query):
+                try:
+                    await self._handle_task_notification(event.get("payload", "{}"))
+                except Exception as e:
+                    logger.error("Error handling task notification: %s", e)
+        except Exception as e:
+            logger.error("Error in task notification listener: %s", e)
+
     def _get_or_create_session(self, chat_id: int, user_id: int) -> str:
         """Get or create session for a chat.
         

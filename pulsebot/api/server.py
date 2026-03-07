@@ -359,15 +359,45 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
         finally:
             logger.info(f"send_responses ended for session: {session_id}")
     
-    # Run both tasks concurrently
+    async def forward_task_notifications():
+        """Forward task_notification events to this WebSocket client."""
+        ws_events_client = TimeplusClient.from_config(_config.timeplus)
+        ws_events_reader = StreamReader(ws_events_client, "events")
+
+        events_query = """
+            SELECT * FROM pulsebot.events
+            WHERE event_type = 'task_notification'
+            SETTINGS seek_to='latest'
+        """
+        try:
+            async for event in ws_events_reader.stream(events_query):
+                if websocket.client_state.name != "CONNECTED":
+                    break
+                try:
+                    payload = json.loads(event.get("payload", "{}"))
+                    await websocket.send_json({
+                        "type": "task_notification",
+                        "task_name": payload.get("task_name", ""),
+                        "text": payload.get("text", ""),
+                    })
+                except RuntimeError:
+                    break
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket disconnected during task notifications: {session_id}")
+        except Exception as e:
+            logger.error(f"WebSocket task_notification stream error: {e}")
+
+    # Run all tasks concurrently
     receive_task = asyncio.create_task(receive_messages())
     send_task = asyncio.create_task(send_responses())
-    
+    notify_task = asyncio.create_task(forward_task_notifications())
+
     try:
-        await asyncio.gather(receive_task, send_task)
+        await asyncio.gather(receive_task, send_task, notify_task)
     except Exception:
         receive_task.cancel()
         send_task.cancel()
+        notify_task.cancel()
 
 
 @router.get("/sessions/{session_id}/history")
