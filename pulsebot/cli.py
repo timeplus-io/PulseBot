@@ -439,6 +439,9 @@ def task_create(config_file, name, prompt, interval, cron):
     cfg = load_config(config_file)
     mgr = TaskManager(TimeplusClient.from_config(cfg.timeplus))
     try:
+        if interval and cron:
+            console.print("[red]Specify only one of --interval or --cron, not both.[/]")
+            raise SystemExit(1)
         if interval:
             task_name = mgr.create_interval_task(name=name, prompt=prompt, interval=interval)
         elif cron:
@@ -447,6 +450,8 @@ def task_create(config_file, name, prompt, interval, cron):
             console.print("[red]Provide --interval or --cron[/]")
             raise SystemExit(1)
         console.print(f"[green]Created task '{task_name}'[/]")
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]{e}[/]")
         raise SystemExit(1)
