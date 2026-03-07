@@ -238,6 +238,9 @@ class TelegramChannel(BaseChannel):
             return
 
         text = payload.get("text", "")
+        if not text:
+            logger.warning("task_notification payload missing 'text' field: %s", payload_json)
+            return
         task_name = payload.get("task_name", "")
 
         if not self._sessions:
@@ -277,6 +280,8 @@ class TelegramChannel(BaseChannel):
                     logger.error("Error handling task notification: %s", e)
         except Exception as e:
             logger.error("Error in task notification listener: %s", e)
+        finally:
+            events_client.close()
 
     def _get_or_create_session(self, chat_id: int, user_id: int) -> str:
         """Get or create session for a chat.

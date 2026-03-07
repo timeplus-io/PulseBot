@@ -375,10 +375,13 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
                     break
                 try:
                     payload = json.loads(event.get("payload", "{}"))
+                    text = payload.get("text", "")
+                    if not text:
+                        continue
                     await websocket.send_json({
                         "type": "task_notification",
                         "task_name": payload.get("task_name", ""),
-                        "text": payload.get("text", ""),
+                        "text": text,
                     })
                 except RuntimeError:
                     break
@@ -393,7 +396,14 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
     notify_task = asyncio.create_task(forward_task_notifications())
 
     try:
-        await asyncio.gather(receive_task, send_task, notify_task)
+        done, pending = await asyncio.wait(
+            {receive_task, send_task, notify_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
     except Exception:
         receive_task.cancel()
         send_task.cancel()
