@@ -133,7 +133,6 @@ This starts:
 
 | Skill | Tools | Description |
 |-------|-------|-------------|
-
 | `file_ops` | `read_file`, `write_file`, `list_directory` | Sandboxed file operations |
 | `shell` | `run_command` | Shell execution with security guards |
 | `workspace` | `workspace_create_app`, `workspace_write_file`, ... | Create and publish dynamic artifacts and web apps |
