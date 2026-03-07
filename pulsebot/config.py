@@ -295,6 +295,7 @@ skills:
     - file_ops
     - shell
     - workspace
+    - scheduler
 
   custom: []
 
