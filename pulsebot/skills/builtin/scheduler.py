@@ -171,6 +171,7 @@ class SchedulerSkill(BaseSkill):
                 f"Cannot {action} '{name}': only user-created tasks (starting with 'user_') "
                 "can be managed via this tool."
             )
+        _past = {"pause": "paused", "resume": "resumed", "delete": "deleted"}
         try:
             if action == "pause":
                 self.task_manager.pause_task(name)
@@ -178,6 +179,6 @@ class SchedulerSkill(BaseSkill):
                 self.task_manager.resume_task(name)
             elif action == "delete":
                 self.task_manager.drop_task(name)
-            return ToolResult.ok(f"Task '{name}' {action}d.")
+            return ToolResult.ok(f"Task '{name}' {_past.get(action, action + 'd')}.")
         except Exception as e:
             return ToolResult.fail(str(e))

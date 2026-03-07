@@ -83,6 +83,14 @@ class TestCreateCronTask:
             api_url="http://localhost:8000",
         )
 
+    @pytest.mark.asyncio
+    async def test_failure_returns_error(self, skill, mock_task_mgr):
+        mock_task_mgr.create_cron_task.side_effect = Exception("DB error")
+        result = await skill.execute("create_cron_task",
+                                     {"name": "x", "prompt": "y", "cron": "0 8 * * *"})
+        assert not result.success
+        assert "DB error" in result.error
+
 
 class TestListTasks:
     @pytest.mark.asyncio
@@ -129,3 +137,9 @@ class TestPauseResumeDelete:
     async def test_cannot_pause_system_task(self, skill, mock_task_mgr):
         result = await skill.execute("pause_task", {"name": "daily_summary"})
         assert not result.success
+
+    @pytest.mark.asyncio
+    async def test_cannot_resume_system_task(self, skill, mock_task_mgr):
+        result = await skill.execute("resume_task", {"name": "daily_summary"})
+        assert not result.success
+        mock_task_mgr.resume_task.assert_not_called()
