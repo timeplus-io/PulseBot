@@ -21,6 +21,7 @@ BUILTIN_SKILLS = {
     "file_ops": "pulsebot.skills.builtin.file_ops.FileOpsSkill",
     "shell": "pulsebot.skills.builtin.shell.ShellSkill",
     "workspace":  "pulsebot.skills.builtin.workspace.WorkspaceSkill",
+    "scheduler": "pulsebot.skills.builtin.scheduler.SchedulerSkill",
 }
 
 
