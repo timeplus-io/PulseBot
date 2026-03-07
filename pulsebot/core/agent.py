@@ -289,11 +289,20 @@ class Agent:
                 # Signal UI that thinking is done so the spinner clears
                 await self._broadcast_llm_thinking(session_id, source, iteration, "completed", latency_ms)
                 # Send user-visible error response and exit the loop
-                await self._send_response(
-                    session_id=session_id,
-                    source_message=message,
-                    response_text=f"Sorry, an error occurred while processing your request: {e}",
-                )
+                error_text = f"Sorry, an error occurred while processing your request: {e}"
+                if message_type == "scheduled_task" and self.notifier:
+                    task_name = content.get("task_name", session_id.removeprefix("global_task_"))
+                    await self.notifier.broadcast_task_result(
+                        task_name=task_name,
+                        text=error_text,
+                        session_id=session_id,
+                    )
+                else:
+                    await self._send_response(
+                        session_id=session_id,
+                        source_message=message,
+                        response_text=error_text,
+                    )
                 return
 
             latency_ms = (time.time() - start_time) * 1000
@@ -394,7 +403,13 @@ class Agent:
                     response_content = "I'm not sure how to respond to that."
 
                 if message_type == "scheduled_task" and self.notifier:
-                    task_name = content.get("task_name", session_id.removeprefix("global_task_"))
+                    task_name = content.get("task_name")
+                    if task_name is None:
+                        task_name = session_id.removeprefix("global_task_")
+                        logger.warning(
+                            "scheduled_task message missing task_name field; falling back to session_id derivation",
+                            extra={"session_id": session_id, "derived_task_name": task_name},
+                        )
                     await self.notifier.broadcast_task_result(
                         task_name=task_name,
                         text=response_content,
@@ -424,11 +439,19 @@ class Agent:
                     "I apologize, but I wasn't able to complete this task within the allowed "
                     "number of steps. Please try breaking down your request into smaller parts."
                 )
-            await self._send_response(
-                session_id=session_id,
-                source_message=message,
-                response_text=final_text,
-            )
+            if message_type == "scheduled_task" and self.notifier:
+                task_name = content.get("task_name", session_id.removeprefix("global_task_"))
+                await self.notifier.broadcast_task_result(
+                    task_name=task_name,
+                    text=final_text,
+                    session_id=session_id,
+                )
+            else:
+                await self._send_response(
+                    session_id=session_id,
+                    source_message=message,
+                    response_text=final_text,
+                )
 
     async def _send_response(
         self,
