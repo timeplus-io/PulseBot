@@ -124,6 +124,11 @@ This starts:
 | `pulsebot chat` | Interactive CLI chat |
 | `pulsebot init` | Generate config.yaml |
 | `pulsebot task list` | List scheduled tasks |
+| `pulsebot task create --name <n> --prompt <p> --interval <i>` | Create an interval-based task |
+| `pulsebot task create --name <n> --prompt <p> --cron <expr>` | Create a cron-scheduled task |
+| `pulsebot task pause <name>` | Pause a scheduled task |
+| `pulsebot task resume <name>` | Resume a paused task |
+| `pulsebot task delete <name>` | Delete a scheduled task |
 | `pulsebot skill search <query>` | Search ClawHub registry for skills |
 | `pulsebot skill install <slug>` | Install skill from ClawHub |
 | `pulsebot skill list` | List installed ClawHub skills |
@@ -133,10 +138,10 @@ This starts:
 
 | Skill | Tools | Description |
 |-------|-------|-------------|
-
 | `file_ops` | `read_file`, `write_file`, `list_directory` | Sandboxed file operations |
 | `shell` | `run_command` | Shell execution with security guards |
 | `workspace` | `workspace_create_app`, `workspace_write_file`, ... | Create and publish dynamic artifacts and web apps |
+| `scheduler` | `create_interval_task`, `create_cron_task`, `list_tasks`, `pause_task`, `resume_task`, `delete_task` | Create and manage recurring tasks backed by Timeplus native Tasks |
 
 ### AgentSkills.io & OpenClaw Support
 
@@ -203,7 +208,8 @@ Access the built-in web chat interface at `http://localhost:8000/` after startin
 | GET | `/` | Web chat UI |
 | GET | `/health` | Health check |
 | POST | `/chat` | Send message (async) |
-| WS | `/ws/{session_id}` | Real-time chat |
+| POST | `/api/v1/task-trigger` | Timeplus UDF callback for scheduled tasks |
+| WS | `/ws/{session_id}` | Real-time chat (also streams `task_notification` events) |
 | GET | `/sessions/{id}/history` | Get conversation history |
 
 ## 🗄️ Timeplus Streams
@@ -214,7 +220,10 @@ Access the built-in web chat interface at `http://localhost:8000/` after startin
 | `llm_logs` | LLM call observability (tokens, latency, cost) |
 | `tool_logs` | Tool execution logging (name, arguments, duration, status) |
 | `memory` | Vector-indexed memories with semantic search |
-| `events` | System events & alerts |
+| `events` | System events, alerts & `task_notification` broadcasts |
+| `task_triggers` | Audit log of every scheduled task invocation |
+
+> **Scheduled tasks** are Timeplus-native TASK objects created by the `scheduler` skill. Each task runs a Python UDF that POSTs to `/api/v1/task-trigger`, which the agent processes and fans out to all connected channels via the `events` stream. See [Task Design](docs/tasks.md) for details.
 
 ## 🔐 Environment Variables
 
@@ -240,6 +249,7 @@ TELEGRAM_BOT_TOKEN=... # For Telegram channel
 
 - [Technical Design](docs/design.md) - Full architecture documentation
 - [Configuration Guide](docs/configuration.md) - All settings and environment variables
+- [Task Design](docs/tasks.md) - Scheduled task architecture and usage
 - [Agent Workspace](docs/workspace.md) - Dynamic artifacts and full-stack apps
 - [Telegram Setup](docs/telegram.md) - Connect PulseBot to Telegram
 - [Memory System](docs/memory.md) - Vector memory and embeddings
