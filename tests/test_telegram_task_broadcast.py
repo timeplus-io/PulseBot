@@ -15,6 +15,7 @@ def channel():
             111: "tg_111_aaa",
             222: "tg_222_bbb",
         }
+        ch.allowed_users = None
         # Mock _app.bot.send_message
         mock_bot = AsyncMock()
         mock_bot.send_message = AsyncMock()
@@ -52,12 +53,25 @@ class TestTelegramTaskBroadcast:
         assert "Sunny today!" in sent_text
 
     @pytest.mark.asyncio
-    async def test_no_active_chats_does_not_raise(self, channel):
+    async def test_no_active_chats_no_allow_from_does_not_raise(self, channel):
         channel._sessions = {}
+        channel.allowed_users = None
         await channel._handle_task_notification(
             json.dumps({"task_name": "t", "text": "msg", "session_id": "s"})
         )
         channel._app.bot.send_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_active_chats_falls_back_to_allow_from(self, channel):
+        channel._sessions = {}
+        channel.allowed_users = [999, 888]
+        await channel._handle_task_notification(
+            json.dumps({"task_name": "t", "text": "msg", "session_id": "s"})
+        )
+        assert channel._app.bot.send_message.call_count == 2
+        chat_ids = {c.kwargs["chat_id"]
+                    for c in channel._app.bot.send_message.call_args_list}
+        assert chat_ids == {999, 888}
 
     @pytest.mark.asyncio
     async def test_invalid_json_does_not_raise(self, channel):

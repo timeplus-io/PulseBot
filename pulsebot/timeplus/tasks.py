@@ -152,7 +152,7 @@ class TaskManager:
         self.client.execute(sql)
         logger.info(
             "Created task",
-            extra={"name": name, "schedule": schedule, "target": target_stream}
+            extra={"task_name": name, "schedule": schedule, "target": target_stream}
         )
     
     def drop_task(self, name: str) -> None:
@@ -162,7 +162,7 @@ class TaskManager:
             name: Task name to drop
         """
         self.client.execute(f"DROP TASK IF EXISTS {name}")
-        logger.info("Dropped task", extra={"name": name})
+        logger.info("Dropped task", extra={"task_name": name})
     
     def list_tasks(self) -> list[dict[str, Any]]:
         """List all scheduled tasks.
@@ -179,7 +179,7 @@ class TaskManager:
             name: Task name to pause
         """
         self.client.execute(f"STOP TASK {name}")
-        logger.info("Paused task", extra={"name": name})
+        logger.info("Paused task", extra={"task_name": name})
     
     def resume_task(self, name: str) -> None:
         """Resume a paused task.
@@ -188,7 +188,7 @@ class TaskManager:
             name: Task name to resume
         """
         self.client.execute(f"START TASK {name}")
-        logger.info("Resumed task", extra={"name": name})
+        logger.info("Resumed task", extra={"task_name": name})
     
     def create_heartbeat_task(
         self,
@@ -353,7 +353,7 @@ class TaskManager:
         """
         self.client.execute(task_sql)
 
-        logger.info("Created interval task", extra={"name": task_name, "interval": interval})
+        logger.info("Created interval task", extra={"task_name": task_name, "interval": interval})
         return task_name
 
     def create_cron_task(
@@ -403,5 +403,5 @@ class TaskManager:
         """
         self.client.execute(task_sql)
 
-        logger.info("Created cron task", extra={"name": task_name, "cron": cron})
+        logger.info("Created cron task", extra={"task_name": task_name, "cron": cron})
         return task_name

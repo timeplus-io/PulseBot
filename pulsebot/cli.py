@@ -47,6 +47,10 @@ def run(config: str):
         # Initialize components
         tp = TimeplusClient.from_config(cfg.timeplus)
 
+        # Ensure all streams exist (idempotent, safe to run every start)
+        from pulsebot.timeplus.setup import create_streams
+        await create_streams(tp)
+
         provider = create_provider(cfg)
 
         # Create embedding provider based on memory configuration

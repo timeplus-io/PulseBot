@@ -1480,7 +1480,6 @@ wheels = [
 
 [[package]]
 name = "pulsebot"
-version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

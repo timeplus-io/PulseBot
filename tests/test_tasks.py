@@ -51,7 +51,7 @@ class TestCreateIntervalTask:
         assert "15m" in task_sql
         assert "weather_report" in task_sql   # sanitised name
         assert "Get the weather" in task_sql
-        assert "task_triggers" in task_sql
+        assert "trigger_pulsebot_task" in task_sql
 
     def test_name_sanitised(self, task_mgr, mock_client):
         task_mgr.create_interval_task(

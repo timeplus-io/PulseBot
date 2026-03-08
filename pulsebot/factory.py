@@ -131,7 +131,7 @@ def create_skill_loader(config: "Config") -> "SkillLoader":
     if "scheduler" in config.skills.builtin:
         from pulsebot.skills.builtin.scheduler import SchedulerSkill
 
-        api_url = f"http://localhost:{config.api.port}"
+        api_url = config.workspace.api_server_url
         skill = SchedulerSkill(timeplus_config=config.timeplus, api_url=api_url)
         loader._skills["scheduler"] = skill
         for tool in skill.get_tools():

@@ -83,6 +83,9 @@ class TelegramChannel(BaseChannel):
         self._app.add_handler(CommandHandler("help", self._handle_help))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         
+        # Restore sessions from history so task notifications work after restarts
+        await self._restore_sessions_from_history()
+
         # Start listening for responses and task notifications (async tasks)
         import asyncio
         asyncio.create_task(self._listen_for_responses())
@@ -243,11 +246,20 @@ class TelegramChannel(BaseChannel):
             return
         task_name = payload.get("task_name", "")
 
-        if not self._sessions:
-            logger.debug("No active Telegram chats for task broadcast: %s", task_name)
-            return
+        # Determine which chat IDs to broadcast to.
+        # Prefer active sessions; fall back to allow_from list for freshly-started bots.
+        chat_ids = list(self._sessions.keys())
+        if not chat_ids:
+            if self.allowed_users:
+                chat_ids = list(self.allowed_users)
+                logger.debug(
+                    "No active sessions; using allow_from list for task broadcast: %s", task_name
+                )
+            else:
+                logger.debug("No active Telegram chats for task broadcast: %s", task_name)
+                return
 
-        for chat_id in list(self._sessions.keys()):
+        for chat_id in chat_ids:
             try:
                 if self._app:
                     await self._app.bot.send_message(chat_id=chat_id, text=text)
@@ -282,6 +294,42 @@ class TelegramChannel(BaseChannel):
             logger.error("Error in task notification listener: %s", e)
         finally:
             events_client.close()
+
+    async def _restore_sessions_from_history(self) -> None:
+        """Pre-populate _sessions from message history so task notifications
+        survive agent restarts.  Reads the 100 most recent Telegram messages
+        and rebuilds the chat_id → session_id mapping."""
+        from pulsebot.timeplus.client import TimeplusClient
+
+        try:
+            client = TimeplusClient(
+                host=self.tp.host,
+                port=self.tp.port,
+                username=self.tp.username,
+                password=self.tp.password,
+            )
+            rows = client.query(
+                "SELECT session_id, channel_metadata "
+                "FROM table(pulsebot.messages) "
+                "WHERE source = 'telegram' AND channel_metadata != '' "
+                "ORDER BY _tp_time DESC LIMIT 100"
+            )
+            for row in rows:
+                try:
+                    meta = json.loads(row.get("channel_metadata", "{}"))
+                    chat_id = meta.get("chat_id")
+                    session_id = row.get("session_id", "")
+                    if chat_id and session_id and int(chat_id) not in self._sessions:
+                        self._sessions[int(chat_id)] = session_id
+                except Exception:
+                    pass
+            if self._sessions:
+                logger.info(
+                    "Restored Telegram sessions from history",
+                    extra={"count": len(self._sessions)},
+                )
+        except Exception as e:
+            logger.warning("Failed to restore Telegram sessions from history: %s", e)
 
     def _get_or_create_session(self, chat_id: int, user_id: int) -> str:
         """Get or create session for a chat.
