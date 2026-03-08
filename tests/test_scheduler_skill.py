@@ -3,7 +3,7 @@
 from __future__ import annotations
 from unittest.mock import MagicMock, AsyncMock
 import pytest
-from pulsebot.skills.builtin.scheduler import SchedulerSkill
+from pulsebot.skills.builtin.scheduler import SchedulerSkill, _convert_cron_to_utc
 
 
 @pytest.fixture
@@ -143,3 +143,69 @@ class TestPauseResumeDelete:
         result = await skill.execute("resume_task", {"name": "daily_summary"})
         assert not result.success
         mock_task_mgr.resume_task.assert_not_called()
+
+
+class TestConvertCronToUtc:
+    def test_utc_passthrough(self):
+        assert _convert_cron_to_utc("0 8 * * *", "UTC") == "0 8 * * *"
+
+    def test_positive_offset(self):
+        # Asia/Shanghai is UTC+8: 11:00 CST → 03:00 UTC same day
+        result = _convert_cron_to_utc("0 11 * * *", "Asia/Shanghai")
+        assert result == "0 3 * * *"
+
+    def test_negative_offset_same_day(self):
+        # America/Phoenix is UTC-7 year-round (no DST): 11:00 → 18:00 UTC
+        result = _convert_cron_to_utc("0 11 * * *", "America/Phoenix")
+        minute, hour, *_ = result.split()
+        assert hour == "18"
+
+    def test_midnight_crossing_shifts_dow(self):
+        # UTC+8: 23:00 Friday (dow=5) → 15:00 UTC Friday (no shift needed)
+        # UTC-8 (US/Pacific): 23:00 Friday → 07:00 UTC Saturday (dow 5→6)
+        result = _convert_cron_to_utc("0 23 * * 5", "US/Pacific")
+        parts = result.split()
+        assert parts[4] == "6"   # Saturday in UTC
+
+    def test_dow_wraps_saturday_to_sunday(self):
+        # UTC-8: 23:00 Saturday (dow=6) → 07:00 UTC Sunday (dow 6→0)
+        result = _convert_cron_to_utc("0 23 * * 6", "US/Pacific")
+        parts = result.split()
+        assert parts[4] == "0"
+
+    def test_wildcard_hours_unchanged(self):
+        # Can't convert a wildcard hour
+        assert _convert_cron_to_utc("* * * * *", "America/New_York") == "* * * * *"
+
+    def test_unknown_timezone_raises(self):
+        with pytest.raises(ValueError, match="Unknown timezone"):
+            _convert_cron_to_utc("0 8 * * *", "Invalid/Zone")
+
+    def test_wrong_field_count_raises(self):
+        with pytest.raises(ValueError, match="5-field"):
+            _convert_cron_to_utc("0 8 * *", "UTC")
+
+    @pytest.mark.asyncio
+    async def test_create_cron_task_with_timezone(self, skill, mock_task_mgr):
+        result = await skill.execute("create_cron_task", {
+            "name": "morning-brief",
+            "prompt": "Daily briefing",
+            "cron": "0 11 * * *",
+            "timezone": "Asia/Shanghai",
+        })
+        assert result.success
+        # Should pass UTC-converted cron (03:00 UTC) to task manager
+        call_args = mock_task_mgr.create_cron_task.call_args
+        assert call_args.kwargs["cron"] == "0 3 * * *"
+        assert "Asia/Shanghai" in result.output
+
+    @pytest.mark.asyncio
+    async def test_create_cron_task_default_utc(self, skill, mock_task_mgr):
+        result = await skill.execute("create_cron_task", {
+            "name": "morning-brief",
+            "prompt": "Daily briefing",
+            "cron": "0 8 * * *",
+        })
+        assert result.success
+        call_args = mock_task_mgr.create_cron_task.call_args
+        assert call_args.kwargs["cron"] == "0 8 * * *"
