@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pulsebot.config import Config, load_config
 from pulsebot.timeplus.streams import StreamReader, StreamWriter
@@ -54,10 +54,27 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class TaskTriggerRequest(BaseModel):
+    """Incoming callback from a Timeplus Python UDF."""
+    task_id: str
+    task_name: str
+    prompt: str
+    trigger_type: str = "interval"          # 'interval' | 'cron'
+    cron_expression: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TaskTriggerResponse(BaseModel):
+    """Response to the Timeplus Python UDF callback."""
+    execution_id: str
+    session_id: str
+    status: str = "triggered"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global _config, _writer, _reader, _proxy_registrys
+    global _config, _writer, _reader, _proxy_registry
     
     # Startup
     logger.info("Starting PulseBot API server")
@@ -185,6 +202,44 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
     return ChatResponse(session_id=session_id, message_id=message_id)
 
 
+@router.post("/api/v1/task-trigger", response_model=TaskTriggerResponse)
+async def trigger_task(request: TaskTriggerRequest) -> TaskTriggerResponse:
+    """Receive a scheduled task callback from a Timeplus Python UDF.
+
+    Writes a 'scheduled_task' message into the messages stream so the
+    agent loop processes it under the task's global session.
+    """
+    if _writer is None:
+        raise HTTPException(status_code=500, detail="Server not initialized")
+
+    session_id = f"global_task_{request.task_name}"
+
+    execution_id = await _writer.write({
+        "source": "scheduler",
+        "target": "agent",
+        "session_id": session_id,
+        "message_type": "scheduled_task",
+        "content": json.dumps({
+            "text": request.prompt,
+            "task_id": request.task_id,
+            "task_name": request.task_name,
+            "trigger_type": request.trigger_type,
+        }),
+        "user_id": "system",
+        "priority": 1,
+    })
+
+    logger.info(
+        "Task trigger received",
+        extra={"task_name": request.task_name, "session_id": session_id},
+    )
+
+    return TaskTriggerResponse(
+        execution_id=execution_id,
+        session_id=session_id,
+    )
+
+
 @router.websocket("/ws/{session_id}")
 async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
     """WebSocket endpoint for real-time chat.
@@ -304,15 +359,55 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
         finally:
             logger.info(f"send_responses ended for session: {session_id}")
     
-    # Run both tasks concurrently
+    async def forward_task_notifications():
+        """Forward task_notification events to this WebSocket client."""
+        ws_events_client = TimeplusClient.from_config(_config.timeplus)
+        ws_events_reader = StreamReader(ws_events_client, "events")
+
+        events_query = """
+            SELECT * FROM pulsebot.events
+            WHERE event_type = 'task_notification'
+            SETTINGS seek_to='latest'
+        """
+        try:
+            async for event in ws_events_reader.stream(events_query):
+                if websocket.client_state.name != "CONNECTED":
+                    break
+                try:
+                    payload = json.loads(event.get("payload", "{}"))
+                    text = payload.get("text", "")
+                    if not text:
+                        continue
+                    await websocket.send_json({
+                        "type": "task_notification",
+                        "task_name": payload.get("task_name", ""),
+                        "text": text,
+                    })
+                except RuntimeError:
+                    break
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket disconnected during task notifications: {session_id}")
+        except Exception as e:
+            logger.error(f"WebSocket task_notification stream error: {e}")
+
+    # Run all tasks concurrently
     receive_task = asyncio.create_task(receive_messages())
     send_task = asyncio.create_task(send_responses())
-    
+    notify_task = asyncio.create_task(forward_task_notifications())
+
     try:
-        await asyncio.gather(receive_task, send_task)
+        done, pending = await asyncio.wait(
+            {receive_task, send_task, notify_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
     except Exception:
         receive_task.cancel()
         send_task.cancel()
+        notify_task.cancel()
 
 
 @router.get("/sessions/{session_id}/history")

@@ -68,10 +68,39 @@ Control which tools the agent can access.
 
 | Field | Description |
 | :--- | :--- |
-| `builtin` | List of standard skills (e.g., `file_ops`, `shell`, `workspace`). |
+| `builtin` | List of standard skills (e.g., `file_ops`, `shell`, `workspace`, `scheduler`). |
 | `custom` | List of additional skill names to load. |
 | `skill_dirs` | Directories to scan for custom skill packages. |
 | `disabled_skills` | Specific skills to skip during loading. |
+
+Available built-in skills:
+
+| Skill | Description |
+| :--- | :--- |
+| `file_ops` | Sandboxed file read/write/list operations. |
+| `shell` | Shell execution with security guards. |
+| `workspace` | Create and publish dynamic artifacts and web apps. |
+| `scheduler` | Create and manage recurring tasks backed by Timeplus native Tasks. |
+
+#### Scheduler Skill
+
+The `scheduler` skill is automatically wired at startup and requires the `workspace.api_server_url` field to be reachable from inside the agent. Each Timeplus TASK embeds a Python UDF that POSTs to `{api_server_url}/api/v1/task-trigger` when it fires.
+
+> **Docker deployments**: set `workspace.api_server_url` to the internal Docker service URL (e.g., `http://pulsebot-api:8000`) so the UDF can reach the API server from inside the Timeplus container.
+
+Example config snipped:
+
+```yaml
+skills:
+  builtin:
+    - file_ops
+    - shell
+    - workspace
+    - scheduler
+
+workspace:
+  api_server_url: "http://localhost:8000"   # or http://pulsebot-api:8000 in Docker
+```
 
 ### Memory
 Vector-based memory for context retention and duplicate detection.
@@ -95,7 +124,7 @@ Orchestration settings for the agent-side workspaces.
 | `base_dir` | `./workspaces` | Directory where workspace artifacts are stored. |
 | `workspace_port` | `8001` | Port for the agent's internal workspace server. |
 | `agent_host` | `localhost` | Hostname the API server uses to reach the agent. |
-| `api_server_url` | `http://localhost:8000` | API server base URL for agent to register artifacts. |
+| `api_server_url` | `http://localhost:8000` | API server base URL for agent to register artifacts and for the scheduler UDF to call back into. |
 | `backend_boot_timeout`| `3.0` | Seconds to wait after spawning a backend subprocess before health-checking. |
 | `internal_api_key` | `""` | Shared secret for agent-to-API-server registration. |
 

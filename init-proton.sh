@@ -15,6 +15,13 @@ proton-client --user=proton --password='proton@t+' --query="CREATE USER IF NOT E
 proton-client --user=proton --password='proton@t+' --query="GRANT CREATE DATABASE ON *.* TO pulsebot;"
 proton-client --user=proton --password='proton@t+' --query="GRANT ALL ON pulsebot.* TO pulsebot;"
 proton-client --user=proton --password='proton@t+' --query="GRANT ALL ON default.* TO pulsebot;"
+proton-client --user=proton --password='proton@t+' --query="GRANT CREATE FUNCTION ON *.* TO pulsebot;"
+proton-client --user=proton --password='proton@t+' --query="GRANT DROP FUNCTION ON *.* TO pulsebot;"
+proton-client --user=proton --password='proton@t+' --query="GRANT SHOW FUNCTIONS ON *.* TO pulsebot;"
+proton-client --user=proton --password='proton@t+' --query="GRANT CREATE TASK ON *.* TO pulsebot;"
+proton-client --user=proton --password='proton@t+' --query="GRANT DROP TASK ON *.* TO pulsebot;"
+proton-client --user=proton --password='proton@t+' --query="GRANT SHOW TASKS ON *.* TO pulsebot;"
+
 
 echo "User created and privileges granted successfully!"
 

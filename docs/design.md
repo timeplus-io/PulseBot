@@ -55,17 +55,17 @@ PulseBot is an ultra-lightweight personal AI agent that leverages Timeplus's str
 │                    Timeplus Proton (Streaming Database)                      │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                         Streams                                        │  │
-│  │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌────────┐  ┌────────┐  │  │
-│  │  │ messages  │  │ llm_logs  │  │ tool_logs │  │ memory │  │ events │  │  │
-│  │  │           │  │           │  │           │  │        │  │        │  │  │
-│  │  │ user_input│  │ tokens    │  │ tool_name │  │ content│  │ type   │  │  │
-│  │  │ agent_resp│  │ latency   │  │ duration  │  │ embed  │  │ payload│  │  │
-│  │  │ tool_call │  │ cost      │  │ status    │  │ score  │  │ tags   │  │  │
-│  │  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └───┬────┘  └───┬────┘  │  │
-│  │        │              │              │            │           │        │  │
-│  │   API Server       Agent          Agent        Agent       Agent       │  │
-│  │   writes/reads     writes         writes       writes      writes      │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
+│  │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌────────┐  ┌────────┐  ┌──────────────┐  │  │
+│  │  │ messages  │  │ llm_logs  │  │ tool_logs │  │ memory │  │ events │  │task_triggers │  │  │
+│  │  │           │  │           │  │           │  │        │  │        │  │              │  │  │
+│  │  │ user_input│  │ tokens    │  │ tool_name │  │ content│  │ type   │  │ trigger_id   │  │  │
+│  │  │ agent_resp│  │ latency   │  │ duration  │  │ embed  │  │ payload│  │ task_name    │  │  │
+│  │  │ tool_call │  │ cost      │  │ status    │  │ score  │  │ tags   │  │ prompt       │  │  │
+│  │  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └───┬────┘  └───┬────┘  └──────┬───────┘  │  │
+│  │        │              │              │            │           │               │           │  │
+│  │   API Server       Agent          Agent        Agent       Agent+Tasks    Timeplus       │  │
+│  │   writes/reads     writes         writes       writes      writes         Tasks write    │  │
+│  └───────────────────────────────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────────┘
                                    │
                     ┌──────────────┴──────────────┐
@@ -116,6 +116,16 @@ PulseBot is an ultra-lightweight personal AI agent that leverages Timeplus's str
 10. **API Server ← messages stream**: Listens for responses on the session
 11. **Client ← API Server**: Forwards responses via WebSocket
 
+**Scheduled Task Data Flow:**
+
+12. **Timeplus Task → Python UDF**: Task fires on its schedule
+13. **Python UDF → `/api/v1/task-trigger`**: HTTP POST to PulseBot API
+14. **API Server → messages stream**: Writes `scheduled_task` message with global session
+15. **Agent ← messages stream**: Picks up `scheduled_task`, processes with LLM
+16. **Agent → NotificationDispatcher**: Sends result text to dispatcher
+17. **NotificationDispatcher → events stream**: Writes `task_notification` event
+18. **Telegram / WebSocket ← events stream**: All channel adapters fan out to their active connections
+
 ### Stream Ownership
 
 | Stream | Writer | Reader |
@@ -124,7 +134,8 @@ PulseBot is an ultra-lightweight personal AI agent that leverages Timeplus's str
 | llm_logs | Agent | Analytics/Dashboards |
 | tool_logs | Agent | Analytics/Dashboards |
 | memory | Agent | Agent (context builder) |
-| events | Agent | Monitoring/Alerting |
+| events | Agent (NotificationDispatcher) | Telegram, WebSocket (task_notification), Monitoring |
+| task_triggers | Timeplus Tasks (via Python UDF) | Audit/Analytics |
 
 ---
 
@@ -216,17 +227,32 @@ Persistent memory with vector search capability using append-only design with so
 
 ### 3.5 Events Stream
 
-System events for monitoring and alerting.
+System events for monitoring, alerting, and cross-channel broadcast.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | string | Event ID |
 | timestamp | datetime64(3) | Event timestamp |
-| event_type | string | 'heartbeat', 'channel_connected', 'skill_loaded', 'error', 'alert' |
+| event_type | string | `'heartbeat'`, `'channel_connected'`, `'skill_loaded'`, `'error'`, `'alert'`, **`'task_notification'`** |
 | source | string | Event source |
-| severity | string | 'debug', 'info', 'warning', 'error', 'critical' |
+| severity | string | `'debug'`, `'info'`, `'warning'`, `'error'`, `'critical'` |
 | payload | string | JSON event data |
 | tags | array(string) | Filtering tags |
+
+The `task_notification` event type is written by `NotificationDispatcher` after every scheduled task execution. Its `payload` JSON contains `task_name`, `text`, and `session_id`.
+
+### 3.6 Task Triggers Stream
+
+Audit log for every scheduled task invocation — inserted by the Timeplus Python UDFs embedded in each TASK.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| trigger_id | string | UUID for this invocation |
+| task_id | string | Sanitised internal task name |
+| task_name | string | Same as task_id |
+| prompt | string | Instruction executed on this run |
+| execution_id | string | UUID returned by `/api/v1/task-trigger` |
+| triggered_at | datetime64(3) | UTC timestamp of invocation |
 
 ---
 
@@ -235,11 +261,12 @@ System events for monitoring and alerting.
 ### 4.1 Agent Loop
 
 The main processing loop that:
-1. Listens to the messages stream for incoming requests
+1. Listens to the messages stream for incoming requests (`user_input` and `scheduled_task`)
 2. Builds context from memory and conversation history
 3. Calls LLM for reasoning
 4. Executes tools and writes results back to stream
 5. Broadcasts tool call status to UI/CLI in real-time
+6. Routes `scheduled_task` messages through `NotificationDispatcher` instead of a normal channel response
 
 **Features:**
 - Maximum 10 iterations per request (prevent infinite loops)
@@ -270,6 +297,15 @@ Routes messages between components:
 - Agent → Channel (responses)
 - Agent → Tools (execution)
 - Tools → Agent (results)
+
+### 4.5 NotificationDispatcher
+
+Broadcasts scheduled-task results to all channels via the events stream.
+
+- Receives the agent's response text after a `scheduled_task` execution
+- Writes a `task_notification` event to `pulsebot.events`
+- Channel adapters (Telegram, WebSocket) each subscribe independently and fan out to all active connections
+- Decoupled: adding a new channel only requires subscribing to the events stream
 
 ---
 
@@ -311,6 +347,9 @@ Input/output channels for user interaction:
 - Bot API integration
 - User allowlist for security
 - Persistent sessions per user
+- Subscribes to `events` stream for `task_notification` events and broadcasts to all active chat IDs
+- Restores sessions from message history on restart so task broadcasts survive agent restarts
+- Falls back to `allow_from` list when no interactive sessions exist
 
 ---
 
@@ -322,8 +361,10 @@ Pluggable tool system with base interface:
 
 | Skill | Tools | Description |
 |-------|-------|-------------|
-| shell | run_command | Shell execution with security guards |
-| file_ops | read_file, write_file, list_directory | Sandboxed file operations |
+| shell | `run_command` | Shell execution with security guards |
+| file_ops | `read_file`, `write_file`, `list_directory` | Sandboxed file operations |
+| workspace | `workspace_create_app`, ... | Dynamic artifact and web-app publishing |
+| scheduler | `create_interval_task`, `create_cron_task`, `list_tasks`, `pause_task`, `resume_task`, `delete_task` | LLM-callable task management backed by Timeplus native Tasks |
 
 
 ### Skill Interface
@@ -367,6 +408,7 @@ Real-time message delivery via WebSocket:
 | GET | `/` | Web chat interface |
 | GET | `/health` | Health check |
 | POST | `/chat` | Send message (async) |
+| POST | `/api/v1/task-trigger` | Scheduled task callback from Timeplus Python UDF |
 | GET | `/sessions/{id}/history` | Get conversation history |
 
 ### WebSocket
@@ -376,9 +418,10 @@ Real-time message delivery via WebSocket:
 | `/ws/{session_id}` | Real-time bidirectional chat |
 
 WebSocket message types:
-- `message` - User input / agent response
-- `tool_call` - Tool execution status
-- `error` - Error notifications
+- `message` — User input / agent response
+- `tool_call` — Tool execution status
+- `task_notification` — Scheduled task broadcast result
+- `error` — Error notifications
 
 ---
 
@@ -417,6 +460,7 @@ skills:
   builtin:
     - shell
     - file_ops
+    - scheduler
 ```
 
 ---
@@ -452,6 +496,11 @@ Services:
 | `pulsebot serve` | Start FastAPI server |
 | `pulsebot chat` | Interactive CLI chat |
 | `pulsebot init` | Generate config.yaml |
+| `pulsebot task list` | List all scheduled tasks |
+| `pulsebot task create` | Create an interval or cron task |
+| `pulsebot task pause <name>` | Pause a task |
+| `pulsebot task resume <name>` | Resume a paused task |
+| `pulsebot task delete <name>` | Delete a task |
 
 ---
 
@@ -492,7 +541,6 @@ Users need visibility into what the agent is doing:
 
 Planned features:
 - MCP (Model Context Protocol) server support
-- Scheduled tasks via Timeplus Tasks
 - Additional channels (Slack, WhatsApp)
 - Analytics dashboard
 - Cost tracking views

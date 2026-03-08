@@ -15,6 +15,7 @@ from pulsebot.utils import get_logger, hash_content, truncate_string
 
 if TYPE_CHECKING:
     from pulsebot.config import Config, TimeplusConfig
+    from pulsebot.core.notifier import NotificationDispatcher
     from pulsebot.providers.base import LLMProvider
     from pulsebot.skills.loader import SkillLoader
     from pulsebot.timeplus.client import TimeplusClient
@@ -74,6 +75,7 @@ class Agent:
         max_iterations: int = 10,
         timeplus_config: "TimeplusConfig | None" = None,
         verbose_tools: bool = False,
+        notifier: "NotificationDispatcher | None" = None,
     ):
         """Initialize the agent.
 
@@ -86,6 +88,8 @@ class Agent:
             agent_name: Display name
             max_iterations: Max tool call iterations per request
             timeplus_config: Timeplus config for creating additional clients
+            verbose_tools: Whether to show full tool arguments in broadcasts
+            notifier: Optional dispatcher for broadcasting scheduled task results
         """
         from pulsebot.timeplus.client import TimeplusClient
 
@@ -98,6 +102,7 @@ class Agent:
         self.model_info = model_info
         self.max_iterations = max_iterations
         self.verbose_tools = verbose_tools
+        self.notifier = notifier
 
         # Create a separate client for batch queries to avoid
         # "Simultaneous queries on single connection" error
@@ -284,11 +289,20 @@ class Agent:
                 # Signal UI that thinking is done so the spinner clears
                 await self._broadcast_llm_thinking(session_id, source, iteration, "completed", latency_ms)
                 # Send user-visible error response and exit the loop
-                await self._send_response(
-                    session_id=session_id,
-                    source_message=message,
-                    response_text=f"Sorry, an error occurred while processing your request: {e}",
-                )
+                error_text = f"Sorry, an error occurred while processing your request: {e}"
+                if message_type == "scheduled_task" and self.notifier:
+                    task_name = content.get("task_name", session_id.removeprefix("global_task_"))
+                    await self.notifier.broadcast_task_result(
+                        task_name=task_name,
+                        text=error_text,
+                        session_id=session_id,
+                    )
+                else:
+                    await self._send_response(
+                        session_id=session_id,
+                        source_message=message,
+                        response_text=error_text,
+                    )
                 return
 
             latency_ms = (time.time() - start_time) * 1000
@@ -388,11 +402,25 @@ class Agent:
                     )
                     response_content = "I'm not sure how to respond to that."
 
-                await self._send_response(
-                    session_id=session_id,
-                    source_message=message,
-                    response_text=response_content,
-                )
+                if message_type == "scheduled_task" and self.notifier:
+                    task_name = content.get("task_name")
+                    if task_name is None:
+                        task_name = session_id.removeprefix("global_task_")
+                        logger.warning(
+                            "scheduled_task message missing task_name field; falling back to session_id derivation",
+                            extra={"session_id": session_id, "derived_task_name": task_name},
+                        )
+                    await self.notifier.broadcast_task_result(
+                        task_name=task_name,
+                        text=response_content,
+                        session_id=session_id,
+                    )
+                else:
+                    await self._send_response(
+                        session_id=session_id,
+                        source_message=message,
+                        response_text=response_content,
+                    )
 
                 # Extract and store any new memories
                 if self.memory:
@@ -411,11 +439,19 @@ class Agent:
                     "I apologize, but I wasn't able to complete this task within the allowed "
                     "number of steps. Please try breaking down your request into smaller parts."
                 )
-            await self._send_response(
-                session_id=session_id,
-                source_message=message,
-                response_text=final_text,
-            )
+            if message_type == "scheduled_task" and self.notifier:
+                task_name = content.get("task_name", session_id.removeprefix("global_task_"))
+                await self.notifier.broadcast_task_result(
+                    task_name=task_name,
+                    text=final_text,
+                    session_id=session_id,
+                )
+            else:
+                await self._send_response(
+                    session_id=session_id,
+                    source_message=message,
+                    response_text=final_text,
+                )
 
     async def _send_response(
         self,

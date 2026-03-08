@@ -47,6 +47,10 @@ def run(config: str):
         # Initialize components
         tp = TimeplusClient.from_config(cfg.timeplus)
 
+        # Ensure all streams exist (idempotent, safe to run every start)
+        from pulsebot.timeplus.setup import create_streams
+        await create_streams(tp)
+
         provider = create_provider(cfg)
 
         # Create embedding provider based on memory configuration
@@ -106,6 +110,12 @@ def run(config: str):
                 f"[dim]WorkspaceServer started on port {cfg.workspace.workspace_port}[/]"
             )
 
+        from pulsebot.core.notifier import NotificationDispatcher
+        from pulsebot.timeplus.streams import StreamWriter
+        events_writer_client = TimeplusClient.from_config(cfg.timeplus)
+        events_writer = StreamWriter(events_writer_client, "events")
+        notifier = NotificationDispatcher(events_writer)
+
         agent = Agent(
             agent_id="main",
             timeplus=tp,
@@ -117,6 +127,7 @@ def run(config: str):
             max_iterations=cfg.agent.max_iterations,
             timeplus_config=cfg.timeplus,
             verbose_tools=cfg.agent.verbose_tools,
+            notifier=notifier,
         )
 
         # Start Telegram channel if enabled (needs separate client to avoid connection conflicts)
@@ -415,6 +426,96 @@ def list_tasks(config: str):
         )
 
     console.print(table)
+
+
+@task.command("create")
+@click.option("--config", "-c", "config_file", default="config.yaml")
+@click.option("--name", required=True, help="Task name")
+@click.option("--prompt", required=True, help="Prompt to execute each run")
+@click.option("--interval", default=None, help="Interval, e.g. 15m, 1h")
+@click.option("--cron", default=None, help="Cron expression, e.g. '0 8 * * *'")
+def task_create(config_file, name, prompt, interval, cron):
+    """Create a user-defined scheduled task."""
+    from pulsebot.config import load_config
+    from pulsebot.timeplus.client import TimeplusClient
+    from pulsebot.timeplus.tasks import TaskManager
+
+    cfg = load_config(config_file)
+    mgr = TaskManager(TimeplusClient.from_config(cfg.timeplus))
+    try:
+        if interval and cron:
+            console.print("[red]Specify only one of --interval or --cron, not both.[/]")
+            raise SystemExit(1)
+        if interval:
+            task_name = mgr.create_interval_task(name=name, prompt=prompt, interval=interval)
+        elif cron:
+            task_name = mgr.create_cron_task(name=name, prompt=prompt, cron=cron)
+        else:
+            console.print("[red]Provide --interval or --cron[/]")
+            raise SystemExit(1)
+        console.print(f"[green]Created task '{task_name}'[/]")
+    except SystemExit:
+        raise
+    except Exception as e:
+        console.print(f"[red]{e}[/]")
+        raise SystemExit(1)
+
+
+@task.command("delete")
+@click.option("--config", "-c", "config_file", default="config.yaml")
+@click.argument("name")
+def task_delete(config_file, name):
+    """Delete a scheduled task."""
+    from pulsebot.config import load_config
+    from pulsebot.timeplus.client import TimeplusClient
+    from pulsebot.timeplus.tasks import TaskManager
+
+    cfg = load_config(config_file)
+    mgr = TaskManager(TimeplusClient.from_config(cfg.timeplus))
+    try:
+        mgr.drop_task(name)
+        console.print(f"[green]Deleted '{name}'[/]")
+    except Exception as e:
+        console.print(f"[red]{e}[/]")
+        raise SystemExit(1)
+
+
+@task.command("pause")
+@click.option("--config", "-c", "config_file", default="config.yaml")
+@click.argument("name")
+def task_pause(config_file, name):
+    """Pause a scheduled task."""
+    from pulsebot.config import load_config
+    from pulsebot.timeplus.client import TimeplusClient
+    from pulsebot.timeplus.tasks import TaskManager
+
+    cfg = load_config(config_file)
+    mgr = TaskManager(TimeplusClient.from_config(cfg.timeplus))
+    try:
+        mgr.pause_task(name)
+        console.print(f"[yellow]Paused '{name}'[/]")
+    except Exception as e:
+        console.print(f"[red]{e}[/]")
+        raise SystemExit(1)
+
+
+@task.command("resume")
+@click.option("--config", "-c", "config_file", default="config.yaml")
+@click.argument("name")
+def task_resume(config_file, name):
+    """Resume a paused scheduled task."""
+    from pulsebot.config import load_config
+    from pulsebot.timeplus.client import TimeplusClient
+    from pulsebot.timeplus.tasks import TaskManager
+
+    cfg = load_config(config_file)
+    mgr = TaskManager(TimeplusClient.from_config(cfg.timeplus))
+    try:
+        mgr.resume_task(name)
+        console.print(f"[green]Resumed '{name}'[/]")
+    except Exception as e:
+        console.print(f"[red]{e}[/]")
+        raise SystemExit(1)
 
 
 @cli.group()

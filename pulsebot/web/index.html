@@ -751,6 +751,9 @@
                 } else if (data.type === 'llm_thinking') {
                     hideTyping();
                     handleLlmThinking(data);
+                } else if (data.type === 'task_notification') {
+                    const label = data.task_name ? `[Scheduled: ${data.task_name}] ` : '[Scheduled Task] ';
+                    addMessage(label + data.text, 'assistant');
                 }
             };
 
