@@ -221,10 +221,14 @@ class SchedulerSkill(BaseSkill):
             user_tasks = [t for t in all_tasks if t.get("name", "").startswith("user_")]
             if not user_tasks:
                 return ToolResult.ok("No user-created scheduled tasks found.")
+            _status_label = {"active": "Running", "paused": "Paused", "deleted": "Deleted"}
             lines = ["User-created scheduled tasks:"]
             for t in user_tasks:
-                status = t.get("status", "unknown")
-                lines.append(f"  - {t['name']} ({status})")
+                raw = t.get("status", "unknown")
+                status = _status_label.get(raw, raw)
+                schedule = t.get("schedule", "")
+                label = f"{t['name']} — {schedule} ({status})" if schedule else f"{t['name']} ({status})"
+                lines.append(f"  - {label}")
             return ToolResult.ok("\n".join(lines))
         except Exception as e:
             return ToolResult.fail(str(e))

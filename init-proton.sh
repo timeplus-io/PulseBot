@@ -21,6 +21,7 @@ proton-client --user=proton --password='proton@t+' --query="GRANT SHOW FUNCTIONS
 proton-client --user=proton --password='proton@t+' --query="GRANT CREATE TASK ON *.* TO pulsebot;"
 proton-client --user=proton --password='proton@t+' --query="GRANT DROP TASK ON *.* TO pulsebot;"
 proton-client --user=proton --password='proton@t+' --query="GRANT SHOW TASKS ON *.* TO pulsebot;"
+proton-client --user=proton --password='proton@t+' --query="GRANT SYSTEM TASK ON *.* TO pulsebot;"
 
 
 echo "User created and privileges granted successfully!"

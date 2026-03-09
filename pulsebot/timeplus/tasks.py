@@ -155,39 +155,73 @@ class TaskManager:
             extra={"task_name": name, "schedule": schedule, "target": target_stream}
         )
     
+    def _write_task_status(
+        self,
+        name: str,
+        status: str,
+        task_type: str = "",
+        prompt: str = "",
+        schedule: str = "",
+    ) -> None:
+        """Append a status record to pulsebot.tasks for tracking."""
+        self.client.insert(
+            "pulsebot.tasks",
+            [{"task_name": name, "task_type": task_type, "prompt": prompt,
+              "schedule": schedule, "status": status}],
+        )
+
     def drop_task(self, name: str) -> None:
         """Drop a scheduled task.
-        
+
         Args:
             name: Task name to drop
         """
         self.client.execute(f"DROP TASK IF EXISTS {name}")
+        self._write_task_status(name, "deleted")
         logger.info("Dropped task", extra={"task_name": name})
-    
+
     def list_tasks(self) -> list[dict[str, Any]]:
-        """List all scheduled tasks.
-        
+        """List user-created tasks with their current status from pulsebot.tasks.
+
+        Returns the latest status record per task, excluding deleted tasks.
+        Falls back to SHOW TASKS if the tasks stream is unavailable.
+
         Returns:
-            List of task information dictionaries
+            List of task information dictionaries with keys: name, status, schedule.
         """
-        return self.client.query("SHOW TASKS")
-    
+        try:
+            rows = self.client.query(
+                "SELECT name, status, schedule FROM ("
+                "  SELECT task_name AS name,"
+                "         arg_max(status,   created_at) AS status,"
+                "         arg_max(schedule, created_at) AS schedule"
+                "  FROM table(pulsebot.tasks)"
+                "  GROUP BY task_name"
+                ") WHERE status != 'deleted'"
+            )
+            return rows
+        except Exception as e:
+            logger.warning("list_tasks query failed, falling back to SHOW TASKS: %s", e)
+            return self.client.query("SHOW TASKS")
+
     def pause_task(self, name: str) -> None:
         """Pause a scheduled task.
-        
+
         Args:
             name: Task name to pause
         """
-        self.client.execute(f"STOP TASK {name}")
+        self.client.execute(f"SYSTEM PAUSE TASK {name}")
+        self._write_task_status(name, "paused")
         logger.info("Paused task", extra={"task_name": name})
-    
+
     def resume_task(self, name: str) -> None:
         """Resume a paused task.
-        
+
         Args:
             name: Task name to resume
         """
-        self.client.execute(f"START TASK {name}")
+        self.client.execute(f"SYSTEM RESUME TASK {name}")
+        self._write_task_status(name, "active")
         logger.info("Resumed task", extra={"task_name": name})
     
     def create_heartbeat_task(
@@ -352,6 +386,7 @@ class TaskManager:
                 now64(3)                                              AS triggered_at
         """
         self.client.execute(task_sql)
+        self._write_task_status(task_name, "active", task_type="interval", prompt=prompt, schedule=interval)
 
         logger.info("Created interval task", extra={"task_name": task_name, "interval": interval})
         return task_name
@@ -402,6 +437,7 @@ class TaskManager:
                 now64(3)                                                              AS triggered_at
         """
         self.client.execute(task_sql)
+        self._write_task_status(task_name, "active", task_type="cron", prompt=prompt, schedule=cron)
 
         logger.info("Created cron task", extra={"task_name": task_name, "cron": cron})
         return task_name

@@ -63,6 +63,7 @@ if [ -f "/entrypoint.sh" ]; then
     proton-client --user="$PROTON_ADMIN_USER" --password="$PROTON_ADMIN_PASSWORD" --query="GRANT CREATE TASK ON *.* TO pulsebot;" || true
     proton-client --user="$PROTON_ADMIN_USER" --password="$PROTON_ADMIN_PASSWORD" --query="GRANT DROP TASK ON *.* TO pulsebot;" || true
     proton-client --user="$PROTON_ADMIN_USER" --password="$PROTON_ADMIN_PASSWORD" --query="GRANT SHOW TASKS ON *.* TO pulsebot;" || true
+    proton-client --user="$PROTON_ADMIN_USER" --password="$PROTON_ADMIN_PASSWORD" --query="GRANT SYSTEM TASK ON *.* TO pulsebot;" || true
 elif [ -f "/timeplus/entrypoint.sh" ]; then
     # Timeplus Enterprise image
     echo "Starting Timeplus Enterprise..."
@@ -84,6 +85,7 @@ elif [ -f "/timeplus/entrypoint.sh" ]; then
     /timeplus/bin/timeplusd client --user="$TIMEPLUS_ADMIN_USER" --password="$TIMEPLUS_ADMIN_PASSWORD" --query="GRANT CREATE TASK ON *.* TO pulsebot;" || true
     /timeplus/bin/timeplusd client --user="$TIMEPLUS_ADMIN_USER" --password="$TIMEPLUS_ADMIN_PASSWORD" --query="GRANT DROP TASK ON *.* TO pulsebot;" || true
     /timeplus/bin/timeplusd client --user="$TIMEPLUS_ADMIN_USER" --password="$TIMEPLUS_ADMIN_PASSWORD" --query="GRANT SHOW TASKS ON *.* TO pulsebot;" || true
+    /timeplus/bin/timeplusd client --user="$TIMEPLUS_ADMIN_USER" --password="$TIMEPLUS_ADMIN_PASSWORD" --query="GRANT SYSTEM TASK ON *.* TO pulsebot;" || true
 else
     echo "ERROR: Unknown image type"
     exit 1

@@ -419,10 +419,19 @@ def list_tasks(config: str):
     table.add_column("Status")
 
     for t in tasks:
+        status = t.get("status", "")
+        if status == "active":
+            status_display = "[green]Running[/]"
+        elif status == "paused":
+            status_display = "[yellow]Paused[/]"
+        elif status == "deleted":
+            status_display = "[dim]Deleted[/]"
+        else:
+            status_display = f"[dim]{status or 'Unknown'}[/]"
         table.add_row(
             t.get("name"),
-            t.get("schedule"),
-            "[green]Running[/]" if t.get("running") else "[red]Paused[/]"
+            t.get("schedule", ""),
+            status_display,
         )
 
     console.print(table)
