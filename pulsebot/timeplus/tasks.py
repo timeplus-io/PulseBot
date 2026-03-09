@@ -155,19 +155,18 @@ class TaskManager:
             extra={"task_name": name, "schedule": schedule, "target": target_stream}
         )
     
-    def _write_task_status(
+    def _write_task_metadata(
         self,
         name: str,
-        status: str,
         task_type: str = "",
         prompt: str = "",
         schedule: str = "",
     ) -> None:
-        """Append a status record to pulsebot.tasks for tracking."""
+        """Record task metadata (schedule, type, prompt) to pulsebot.tasks for display."""
         self.client.insert(
             "pulsebot.tasks",
             [{"task_name": name, "task_type": task_type, "prompt": prompt,
-              "schedule": schedule, "status": status}],
+              "schedule": schedule, "status": "active"}],
         )
 
     def drop_task(self, name: str) -> None:
@@ -177,32 +176,36 @@ class TaskManager:
             name: Task name to drop
         """
         self.client.execute(f"DROP TASK IF EXISTS {name}")
-        self._write_task_status(name, "deleted")
         logger.info("Dropped task", extra={"task_name": name})
 
     def list_tasks(self) -> list[dict[str, Any]]:
-        """List user-created tasks with their current status from pulsebot.tasks.
+        """List tasks with status from Proton and schedule metadata from pulsebot.tasks.
 
-        Returns the latest status record per task, excluding deleted tasks.
-        Falls back to SHOW TASKS if the tasks stream is unavailable.
+        Status is authoritative from Proton (status=0 active, status=1 paused).
+        Schedule is supplemented from pulsebot.tasks metadata stream.
 
         Returns:
             List of task information dictionaries with keys: name, status, schedule.
         """
+        tasks = self.client.query("SHOW TASKS SETTINGS verbose=1")
+
+        schedules: dict[str, str] = {}
         try:
             rows = self.client.query(
-                "SELECT name, status, schedule FROM ("
-                "  SELECT task_name AS name,"
-                "         arg_max(status,   created_at) AS status,"
-                "         arg_max(schedule, created_at) AS schedule"
-                "  FROM table(pulsebot.tasks)"
-                "  GROUP BY task_name"
-                ") WHERE status != 'deleted'"
+                "SELECT task_name AS name, arg_max(schedule, created_at) AS schedule"
+                " FROM table(pulsebot.tasks) GROUP BY task_name"
             )
-            return rows
+            schedules = {row["name"]: row["schedule"] for row in rows}
         except Exception as e:
-            logger.warning("list_tasks query failed, falling back to SHOW TASKS: %s", e)
-            return self.client.query("SHOW TASKS")
+            logger.warning("Could not fetch task schedules from pulsebot.tasks: %s", e)
+
+        result = []
+        for t in tasks:
+            name = t.get("name", "")
+            raw_status = t.get("status")
+            status = "active" if raw_status == 0 else "paused" if raw_status == 1 else "unknown"
+            result.append({"name": name, "status": status, "schedule": schedules.get(name, "")})
+        return result
 
     def pause_task(self, name: str) -> None:
         """Pause a scheduled task.
@@ -211,7 +214,6 @@ class TaskManager:
             name: Task name to pause
         """
         self.client.execute(f"SYSTEM PAUSE TASK {name}")
-        self._write_task_status(name, "paused")
         logger.info("Paused task", extra={"task_name": name})
 
     def resume_task(self, name: str) -> None:
@@ -221,7 +223,6 @@ class TaskManager:
             name: Task name to resume
         """
         self.client.execute(f"SYSTEM RESUME TASK {name}")
-        self._write_task_status(name, "active")
         logger.info("Resumed task", extra={"task_name": name})
     
     def create_heartbeat_task(
@@ -386,7 +387,7 @@ class TaskManager:
                 now64(3)                                              AS triggered_at
         """
         self.client.execute(task_sql)
-        self._write_task_status(task_name, "active", task_type="interval", prompt=prompt, schedule=interval)
+        self._write_task_metadata(task_name, task_type="interval", prompt=prompt, schedule=interval)
 
         logger.info("Created interval task", extra={"task_name": task_name, "interval": interval})
         return task_name
@@ -437,7 +438,7 @@ class TaskManager:
                 now64(3)                                                              AS triggered_at
         """
         self.client.execute(task_sql)
-        self._write_task_status(task_name, "active", task_type="cron", prompt=prompt, schedule=cron)
+        self._write_task_metadata(task_name, task_type="cron", prompt=prompt, schedule=cron)
 
         logger.info("Created cron task", extra={"task_name": task_name, "cron": cron})
         return task_name
