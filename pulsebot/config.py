@@ -296,6 +296,7 @@ skills:
     - shell
     - workspace
     - scheduler
+    - skill_manager
 
   custom: []
 

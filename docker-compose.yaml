@@ -49,7 +49,7 @@ services:
       - SEARXNG_BASE_URL=http://searxng:8080
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - ./skills:/app/skills:ro
+      - ./skills:/app/skills:rw
       - ./workspaces:/app/workspaces:rw
     ports:
       - "8001:8001"

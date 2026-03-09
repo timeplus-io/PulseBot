@@ -2,7 +2,7 @@ workspaces/
 .pypirc
 docs/plans/
 .clawhub
-skills/
+/skills/
 
 # Python
 __pycache__/
