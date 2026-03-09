@@ -18,6 +18,7 @@ SINGLE_PLATFORM ?= linux/amd64
 
 # Docker build arguments
 DOCKER_BUILD_ARGS ?= --build-arg SETUPTOOLS_SCM_PRETEND_VERSION=$(IMAGE_TAG)
+ALL_IN_ONE_BUILD_ARGS ?= --build-arg PULSEBOT_VERSION=$(IMAGE_TAG)
 
 # Help target
 .PHONY: help
@@ -57,12 +58,12 @@ build-multi:
 # Build all-in-one image with Proton
 .PHONY: build-all-in-one-proton
 build-all-in-one-proton:
-	docker build --platform=$(SINGLE_PLATFORM) $(DOCKER_BUILD_ARGS) -t $(ALL_IN_ONE_PROTON_NAME) -f Dockerfile.proton .
+	docker build --platform=$(SINGLE_PLATFORM) $(ALL_IN_ONE_BUILD_ARGS) -t $(ALL_IN_ONE_PROTON_NAME) -f Dockerfile.proton .
 
 # Build all-in-one image with Timeplus Enterprise
 .PHONY: build-all-in-one-timeplus
 build-all-in-one-timeplus:
-	docker build --platform=$(SINGLE_PLATFORM) $(DOCKER_BUILD_ARGS) -t $(ALL_IN_ONE_TIMEPLUS_NAME) -f Dockerfile.timeplus .
+	docker build --platform=$(SINGLE_PLATFORM) $(ALL_IN_ONE_BUILD_ARGS) -t $(ALL_IN_ONE_TIMEPLUS_NAME) -f Dockerfile.timeplus .
 
 # Tag the image for Docker Hub
 .PHONY: tag

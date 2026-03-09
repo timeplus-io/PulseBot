@@ -35,13 +35,11 @@ RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 WORKDIR /app
 
-# Copy project files needed for installation
-COPY pyproject.toml README.md ./
-COPY pulsebot/ ./pulsebot/
-COPY skills/ ./skills/
-
-# Install Python dependencies (non-editable for Docker)
-RUN python3.12 -m pip install --no-cache-dir --extra-index-url https://d.timeplus.com/simple/ .
+# Install PulseBot from PyPI
+ARG PULSEBOT_VERSION
+RUN python3.12 -m pip install --no-cache-dir \
+    --extra-index-url https://d.timeplus.com/simple/ \
+    pulsebot==${PULSEBOT_VERSION}
 
 # Copy config template and scripts
 COPY docker/config.yaml ./config.yaml
@@ -66,6 +64,5 @@ RUN if getent passwd timeplus > /dev/null 2>&1; then \
 # 8001: PulseBot API Server
 EXPOSE 8000 8123 3218 8463 8001
 
-# Try to switch back to timeplus or proton user if available, otherwise stay as root
 # Use our custom entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint-timeplus.sh"]

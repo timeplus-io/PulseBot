@@ -56,7 +56,7 @@ dev = [
 pulsebot = "pulsebot.cli:cli"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "hatch-vcs", "setuptools"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
