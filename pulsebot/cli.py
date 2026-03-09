@@ -567,13 +567,17 @@ def search(query: str, limit: int):
 @click.option("--version", default="latest", show_default=True)
 @click.option("--dir", "install_dir", default="./skills", show_default=True,
               help="Directory to install the skill into")
-def install(slug: str, version: str, install_dir: str):
+@click.option("--config", "-c", default="config.yaml", help="Config file path")
+def install(slug: str, version: str, install_dir: str, config: str):
     """Install a skill from ClawHub by SLUG."""
     from datetime import datetime, timezone
     from pathlib import Path
 
+    from pulsebot.config import load_config
     from pulsebot.skills.clawhub_client import ClawHubClient, IntegrityError, SecurityError
     from pulsebot.skills.lock import LockFile, LockedSkill
+    from pulsebot.skills.stream_registry import SkillStreamRegistry
+    from pulsebot.timeplus.client import TimeplusClient
 
     skills_dir = Path(install_dir)
     skills_dir.mkdir(parents=True, exist_ok=True)
@@ -592,28 +596,40 @@ def install(slug: str, version: str, install_dir: str):
             console.print(f"[red]Install failed: {e}[/]")
             raise SystemExit(1)
 
-    lock = LockFile(Path("."))
-    content_hash = LockFile.compute_content_hash(target)
-    lock.add(LockedSkill(
-        slug=slug,
-        version=version,
-        content_hash=content_hash,
-        installed_at=datetime.now(timezone.utc).isoformat(),
-        source="clawhub",
-    ))
+    try:
+        cfg = load_config(config)
+        tp = TimeplusClient.from_config(cfg.timeplus)
+        registry = SkillStreamRegistry(tp)
+        content_hash = LockFile.compute_content_hash(target)
+        registry.add(LockedSkill(
+            slug=slug,
+            version=version,
+            content_hash=content_hash,
+            installed_at=datetime.now(timezone.utc).isoformat(),
+            source="clawhub",
+        ))
+    except Exception as e:
+        console.print(f"[yellow]Warning: could not record to Proton stream: {e}[/]")
+
     console.print(f"[green]Installed {slug} to {target}[/]")
 
 
 @skill.command(name="list")
-@click.option("--dir", "workdir", default=".", show_default=True,
-              help="Working directory containing .clawhub/lock.json")
-def list_skills(workdir: str):
+@click.option("--config", "-c", default="config.yaml", help="Config file path")
+def list_skills(config: str):
     """List installed ClawHub skills."""
-    from pathlib import Path
-    from pulsebot.skills.lock import LockFile
+    from pulsebot.config import load_config
+    from pulsebot.skills.stream_registry import SkillStreamRegistry
+    from pulsebot.timeplus.client import TimeplusClient
 
-    lock = LockFile(Path(workdir))
-    skills = lock.read()
+    try:
+        cfg = load_config(config)
+        tp = TimeplusClient.from_config(cfg.timeplus)
+        skills = SkillStreamRegistry(tp).read()
+    except Exception as e:
+        console.print(f"[red]Could not connect to Proton: {e}[/]")
+        raise SystemExit(1)
+
     if not skills:
         console.print("[yellow]No ClawHub skills installed.[/]")
         return
@@ -625,19 +641,22 @@ def list_skills(workdir: str):
     table.add_column("Source")
     table.add_column("Installed At")
     for entry in skills.values():
-        table.add_row(entry.slug, entry.version, entry.source, entry.installed_at)
+        table.add_row(entry.slug, entry.version, entry.source, entry.installed_at[:10])
     console.print(table)
 
 
 @skill.command()
 @click.argument("slug")
 @click.option("--dir", "install_dir", default="./skills", show_default=True)
-@click.option("--workdir", default=".", show_default=True)
-def remove(slug: str, install_dir: str, workdir: str):
+@click.option("--config", "-c", default="config.yaml", help="Config file path")
+def remove(slug: str, install_dir: str, config: str):
     """Remove an installed skill by SLUG."""
     import shutil
     from pathlib import Path
-    from pulsebot.skills.lock import LockFile
+
+    from pulsebot.config import load_config
+    from pulsebot.skills.stream_registry import SkillStreamRegistry
+    from pulsebot.timeplus.client import TimeplusClient
 
     target = Path(install_dir) / slug
     if target.exists():
@@ -646,9 +665,13 @@ def remove(slug: str, install_dir: str, workdir: str):
     else:
         console.print(f"[yellow]Skill directory not found: {target}[/]")
 
-    lock = LockFile(Path(workdir))
-    lock.remove(slug)
-    console.print(f"[green]Removed {slug} from lock file.[/]")
+    try:
+        cfg = load_config(config)
+        tp = TimeplusClient.from_config(cfg.timeplus)
+        SkillStreamRegistry(tp).remove(slug)
+        console.print(f"[green]Removed '{slug}' from skills stream.[/]")
+    except Exception as e:
+        console.print(f"[yellow]Warning: could not remove from Proton stream: {e}[/]")
 
 
 if __name__ == "__main__":

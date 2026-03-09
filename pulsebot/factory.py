@@ -105,10 +105,11 @@ def create_skill_loader(config: "Config") -> "SkillLoader":
     # Standard kwargs for non-workspace builtins
     skill_configs: dict = {}
 
-    # Build loader for all skills except workspace and scheduler (which need special construction)
+    # Build loader for all skills except those that need special construction
+    _SPECIAL = {"workspace", "scheduler", "skill_manager"}
     non_workspace = config.skills.model_copy(
         update={
-            "builtin": [s for s in config.skills.builtin if s not in ("workspace", "scheduler")]
+            "builtin": [s for s in config.skills.builtin if s not in _SPECIAL]
         }
     )
     loader = SkillLoader.from_config(non_workspace, **skill_configs)
@@ -139,6 +140,24 @@ def create_skill_loader(config: "Config") -> "SkillLoader":
 
         _log.info(
             "Scheduler skill registered",
+            extra={"tools": [t.name for t in skill.get_tools()]},
+        )
+
+    # Register SkillManagerSkill with skills config + a dedicated Timeplus client
+    if "skill_manager" in config.skills.builtin:
+        from pulsebot.skills.builtin.skill_manager import SkillManagerSkill
+        from pulsebot.timeplus.client import TimeplusClient
+
+        skill = SkillManagerSkill(
+            skills_config=config.skills,
+            client=TimeplusClient.from_config(config.timeplus),
+        )
+        loader._skills["skill_manager"] = skill
+        for tool in skill.get_tools():
+            loader._tool_to_skill[tool.name] = "skill_manager"
+
+        _log.info(
+            "SkillManager skill registered",
             extra={"tools": [t.name for t in skill.get_tools()]},
         )
 

@@ -153,6 +153,19 @@ CREATE STREAM IF NOT EXISTS pulsebot.tasks (
 SETTINGS event_time_column='created_at';
 """
 
+SKILLS_STREAM_DDL = """
+CREATE STREAM IF NOT EXISTS pulsebot.skills (
+    slug         string,
+    version      string,
+    content_hash string DEFAULT '',
+    source       string DEFAULT 'clawhub',
+    action       string,   -- 'install' | 'remove'
+    installed_at string DEFAULT '',  -- ISO 8601 timestamp of original install
+    created_at   datetime64(3) DEFAULT now64(3)
+)
+SETTINGS event_time_column='created_at';
+"""
+
 TASK_TRIGGERS_STREAM_DDL = """
 CREATE STREAM IF NOT EXISTS pulsebot.task_triggers (
     trigger_id   string DEFAULT uuid(),
@@ -200,6 +213,7 @@ async def create_streams(client: "TimeplusClient") -> None:
         ("events",         EVENTS_STREAM_DDL),
         ("tasks",          TASKS_STREAM_DDL),
         ("task_triggers",  TASK_TRIGGERS_STREAM_DDL),
+        ("skills",         SKILLS_STREAM_DDL),
     ]
     
     for name, ddl in streams:
