@@ -3,6 +3,7 @@ workspaces/
 docs/plans/
 .clawhub
 /skills/
+pulsebot/_version.py
 
 # Python
 __pycache__/
