@@ -278,6 +278,16 @@ def chat(config: str, host: str, port: int):
                                     border_style="green",
                                 ))
                                 response_received.set()
+
+                            elif data.get("type") == "task_notification":
+                                task_name = data.get("task_name", "task")
+                                text = data.get("text", "")
+                                console.print()
+                                console.print(Panel(
+                                    Markdown(text),
+                                    title=f"[bold yellow]Task: {task_name}[/]",
+                                    border_style="yellow",
+                                ))
                     except websockets.exceptions.ConnectionClosed:
                         pass
 
