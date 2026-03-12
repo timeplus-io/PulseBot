@@ -13,6 +13,7 @@ from pulsebot.utils import get_logger
 
 if TYPE_CHECKING:
     from pulsebot.config import SkillsConfig
+    from pulsebot.skills.loader import SkillLoader
     from pulsebot.timeplus.client import TimeplusClient
 
 logger = get_logger(__name__)
@@ -28,14 +29,19 @@ class SkillManagerSkill(BaseSkill):
     Skill metadata is persisted in the ``pulsebot.skills`` Proton stream
     using an event-sourcing pattern (install/remove tombstones).
 
-    Note: a restart is required after install/remove for new skills to
-    be loaded into the agent's tool registry.
+    After install the skill is hot-reloaded immediately. Removing a skill
+    takes effect after the agent is restarted.
     """
 
     name = "skill_manager"
     description = "Search, install, list, and remove ClawHub skills"
 
-    def __init__(self, skills_config: "SkillsConfig", client: "TimeplusClient") -> None:
+    def __init__(
+        self,
+        skills_config: "SkillsConfig",
+        client: "TimeplusClient",
+        loader: "SkillLoader | None" = None,
+    ) -> None:
         from pulsebot.skills.stream_registry import SkillStreamRegistry
 
         cfg = skills_config.clawhub
@@ -43,6 +49,8 @@ class SkillManagerSkill(BaseSkill):
         self._registry_url = cfg.registry_url
         self._auth_token_path = cfg.auth_token_path
         self._registry = SkillStreamRegistry(client)
+
+        self._loader = loader
 
         # Resolve install directory: explicit config > first skill_dir > ./skills
         if cfg.install_dir:
@@ -93,7 +101,7 @@ class SkillManagerSkill(BaseSkill):
                 name="skill_install",
                 description=(
                     "Install a skill from ClawHub by slug. "
-                    "After installing, the agent must be restarted for the skill to become active."
+                    "The skill is hot-reloaded immediately after installing — no restart needed."
                 ),
                 parameters={
                     "type": "object",
@@ -108,7 +116,7 @@ class SkillManagerSkill(BaseSkill):
                 name="skill_remove",
                 description=(
                     "Remove an installed ClawHub skill by slug. "
-                    "After removing, the agent must be restarted for the change to take effect."
+                    "The skill files are deleted immediately; the change takes full effect after restart."
                 ),
                 parameters={
                     "type": "object",
@@ -193,9 +201,11 @@ class SkillManagerSkill(BaseSkill):
             await asyncio.to_thread(self._registry.add, skill)
 
             logger.info("Installed skill", extra={"slug": slug, "version": version})
+            if self._loader is not None:
+                self._loader.reload_external_skills()
             return ToolResult.ok(
                 f"Installed '{slug}' v{version} to {target}. "
-                "Restart the agent for the skill to become active."
+                "The skill has been hot-reloaded and is now available."
             )
         except SecurityError as e:
             return ToolResult.fail(f"Security error: {e}")
@@ -222,7 +232,7 @@ class SkillManagerSkill(BaseSkill):
             msg = f"Removed '{slug}'."
             if not removed_dir:
                 msg += " (directory not found, record removed from stream)"
-            msg += " Restart the agent for the change to take effect."
+            msg += " The skill files have been deleted and will be fully unloaded on next restart."
             return ToolResult.ok(msg)
         except Exception as e:
             return ToolResult.fail(str(e))

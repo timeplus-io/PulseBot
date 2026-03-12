@@ -151,6 +151,7 @@ def create_skill_loader(config: "Config") -> "SkillLoader":
         skill = SkillManagerSkill(
             skills_config=config.skills,
             client=TimeplusClient.from_config(config.timeplus),
+            loader=loader,
         )
         loader._skills["skill_manager"] = skill
         for tool in skill.get_tools():
