@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from pulsebot.hooks.base import HookVerdict, ToolCallHook
+from pulsebot.hooks.passthrough import PassthroughHook
 
 
 def test_hook_verdict_approve():
@@ -62,10 +63,6 @@ async def test_hook_setup_is_noop():
 async def test_hook_teardown_is_noop():
     hook = ConcreteHook()
     await hook.teardown()  # Must not raise
-
-
-import pytest
-from pulsebot.hooks.passthrough import PassthroughHook
 
 
 async def test_passthrough_approves_everything():
