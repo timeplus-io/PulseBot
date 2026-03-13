@@ -17,7 +17,6 @@ _HOOK_REGISTRY: dict[str, type[ToolCallHook]] = {}
 
 
 def _register_builtin_hooks() -> None:
-    from pulsebot.hooks.passthrough import PassthroughHook
     from pulsebot.hooks.policy import PolicyHook
     from pulsebot.hooks.webhook import WebhookHook
 

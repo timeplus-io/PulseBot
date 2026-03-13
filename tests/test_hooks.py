@@ -8,8 +8,10 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from pulsebot.config import HookEntryConfig, HooksConfig
 from pulsebot.core.executor import ToolExecutor
 from pulsebot.hooks.base import HookVerdict, ToolCallHook
+from pulsebot.hooks.factory import build_hooks
 from pulsebot.hooks.passthrough import PassthroughHook
 from pulsebot.hooks.policy import PolicyHook
 from pulsebot.hooks.webhook import WebhookHook
@@ -292,9 +294,6 @@ async def test_executor_no_hooks_still_works():
 # ---------------------------------------------------------------------------
 # Factory / config wiring tests
 # ---------------------------------------------------------------------------
-
-from pulsebot.hooks.factory import build_hooks
-from pulsebot.config import HookEntryConfig, HooksConfig
 
 
 def test_build_hooks_empty():

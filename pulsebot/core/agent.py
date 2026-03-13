@@ -15,7 +15,6 @@ from pulsebot.utils import get_logger, hash_content, truncate_string
 
 if TYPE_CHECKING:
     from pulsebot.config import Config, TimeplusConfig
-    from pulsebot.core.executor import ToolExecutor
     from pulsebot.core.notifier import NotificationDispatcher
     from pulsebot.providers.base import LLMProvider
     from pulsebot.skills.loader import SkillLoader

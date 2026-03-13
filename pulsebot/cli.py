@@ -27,7 +27,6 @@ def run(config: str):
     from pulsebot.config import load_config
     from pulsebot.core import Agent
     from pulsebot.factory import create_executor, create_provider, create_skill_loader
-    from pulsebot.skills import SkillLoader
     from pulsebot.timeplus.client import TimeplusClient
     from pulsebot.embeddings import OpenAIEmbeddingProvider, OllamaEmbeddingProvider
     from pulsebot.timeplus.memory import MemoryManager
