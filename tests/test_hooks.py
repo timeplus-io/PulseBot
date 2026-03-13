@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 from pydantic import ValidationError
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from pulsebot.hooks.base import HookVerdict, ToolCallHook
 from pulsebot.hooks.passthrough import PassthroughHook
 from pulsebot.hooks.policy import PolicyHook
+from pulsebot.hooks.webhook import WebhookHook
 
 
 def test_hook_verdict_approve():
@@ -137,3 +140,78 @@ async def test_policy_no_rules_approves_everything():
     hook = PolicyHook()
     verdict = await hook.pre_call("anything", {"x": "y"})
     assert verdict.verdict == "approve"
+
+
+async def test_webhook_approves_on_200_approve():
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"verdict": "approve"}
+
+    with patch("pulsebot.hooks.webhook.httpx.AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_cls.return_value = mock_client
+
+        hook = WebhookHook(url="https://example.com/hook")
+        verdict = await hook.pre_call("shell", {"command": "ls"})
+        assert verdict.verdict == "approve"
+
+
+async def test_webhook_denies_on_deny_response():
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"verdict": "deny", "reasoning": "blocked"}
+
+    with patch("pulsebot.hooks.webhook.httpx.AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_cls.return_value = mock_client
+
+        hook = WebhookHook(url="https://example.com/hook")
+        verdict = await hook.pre_call("shell", {"command": "rm -rf /"})
+        assert verdict.verdict == "deny"
+        assert verdict.reasoning == "blocked"
+
+
+async def test_webhook_approves_on_network_error_fail_open():
+    with patch("pulsebot.hooks.webhook.httpx.AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=httpx.RequestError("timeout", request=MagicMock()))
+        mock_cls.return_value = mock_client
+
+        hook = WebhookHook(url="https://example.com/hook", fail_open=True)
+        verdict = await hook.pre_call("shell", {"command": "ls"})
+        assert verdict.verdict == "approve"
+
+
+async def test_webhook_denies_on_network_error_fail_closed():
+    with patch("pulsebot.hooks.webhook.httpx.AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=httpx.RequestError("timeout", request=MagicMock()))
+        mock_cls.return_value = mock_client
+
+        hook = WebhookHook(url="https://example.com/hook", fail_open=False)
+        verdict = await hook.pre_call("shell", {"command": "ls"})
+        assert verdict.verdict == "deny"
+
+
+async def test_webhook_post_call_fires_and_forgets_on_error():
+    """post_call should not raise even on network error."""
+    with patch("pulsebot.hooks.webhook.httpx.AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=Exception("connection refused"))
+        mock_cls.return_value = mock_client
+
+        hook = WebhookHook(url="https://example.com/hook")
+        # Should not raise
+        await hook.post_call("shell", {"command": "ls"}, {"success": True, "output": "file.txt"})
