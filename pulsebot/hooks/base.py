@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class HookVerdict(BaseModel):
@@ -14,6 +14,15 @@ class HookVerdict(BaseModel):
     verdict: Literal["approve", "deny", "modify"]
     modified_arguments: dict[str, Any] | None = None
     reasoning: str | None = None
+
+    @model_validator(mode="after")
+    def check_modify_has_arguments(self) -> "HookVerdict":
+        """Ensure 'modify' verdict always carries modified_arguments."""
+        if self.verdict == "modify" and self.modified_arguments is None:
+            raise ValueError(
+                "'modified_arguments' must be provided when verdict is 'modify'"
+            )
+        return self
 
 
 class ToolCallHook(ABC):

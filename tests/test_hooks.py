@@ -1,5 +1,7 @@
 """Tests for the tool call hook system."""
 
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 
@@ -30,13 +32,33 @@ def test_hook_verdict_invalid():
         HookVerdict(verdict="unknown")
 
 
+def test_hook_verdict_modify_without_arguments_raises():
+    """Verify that verdict='modify' without modified_arguments raises ValidationError."""
+    with pytest.raises(ValidationError):
+        HookVerdict(verdict="modify")
+
+
 class ConcreteHook(ToolCallHook):
-    async def pre_call(self, tool_name, arguments, session_id=""):
+    """Minimal concrete implementation of ToolCallHook used in tests."""
+
+    async def pre_call(self, tool_name: str, arguments: dict, session_id: str = "") -> HookVerdict:
+        """Approve every tool call unconditionally."""
         return HookVerdict(verdict="approve")
-    async def post_call(self, tool_name, arguments, result, session_id=""):
-        pass
+
+    async def post_call(self, tool_name: str, arguments: dict, result: dict, session_id: str = "") -> None:
+        """No-op post-call observer."""
 
 
 def test_hook_base_instantiation():
     hook = ConcreteHook()
     assert hook is not None
+
+
+async def test_hook_setup_is_noop():
+    hook = ConcreteHook()
+    await hook.setup()  # Must not raise
+
+
+async def test_hook_teardown_is_noop():
+    hook = ConcreteHook()
+    await hook.teardown()  # Must not raise
