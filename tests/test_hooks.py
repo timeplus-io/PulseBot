@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
 import pytest
 from pydantic import ValidationError
-from unittest.mock import AsyncMock, MagicMock, patch
 
+from pulsebot.core.executor import ToolExecutor
 from pulsebot.hooks.base import HookVerdict, ToolCallHook
 from pulsebot.hooks.passthrough import PassthroughHook
 from pulsebot.hooks.policy import PolicyHook
@@ -221,12 +223,6 @@ async def test_webhook_post_call_fires_and_forgets_on_error():
 # Executor integration tests
 # ---------------------------------------------------------------------------
 
-from unittest.mock import AsyncMock, MagicMock
-from pulsebot.core.executor import ToolExecutor
-from pulsebot.hooks.base import HookVerdict, ToolCallHook
-from pulsebot.hooks.passthrough import PassthroughHook
-from pulsebot.hooks.policy import PolicyHook
-
 
 def _make_executor(hooks=None):
     mock_loader = MagicMock()
@@ -238,14 +234,12 @@ def _make_executor(hooks=None):
     return ToolExecutor(mock_loader, hooks=hooks or [])
 
 
-@pytest.mark.asyncio
 async def test_executor_passthrough_hook_approves():
     executor = _make_executor(hooks=[PassthroughHook()])
     result = await executor.execute("shell", {"command": "ls"})
     assert result["success"] is True
 
 
-@pytest.mark.asyncio
 async def test_executor_deny_hook_blocks_execution():
     executor = _make_executor(hooks=[PolicyHook(deny_tools=["shell"])])
     result = await executor.execute("shell", {"command": "ls"})
@@ -253,7 +247,6 @@ async def test_executor_deny_hook_blocks_execution():
     assert "denied" in result["error"].lower()
 
 
-@pytest.mark.asyncio
 async def test_executor_modify_hook_changes_arguments():
     class ModifyHook(ToolCallHook):
         async def pre_call(self, tool_name, arguments, session_id=""):
@@ -276,7 +269,6 @@ async def test_executor_modify_hook_changes_arguments():
     assert captured["arguments"]["command"] == "echo safe"
 
 
-@pytest.mark.asyncio
 async def test_executor_post_hooks_run_after_execution():
     post_calls = []
 
@@ -291,7 +283,6 @@ async def test_executor_post_hooks_run_after_execution():
     assert post_calls == [("shell", True)]
 
 
-@pytest.mark.asyncio
 async def test_executor_no_hooks_still_works():
     executor = _make_executor(hooks=[])
     result = await executor.execute("shell", {"command": "ls"})
