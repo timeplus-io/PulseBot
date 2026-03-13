@@ -133,6 +133,17 @@ class SkillsConfig(BaseModel):
     clawhub: ClawHubConfig = Field(default_factory=ClawHubConfig)
 
 
+class HookEntryConfig(BaseModel):
+    """Configuration for a single hook in the chain."""
+    type: str  # "passthrough", "policy", "webhook"
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class HooksConfig(BaseModel):
+    """Tool call hooks configuration."""
+    pre_call: list[HookEntryConfig] = Field(default_factory=list)
+
+
 class MCPServerConfig(BaseModel):
     """MCP server configuration."""
     name: str
@@ -200,6 +211,7 @@ class Config(BaseSettings):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
+    hooks: HooksConfig = Field(default_factory=HooksConfig)
 
 
 def load_config(config_path: str | Path = "config.yaml") -> Config:

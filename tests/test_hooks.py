@@ -287,3 +287,36 @@ async def test_executor_no_hooks_still_works():
     executor = _make_executor(hooks=[])
     result = await executor.execute("shell", {"command": "ls"})
     assert result["success"] is True
+
+
+# ---------------------------------------------------------------------------
+# Factory / config wiring tests
+# ---------------------------------------------------------------------------
+
+from pulsebot.hooks.factory import build_hooks
+from pulsebot.config import HookEntryConfig, HooksConfig
+
+
+def test_build_hooks_empty():
+    hooks = build_hooks(HooksConfig())
+    # Default: one PassthroughHook
+    assert len(hooks) == 1
+    assert isinstance(hooks[0], PassthroughHook)
+
+
+def test_build_hooks_policy():
+    cfg = HooksConfig(pre_call=[
+        HookEntryConfig(type="policy", config={"deny_tools": ["shell"]})
+    ])
+    hooks = build_hooks(cfg)
+    assert len(hooks) == 1
+    assert isinstance(hooks[0], PolicyHook)
+
+
+def test_build_hooks_webhook():
+    cfg = HooksConfig(pre_call=[
+        HookEntryConfig(type="webhook", config={"url": "https://example.com/hook"})
+    ])
+    hooks = build_hooks(cfg)
+    assert len(hooks) == 1
+    assert isinstance(hooks[0], WebhookHook)

@@ -26,7 +26,7 @@ def run(config: str):
     """Start the PulseBot agent."""
     from pulsebot.config import load_config
     from pulsebot.core import Agent
-    from pulsebot.factory import create_provider, create_skill_loader
+    from pulsebot.factory import create_executor, create_provider, create_skill_loader
     from pulsebot.skills import SkillLoader
     from pulsebot.timeplus.client import TimeplusClient
     from pulsebot.embeddings import OpenAIEmbeddingProvider, OllamaEmbeddingProvider
@@ -99,7 +99,8 @@ def run(config: str):
         )
 
         skills = create_skill_loader(cfg)
-        
+        executor = create_executor(cfg, skills)
+
         workspace_skill = skills.get_skill("workspace")
         if workspace_skill is not None:
             from pulsebot.workspace import run_workspace_server
@@ -128,6 +129,7 @@ def run(config: str):
             timeplus_config=cfg.timeplus,
             verbose_tools=cfg.agent.verbose_tools,
             notifier=notifier,
+            executor=executor,
         )
 
         # Start Telegram channel if enabled (needs separate client to avoid connection conflicts)
