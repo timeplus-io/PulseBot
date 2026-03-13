@@ -8,28 +8,31 @@ from pulsebot.utils import get_logger
 
 if TYPE_CHECKING:
     from pulsebot.skills.loader import SkillLoader
+    from pulsebot.hooks.base import ToolCallHook
 
 logger = get_logger(__name__)
 
 
 class ToolExecutor:
     """Execute tools from loaded skills.
-    
+
     Dispatches tool calls to the appropriate skill handlers and
     logs execution results back to the messages stream.
-    
+
     Example:
         >>> executor = ToolExecutor(skill_loader)
         >>> result = await executor.execute("shell", {"command": "ls -l"})
     """
-    
-    def __init__(self, skill_loader: "SkillLoader"):
+
+    def __init__(self, skill_loader: "SkillLoader", hooks: "list[ToolCallHook] | None" = None):
         """Initialize tool executor.
-        
+
         Args:
             skill_loader: Loaded skills manager
+            hooks: Optional list of ToolCallHook instances for pre/post execution
         """
         self.skills = skill_loader
+        self._hooks: list[ToolCallHook] = hooks if hooks is not None else []
         self._execution_count = 0
     
     async def execute(
@@ -74,20 +77,38 @@ class ToolExecutor:
                         "output": None,
                         "error": "Invalid tool call: tool name is empty and could not be inferred.",
                     }
-                
+
+            # Run pre-call hooks; allow modification or denial of the call
+            effective_arguments = dict(arguments)
+            for hook in self._hooks:
+                verdict = await hook.pre_call(tool_name, effective_arguments, session_id)
+                if verdict.verdict == "deny":
+                    reason = verdict.reasoning or "no reason given"
+                    logger.warning(
+                        "Tool call denied by hook",
+                        extra={"tool": tool_name, "hook": type(hook).__name__, "reason": reason},
+                    )
+                    return {
+                        "success": False,
+                        "output": None,
+                        "error": f"Tool call denied by {type(hook).__name__}: {reason}",
+                    }
+                if verdict.verdict == "modify" and verdict.modified_arguments is not None:
+                    effective_arguments = verdict.modified_arguments
+
             # Find the skill that provides this tool
             skill = self.skills.get_skill_for_tool(tool_name)
-            
+
             if skill is None:
                 return {
                     "success": False,
                     "output": None,
                     "error": f"Unknown tool: {tool_name}",
                 }
-            
-            # Execute the tool
-            result = await skill.execute(tool_name, arguments)
-            
+
+            # Execute the tool with (potentially modified) arguments
+            result = await skill.execute(tool_name, effective_arguments)
+
             logger.info(
                 "Tool execution complete",
                 extra={
@@ -96,13 +117,25 @@ class ToolExecutor:
                     "execution_id": self._execution_count,
                 }
             )
-            
-            return {
+
+            result_dict = {
                 "success": result.success,
                 "output": result.output,
                 "error": result.error,
             }
-            
+
+            # Run post-call hooks; errors are logged but do not affect the result
+            for hook in self._hooks:
+                try:
+                    await hook.post_call(tool_name, effective_arguments, result_dict, session_id)
+                except Exception as post_exc:
+                    logger.warning(
+                        "Post-call hook raised an exception",
+                        extra={"hook": type(hook).__name__, "error": str(post_exc)},
+                    )
+
+            return result_dict
+
         except Exception as e:
             logger.error(
                 "Tool execution failed",

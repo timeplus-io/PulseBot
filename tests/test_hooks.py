@@ -215,3 +215,84 @@ async def test_webhook_post_call_fires_and_forgets_on_error():
         hook = WebhookHook(url="https://example.com/hook")
         # Should not raise
         await hook.post_call("shell", {"command": "ls"}, {"success": True, "output": "file.txt"})
+
+
+# ---------------------------------------------------------------------------
+# Executor integration tests
+# ---------------------------------------------------------------------------
+
+from unittest.mock import AsyncMock, MagicMock
+from pulsebot.core.executor import ToolExecutor
+from pulsebot.hooks.base import HookVerdict, ToolCallHook
+from pulsebot.hooks.passthrough import PassthroughHook
+from pulsebot.hooks.policy import PolicyHook
+
+
+def _make_executor(hooks=None):
+    mock_loader = MagicMock()
+    mock_skill = AsyncMock()
+    mock_skill.execute = AsyncMock(return_value=MagicMock(
+        success=True, output="ok", error=None
+    ))
+    mock_loader.get_skill_for_tool.return_value = mock_skill
+    return ToolExecutor(mock_loader, hooks=hooks or [])
+
+
+@pytest.mark.asyncio
+async def test_executor_passthrough_hook_approves():
+    executor = _make_executor(hooks=[PassthroughHook()])
+    result = await executor.execute("shell", {"command": "ls"})
+    assert result["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_executor_deny_hook_blocks_execution():
+    executor = _make_executor(hooks=[PolicyHook(deny_tools=["shell"])])
+    result = await executor.execute("shell", {"command": "ls"})
+    assert result["success"] is False
+    assert "denied" in result["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_executor_modify_hook_changes_arguments():
+    class ModifyHook(ToolCallHook):
+        async def pre_call(self, tool_name, arguments, session_id=""):
+            return HookVerdict(verdict="modify", modified_arguments={"command": "echo safe"})
+        async def post_call(self, *args, **kwargs):
+            pass
+
+    captured = {}
+    mock_loader = MagicMock()
+    mock_skill = AsyncMock()
+    async def capture_execute(tool_name, arguments):
+        captured["arguments"] = arguments
+        return MagicMock(success=True, output="safe", error=None)
+    mock_skill.execute = capture_execute
+    mock_loader.get_skill_for_tool.return_value = mock_skill
+
+    executor = ToolExecutor(mock_loader, hooks=[ModifyHook()])
+    result = await executor.execute("shell", {"command": "rm -rf /"})
+    assert result["success"] is True
+    assert captured["arguments"]["command"] == "echo safe"
+
+
+@pytest.mark.asyncio
+async def test_executor_post_hooks_run_after_execution():
+    post_calls = []
+
+    class ObserveHook(ToolCallHook):
+        async def pre_call(self, tool_name, arguments, session_id=""):
+            return HookVerdict(verdict="approve")
+        async def post_call(self, tool_name, arguments, result, session_id=""):
+            post_calls.append((tool_name, result["success"]))
+
+    executor = _make_executor(hooks=[ObserveHook()])
+    await executor.execute("shell", {"command": "ls"})
+    assert post_calls == [("shell", True)]
+
+
+@pytest.mark.asyncio
+async def test_executor_no_hooks_still_works():
+    executor = _make_executor(hooks=[])
+    result = await executor.execute("shell", {"command": "ls"})
+    assert result["success"] is True
