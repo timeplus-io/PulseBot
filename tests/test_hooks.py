@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from pulsebot.hooks.base import HookVerdict, ToolCallHook
 from pulsebot.hooks.passthrough import PassthroughHook
+from pulsebot.hooks.policy import PolicyHook
 
 
 def test_hook_verdict_approve():
@@ -84,3 +85,55 @@ async def test_passthrough_approves_any_tool():
     for tool in ["shell", "file_read", "web_search", "unknown_tool"]:
         verdict = await hook.pre_call(tool, {})
         assert verdict.verdict == "approve"
+
+
+async def test_policy_deny_blocked_tool():
+    hook = PolicyHook(deny_tools=["shell"])
+    verdict = await hook.pre_call("shell", {"command": "ls"})
+    assert verdict.verdict == "deny"
+    assert "shell" in verdict.reasoning
+
+
+async def test_policy_allow_listed_tool():
+    hook = PolicyHook(allow_tools=["file_read"])
+    verdict = await hook.pre_call("file_read", {"path": "/tmp/x"})
+    assert verdict.verdict == "approve"
+
+
+async def test_policy_deny_tool_not_in_allowlist():
+    hook = PolicyHook(allow_tools=["file_read"])
+    verdict = await hook.pre_call("shell", {"command": "ls"})
+    assert verdict.verdict == "deny"
+
+
+async def test_policy_deny_argument_pattern():
+    hook = PolicyHook(deny_argument_patterns={"command": ["rm -rf", "sudo"]})
+    verdict = await hook.pre_call("shell", {"command": "rm -rf /"})
+    assert verdict.verdict == "deny"
+
+
+async def test_policy_approve_safe_argument():
+    hook = PolicyHook(deny_argument_patterns={"command": ["rm -rf"]})
+    verdict = await hook.pre_call("shell", {"command": "ls -la"})
+    assert verdict.verdict == "approve"
+
+
+async def test_policy_wildcard_allow():
+    hook = PolicyHook(allow_tools=["file_*"])
+    v_allowed = await hook.pre_call("file_read", {})
+    v_denied = await hook.pre_call("shell", {})
+    assert v_allowed.verdict == "approve"
+    assert v_denied.verdict == "deny"
+
+
+async def test_policy_deny_takes_precedence_over_allow():
+    """deny_tools always wins even if tool is in allow_tools."""
+    hook = PolicyHook(allow_tools=["shell"], deny_tools=["shell"])
+    verdict = await hook.pre_call("shell", {"command": "ls"})
+    assert verdict.verdict == "deny"
+
+
+async def test_policy_no_rules_approves_everything():
+    hook = PolicyHook()
+    verdict = await hook.pre_call("anything", {"x": "y"})
+    assert verdict.verdict == "approve"
