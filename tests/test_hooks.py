@@ -62,3 +62,28 @@ async def test_hook_setup_is_noop():
 async def test_hook_teardown_is_noop():
     hook = ConcreteHook()
     await hook.teardown()  # Must not raise
+
+
+import pytest
+from pulsebot.hooks.passthrough import PassthroughHook
+
+
+async def test_passthrough_approves_everything():
+    hook = PassthroughHook()
+    verdict = await hook.pre_call("shell", {"command": "ls"})
+    assert verdict.verdict == "approve"
+    assert verdict.modified_arguments is None
+    assert verdict.reasoning is None
+
+
+async def test_passthrough_post_call_is_noop():
+    hook = PassthroughHook()
+    # Should not raise
+    await hook.post_call("shell", {"command": "ls"}, {"success": True, "output": "file.txt"})
+
+
+async def test_passthrough_approves_any_tool():
+    hook = PassthroughHook()
+    for tool in ["shell", "file_read", "web_search", "unknown_tool"]:
+        verdict = await hook.pre_call(tool, {})
+        assert verdict.verdict == "approve"

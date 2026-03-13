@@ -3,5 +3,6 @@
 from __future__ import annotations
 
 from pulsebot.hooks.base import HookVerdict, ToolCallHook
+from pulsebot.hooks.passthrough import PassthroughHook
 
-__all__ = ["HookVerdict", "ToolCallHook"]
+__all__ = ["HookVerdict", "ToolCallHook", "PassthroughHook"]
