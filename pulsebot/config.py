@@ -14,17 +14,17 @@ from pulsebot.workspace.config import WorkspaceConfig
 
 def _substitute_env_vars(value: Any) -> Any:
     """Recursively substitute environment variables in config values.
-    
+
     Supports ${VAR_NAME} and ${VAR_NAME:-default} syntax.
     """
     if isinstance(value, str):
         pattern = r'\$\{([^}:]+)(?::-([^}]*))?\}'
-        
+
         def replacer(match: re.Match) -> str:
             var_name = match.group(1)
             default = match.group(2) if match.group(2) is not None else ""
             return os.environ.get(var_name, default)
-        
+
         return re.sub(pattern, replacer, value)
     elif isinstance(value, dict):
         return {k: _substitute_env_vars(v) for k, v in value.items()}
@@ -186,7 +186,7 @@ class MemoryConfig(BaseModel):
     """Memory system configuration."""
     similarity_threshold: float = 0.95  # Threshold for duplicate detection (0.0-1.0)
     enabled: bool = True  # Whether memory system is enabled
-    
+
     # Embedding provider configuration for memory operations
     embedding_provider: str = "openai"  # "openai" or "ollama"
     embedding_model: str = "text-embedding-3-small"
@@ -199,7 +199,7 @@ class MemoryConfig(BaseModel):
 class Config(BaseSettings):
     """Main PulseBot configuration."""
     model_config = {"extra": "allow"}
-    
+
     agent: AgentConfig = Field(default_factory=AgentConfig)
     timeplus: TimeplusConfig = Field(default_factory=TimeplusConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
@@ -216,28 +216,28 @@ class Config(BaseSettings):
 
 def load_config(config_path: str | Path = "config.yaml") -> Config:
     """Load configuration from YAML file with environment variable substitution.
-    
+
     Args:
         config_path: Path to the YAML configuration file.
-        
+
     Returns:
         Loaded and validated Config object.
     """
     config_path = Path(config_path)
-    
+
     if not config_path.exists():
         # Return default config if file doesn't exist
         return Config()
-    
+
     with open(config_path) as f:
         raw_config = yaml.safe_load(f)
-    
+
     if raw_config is None:
         return Config()
-    
+
     # Substitute environment variables
     config_data = _substitute_env_vars(raw_config)
-    
+
     return Config(**config_data)
 
 
@@ -383,6 +383,25 @@ workspace:
 
   # Seconds to wait after spawning a backend subprocess before health-checking.
   backend_boot_timeout: 3.0
+
+# Tool call hooks — intercept tool calls before/after execution
+# hooks:
+#   pre_call:
+#     - type: passthrough        # Default: approve everything (< 0.1ms overhead)
+#
+#     # Example: block specific tools
+#     # - type: policy
+#     #   config:
+#     #     deny_tools: ["shell"]
+#     #     allow_tools: ["file_read", "file_write"]
+#
+#     # Example: external approval endpoint
+#     # - type: webhook
+#     #   config:
+#     #     url: "https://your-approval-service.example.com/hook"
+#     #     auth_header: "Bearer ${WEBHOOK_SECRET}"
+#     #     timeout: 5.0
+#     #     fail_open: true    # approve on network error (false = deny on error)
 """
 
     return default_config
