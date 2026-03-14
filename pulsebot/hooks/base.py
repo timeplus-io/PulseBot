@@ -16,7 +16,7 @@ class HookVerdict(BaseModel):
     reasoning: str | None = None
 
     @model_validator(mode="after")
-    def check_modify_has_arguments(self) -> "HookVerdict":
+    def check_modify_has_arguments(self) -> HookVerdict:
         """Ensure 'modify' verdict always carries modified_arguments."""
         if self.verdict == "modify" and self.modified_arguments is None:
             raise ValueError(
@@ -32,10 +32,10 @@ class ToolCallHook(ABC):
     Implement ``post_call`` for observability after execution.
     """
 
-    async def setup(self) -> None:
+    async def setup(self) -> None:  # noqa: B027
         """Optional lifecycle: called once when the hook is initialized."""
 
-    async def teardown(self) -> None:
+    async def teardown(self) -> None:  # noqa: B027
         """Optional lifecycle: called once when the agent shuts down."""
 
     @abstractmethod
