@@ -76,6 +76,7 @@ class Agent:
         timeplus_config: "TimeplusConfig | None" = None,
         verbose_tools: bool = False,
         notifier: "NotificationDispatcher | None" = None,
+        executor: "ToolExecutor | None" = None,
     ):
         """Initialize the agent.
 
@@ -90,6 +91,7 @@ class Agent:
             timeplus_config: Timeplus config for creating additional clients
             verbose_tools: Whether to show full tool arguments in broadcasts
             notifier: Optional dispatcher for broadcasting scheduled task results
+            executor: Optional pre-built ToolExecutor; created from skill_loader if not provided
         """
         from pulsebot.timeplus.client import TimeplusClient
 
@@ -125,7 +127,7 @@ class Agent:
             model_info=model_info,
             skills_index=skill_loader.format_skills_for_prompt(),
         )
-        self.executor = ToolExecutor(skill_loader)
+        self.executor = executor if executor is not None else ToolExecutor(skill_loader)
 
         # Stream reader uses main client for streaming query
         self.messages_reader = StreamReader(timeplus, "messages")

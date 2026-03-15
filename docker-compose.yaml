@@ -47,6 +47,7 @@ services:
       - WORKSPACE_INTERNAL_KEY=test-workspace-key-12345
       - AGENT_HOST=pulsebot-agent
       - SEARXNG_BASE_URL=http://searxng:8080
+      - CLAWHUB_AUTH_TOKEN=${CLAWHUB_AUTH_TOKEN}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./skills:/app/skills:rw

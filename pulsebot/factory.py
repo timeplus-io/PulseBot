@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pulsebot.config import Config
+    from pulsebot.core.executor import ToolExecutor
     from pulsebot.providers.base import LLMProvider
     from pulsebot.skills import SkillLoader
     
@@ -163,3 +164,12 @@ def create_skill_loader(config: "Config") -> "SkillLoader":
         )
 
     return loader
+
+
+def create_executor(config: "Config", skill_loader: "SkillLoader") -> "ToolExecutor":
+    """Create a ToolExecutor with hooks from config."""
+    from pulsebot.core.executor import ToolExecutor
+    from pulsebot.hooks.factory import build_hooks
+
+    hooks = build_hooks(config.hooks.tool_call)
+    return ToolExecutor(skill_loader, hooks=hooks)

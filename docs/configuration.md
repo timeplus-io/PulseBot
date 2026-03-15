@@ -128,6 +128,73 @@ Orchestration settings for the agent-side workspaces.
 | `backend_boot_timeout`| `3.0` | Seconds to wait after spawning a backend subprocess before health-checking. |
 | `internal_api_key` | `""` | Shared secret for agent-to-API-server registration. |
 
+### Hooks
+
+Intercept tool calls before and after execution. Hooks are organized by call type under the top-level `hooks:` key, making it easy to add new hook types (e.g., `llm_call`) in the future.
+
+#### `hooks.tool_call`
+
+Controls the pre/post hook chain for every tool call the agent makes.
+
+| Field | Default | Description |
+| :--- | :--- | :--- |
+| `pre_call` | `[]` | Ordered list of hook entries to run before tool execution. If empty, a `PassthroughHook` (zero-overhead) is used. |
+
+Each entry in `pre_call` has:
+
+| Field | Description |
+| :--- | :--- |
+| `type` | Hook type: `passthrough`, `policy`, or `webhook`. |
+| `config` | Hook-specific configuration (see below). |
+
+**Built-in hook types:**
+
+| Type | Description |
+| :--- | :--- |
+| `passthrough` | Approves every call unconditionally. Default when no hooks are configured. |
+| `policy` | Allow/deny by tool name (supports `*` wildcards) and argument regex patterns. |
+| `webhook` | POSTs call info to an external HTTP endpoint; uses the response verdict. |
+
+**`policy` config options:**
+
+| Field | Description |
+| :--- | :--- |
+| `allow_tools` | Whitelist of tool name patterns (fnmatch). Only listed tools are approved. |
+| `deny_tools` | Blacklist of tool name patterns. Takes precedence over `allow_tools`. |
+| `deny_argument_patterns` | Map of argument key → list of regex patterns to block. |
+
+**`webhook` config options:**
+
+| Field | Default | Description |
+| :--- | :--- | :--- |
+| `url` | _(required)_ | HTTP/HTTPS endpoint to POST to. |
+| `auth_header` | `""` | Optional `Authorization` header value. |
+| `timeout` | `5.0` | Request timeout in seconds. |
+| `fail_open` | `true` | If `true`, approve on network errors. If `false`, deny on errors. |
+
+**Example:**
+
+```yaml
+hooks:
+  tool_call:
+    pre_call:
+      # Block shell access, allow only file tools
+      - type: policy
+        config:
+          deny_tools: ["run_command"]
+          allow_tools: ["read_file", "write_file", "list_directory"]
+
+      # Also check with an external approval service
+      - type: webhook
+        config:
+          url: "https://your-approval-service.example.com/hook"
+          auth_header: "Bearer ${WEBHOOK_SECRET}"
+          timeout: 5.0
+          fail_open: true
+```
+
+See [Tool Call Hooks](hooks.md) for full details.
+
 ### Other Sections
 - **API**: Controls the main API server (`host`, `port`, `cors_origins`).
 - **Logging**: Set `level` (DEBUG, INFO, etc.) and `format` (`json` or `text`).

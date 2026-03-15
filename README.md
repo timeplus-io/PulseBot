@@ -18,6 +18,7 @@ PulseBot is a lightweight, extensible AI agent framework that uses Timeplus stre
 - **SQL-Native Scheduling** - Timeplus Tasks replace traditional cron jobs
 - **Interactive Workspaces** - Build and publish dynamic artifacts and runnable web apps
 - **Extensible Skills** - Plugin-based tool system with OpenClaw compatibility and ClawHub registry
+- **Tool Call Hooks** - Intercept, approve, deny, or modify tool calls before/after execution
 - **Multi-Channel** - Telegram, webchat, with easy extension to Slack/WhatsApp
 - **Real-Time Observability** - All LLM calls and tool executions logged to streams
 - **Production Ready** - Docker deployment, async architecture, structured logging
@@ -254,5 +255,6 @@ TELEGRAM_BOT_TOKEN=... # For Telegram channel
 - [Telegram Setup](docs/telegram.md) - Connect PulseBot to Telegram
 - [Memory System](docs/memory.md) - Vector memory and embeddings
 - [Skills System](docs/skills.md) - Plugin architecture
+- [Tool Call Hooks](docs/hooks.md) - Intercept and control tool executions
 
 
