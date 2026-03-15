@@ -8,7 +8,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from pulsebot.config import HookEntryConfig, HooksConfig
+from pulsebot.config import HookEntryConfig, ToolCallHooksConfig
 from pulsebot.core.executor import ToolExecutor
 from pulsebot.hooks.base import HookVerdict, ToolCallHook
 from pulsebot.hooks.factory import build_hooks
@@ -297,14 +297,14 @@ async def test_executor_no_hooks_still_works():
 
 
 def test_build_hooks_empty():
-    hooks = build_hooks(HooksConfig())
+    hooks = build_hooks(ToolCallHooksConfig())
     # Default: one PassthroughHook
     assert len(hooks) == 1
     assert isinstance(hooks[0], PassthroughHook)
 
 
 def test_build_hooks_policy():
-    cfg = HooksConfig(pre_call=[
+    cfg = ToolCallHooksConfig(pre_call=[
         HookEntryConfig(type="policy", config={"deny_tools": ["shell"]})
     ])
     hooks = build_hooks(cfg)
@@ -313,7 +313,7 @@ def test_build_hooks_policy():
 
 
 def test_build_hooks_webhook():
-    cfg = HooksConfig(pre_call=[
+    cfg = ToolCallHooksConfig(pre_call=[
         HookEntryConfig(type="webhook", config={"url": "https://example.com/hook"})
     ])
     hooks = build_hooks(cfg)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pulsebot.config import HooksConfig
+    from pulsebot.config import ToolCallHooksConfig
 
 from pulsebot.hooks.base import ToolCallHook
 from pulsebot.hooks.passthrough import PassthroughHook
@@ -25,7 +25,7 @@ def _register_builtin_hooks() -> None:
     _HOOK_REGISTRY["webhook"] = WebhookHook
 
 
-def build_hooks(config: HooksConfig) -> list[ToolCallHook]:
+def build_hooks(config: ToolCallHooksConfig) -> list[ToolCallHook]:
     """Build a list of hooks from config.
 
     Returns [PassthroughHook()] if no pre_call hooks are configured.

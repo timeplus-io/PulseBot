@@ -139,9 +139,14 @@ class HookEntryConfig(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
-class HooksConfig(BaseModel):
+class ToolCallHooksConfig(BaseModel):
     """Tool call hooks configuration."""
     pre_call: list[HookEntryConfig] = Field(default_factory=list)
+
+
+class HooksConfig(BaseModel):
+    """Top-level hooks configuration (tool_call, llm_call, etc.)."""
+    tool_call: ToolCallHooksConfig = Field(default_factory=ToolCallHooksConfig)
 
 
 class MCPServerConfig(BaseModel):
@@ -384,24 +389,25 @@ workspace:
   # Seconds to wait after spawning a backend subprocess before health-checking.
   backend_boot_timeout: 3.0
 
-# Tool call hooks — intercept tool calls before/after execution
+# Hooks — intercept calls before/after execution
 # hooks:
-#   pre_call:
-#     - type: passthrough        # Default: approve everything (< 0.1ms overhead)
+#   tool_call:                   # Tool call hooks (llm_call: coming soon)
+#     pre_call:
+#       - type: passthrough      # Default: approve everything (< 0.1ms overhead)
 #
-#     # Example: block specific tools
-#     # - type: policy
-#     #   config:
-#     #     deny_tools: ["shell"]
-#     #     allow_tools: ["file_read", "file_write"]
+#       # Example: block specific tools
+#       # - type: policy
+#       #   config:
+#       #     deny_tools: ["shell"]
+#       #     allow_tools: ["file_read", "file_write"]
 #
-#     # Example: external approval endpoint
-#     # - type: webhook
-#     #   config:
-#     #     url: "https://your-approval-service.example.com/hook"
-#     #     auth_header: "Bearer ${WEBHOOK_SECRET}"
-#     #     timeout: 5.0
-#     #     fail_open: true    # approve on network error (false = deny on error)
+#       # Example: external approval endpoint
+#       # - type: webhook
+#       #   config:
+#       #     url: "https://your-approval-service.example.com/hook"
+#       #     auth_header: "Bearer ${WEBHOOK_SECRET}"
+#       #     timeout: 5.0
+#       #     fail_open: true    # approve on network error (false = deny on error)
 """
 
     return default_config

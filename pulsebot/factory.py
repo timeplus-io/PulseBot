@@ -171,5 +171,5 @@ def create_executor(config: "Config", skill_loader: "SkillLoader") -> "ToolExecu
     from pulsebot.core.executor import ToolExecutor
     from pulsebot.hooks.factory import build_hooks
 
-    hooks = build_hooks(config.hooks)
+    hooks = build_hooks(config.hooks.tool_call)
     return ToolExecutor(skill_loader, hooks=hooks)
