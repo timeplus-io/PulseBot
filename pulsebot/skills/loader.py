@@ -40,7 +40,7 @@ class SkillLoader:
         >>> tools = loader.get_tools()
         >>> skill = loader.get_skill_for_tool("web_search")
     """
-    
+
     def __init__(self):
         """Initialize skill loader."""
         self._skills: dict[str, BaseSkill] = {}
@@ -51,7 +51,7 @@ class SkillLoader:
         self._disabled_skills: list[str] = []
 
     @classmethod
-    def from_config(cls, config: "SkillsConfig", **skill_configs: dict[str, Any]) -> "SkillLoader":
+    def from_config(cls, config: SkillsConfig, **skill_configs: dict[str, Any]) -> SkillLoader:
         """Create loader and load skills from configuration.
 
         Args:
@@ -131,7 +131,7 @@ class SkillLoader:
             logger.info(
                 f"Loaded {len(new_skills)} new external skill(s): {new_skills}"
             )
-    
+
     def reload_external_skills(self) -> bool:
         """Re-scan skill directories and register any newly installed skills.
 
@@ -155,10 +155,10 @@ class SkillLoader:
         """
         if name not in BUILTIN_SKILLS:
             raise ValueError(f"Unknown built-in skill: {name}. Available: {list(BUILTIN_SKILLS.keys())}")
-        
+
         module_path = BUILTIN_SKILLS[name]
         self._load_skill(name, module_path, config)
-    
+
     def load_custom(self, module_path: str, **config: Any) -> None:
         """Load a custom skill from a module path.
         
@@ -169,7 +169,7 @@ class SkillLoader:
         # Derive name from class name
         name = module_path.split(".")[-1].lower()
         self._load_skill(name, module_path, config)
-    
+
     def _load_skill(self, name: str, module_path: str, config: dict[str, Any]) -> None:
         """Internal skill loading.
         
@@ -183,36 +183,36 @@ class SkillLoader:
             parts = module_path.rsplit(".", 1)
             if len(parts) != 2:
                 raise ValueError(f"Invalid module path: {module_path}")
-            
+
             module_name, class_name = parts
-            
+
             # Import module
             module = importlib.import_module(module_name)
-            
+
             # Get class
             skill_class = getattr(module, class_name)
-            
+
             # Instantiate
             if config:
                 skill = skill_class(**config)
             else:
                 skill = skill_class()
-            
+
             # Register skill and its tools
             self._skills[name] = skill
-            
+
             for tool in skill.get_tools():
                 self._tool_to_skill[tool.name] = name
-            
+
             logger.info(
                 f"Loaded skill: {name}",
                 extra={"tools": [t.name for t in skill.get_tools()]}
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to load skill {name}: {e}")
             raise
-    
+
     def get_skill(self, name: str) -> BaseSkill | None:
         """Get a loaded skill by name.
         
@@ -223,7 +223,7 @@ class SkillLoader:
             Skill instance or None
         """
         return self._skills.get(name)
-    
+
     def get_skill_for_tool(self, tool_name: str) -> BaseSkill | None:
         """Get the skill that provides a specific tool.
         
@@ -237,7 +237,7 @@ class SkillLoader:
         if skill_name:
             return self._skills.get(skill_name)
         return None
-    
+
     def get_tools(self) -> list[ToolDefinition]:
         """Get all tool definitions from loaded skills.
         
@@ -248,20 +248,51 @@ class SkillLoader:
         for skill in self._skills.values():
             tools.extend(skill.get_tools())
         return tools
-    
+
     def get_tool_definitions(self) -> list[dict[str, Any]]:
         """Get all tool definitions in OpenAI format.
-        
+
         Returns:
             List of tool definitions in OpenAI format
         """
         return [tool.to_openai_format() for tool in self.get_tools()]
-    
+
+    def get_loaded_skills(self) -> list[BaseSkill]:
+        """Return all currently loaded skill instances.
+
+        Returns:
+            List of loaded BaseSkill instances.
+        """
+        return list(self._skills.values())
+
+    def create_subset(self, names: list[str]) -> SkillLoader:
+        """Create a new SkillLoader containing only the named skills.
+
+        Skills not present in this loader are silently skipped.
+        Useful for sub-agent skill isolation.
+
+        Args:
+            names: Skill names to include.
+
+        Returns:
+            New SkillLoader with only the named skills.
+        """
+        subset = SkillLoader()
+        for name in names:
+            skill = self._skills.get(name)
+            if skill is None:
+                logger.warning(f"Skill '{name}' not found in loader, skipping")
+                continue
+            subset._skills[name] = skill
+            for tool in skill.get_tools():
+                subset._tool_to_skill[tool.name] = name
+        return subset
+
     @property
     def loaded_skills(self) -> list[str]:
         """List of loaded skill names."""
         return list(self._skills.keys())
-    
+
     @property
     def available_tools(self) -> list[str]:
         """List of available tool names."""
