@@ -264,7 +264,9 @@ async def create_streams(client: TimeplusClient) -> None:
         ("tasks",          TASKS_STREAM_DDL),
         ("task_triggers",  TASK_TRIGGERS_STREAM_DDL),
         ("skills",         SKILLS_STREAM_DDL),
-        # TODO(Task 7): add kanban, kanban_projects, kanban_agents here
+        ("kanban",         KANBAN_STREAM_DDL),
+        ("kanban_projects", KANBAN_PROJECTS_STREAM_DDL),
+        ("kanban_agents",  KANBAN_AGENTS_STREAM_DDL),
     ]
 
     for name, ddl in streams:
