@@ -178,6 +178,56 @@ CREATE STREAM IF NOT EXISTS pulsebot.task_triggers (
 SETTINGS event_time_column='triggered_at';
 """
 
+KANBAN_STREAM_DDL = """
+CREATE STREAM IF NOT EXISTS pulsebot.kanban (
+    msg_id        string DEFAULT uuid(),
+    timestamp     datetime64(3) DEFAULT now64(3),
+    project_id    string,
+    sender_id     string,
+    target_id     string,
+    msg_type      string,
+    content       string,
+    priority      int8 DEFAULT 0,
+    metadata      string DEFAULT '{}'
+)
+SETTINGS event_time_column='timestamp';
+"""
+
+KANBAN_PROJECTS_STREAM_DDL = """
+CREATE STREAM IF NOT EXISTS pulsebot.kanban_projects (
+    project_id      string DEFAULT uuid(),
+    timestamp       datetime64(3) DEFAULT now64(3),
+    name            string,
+    description     string,
+    status          string,
+    created_by      string,
+    session_id      string,
+    agent_ids       array(string),
+    config_overrides string DEFAULT '{}'
+)
+SETTINGS event_time_column='timestamp';
+"""
+
+KANBAN_AGENTS_STREAM_DDL = """
+CREATE STREAM IF NOT EXISTS pulsebot.kanban_agents (
+    agent_id        string,
+    timestamp       datetime64(3) DEFAULT now64(3),
+    project_id      string,
+    name            string,
+    role            string,
+    task_description string,
+    target_agents   array(string),
+    status          string,
+    config          string DEFAULT '{}',
+    skills          array(string),
+    skill_overrides string DEFAULT '{}',
+    checkpoint_sn   uint64 DEFAULT 0,
+    metadata        string DEFAULT '{}'
+)
+SETTINGS event_time_column='timestamp';
+"""
+
+
 async def create_database(client: "TimeplusClient") -> None:
     """Create the pulsebot database.
     
