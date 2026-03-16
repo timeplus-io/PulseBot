@@ -22,7 +22,7 @@ General identity and behavioral settings for the AI agent.
 | :--- | :--- | :--- |
 | `name` | `PulseBot` | The name the agent uses to identify itself. |
 | `model` | `claude-sonnet-4-20250514` | The default LLM model to use. |
-| `provider` | `anthropic` | The primary LLM provider (e.g., `openai`, `ollama`). |
+| `provider` | `anthropic` | LLM provider to use. Supported: `anthropic`, `openai`, `openrouter`, `ollama`, `nvidia`, `gemini`. Set to `openai` with a `providers.openai.base_url` for any OpenAI-compatible vendor (Qwen, DeepSeek, etc.). |
 | `temperature` | `0.7` | Controls randomness (0.0=deterministic, 1.0=creative). |
 | `max_tokens` | `4096` | Maximum length of agent responses. |
 | `max_iterations` | `15` | Maximum number of reasoning iterations per task. |
@@ -39,18 +39,79 @@ Connection settings for the Timeplus / Proton database.
 | `password` | `""` | Authentication password. |
 
 ### Providers
-Configurations for specific LLM providers.
+Configurations for specific LLM providers. Set `agent.provider` to the key name of the provider you want to use.
 
-- **Anthropic / OpenAI / OpenRouter / NVIDIA / Gemini**:
-  - `api_key`: Secret API key for the service.
-  - `default_model`: Override model for this specific provider.
-  - `timeout_seconds`: Timeout limit for requests (default `120`; applicable to Gemini and NVIDIA).
-  - `enable_thinking`: Set to `true` to enable deep thinking mode (applicable to NVIDIA only).
-- **Ollama (Local LLM)**:
-  - `enabled`: Set to `true` to enable local LLM support.
-  - `host`: Address of the Ollama server (default `http://localhost:11434`).
-  - `default_model`: Local model name (e.g., `llama3`).
-  - `timeout_seconds`: Timeout limit for requests (default `120`).
+#### Anthropic
+| Field | Default | Description |
+| :--- | :--- | :--- |
+| `api_key` | `""` | Anthropic API key. |
+| `default_model` | `claude-sonnet-4-20250514` | Default model name. |
+
+#### OpenAI (and OpenAI-compatible vendors)
+
+The `openai` provider supports **any vendor that exposes an OpenAI-compatible API** — not just OpenAI itself. Set `agent.provider: openai` and configure a `base_url` to point at a different endpoint.
+
+| Field | Default | Description |
+| :--- | :--- | :--- |
+| `api_key` | `""` | API key for the service. |
+| `default_model` | `gpt-4o` | Default model name. |
+| `base_url` | _(unset, uses OpenAI)_ | Custom API base URL for OpenAI-compatible vendors. |
+| `provider_name` | _(auto-derived)_ | Optional display name shown in logs (auto-derived from `base_url` host when omitted). |
+
+**Example — Alibaba Qwen (DashScope):**
+```yaml
+agent:
+  provider: openai
+  model: qwen-max
+
+providers:
+  openai:
+    api_key: "${DASHSCOPE_API_KEY}"
+    default_model: qwen-max
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    provider_name: "alibaba_qwen"   # optional, for log clarity
+```
+
+**Example — DeepSeek:**
+```yaml
+providers:
+  openai:
+    api_key: "${DEEPSEEK_API_KEY}"
+    default_model: deepseek-chat
+    base_url: "https://api.deepseek.com/v1"
+```
+
+#### OpenRouter
+A pre-configured shortcut that routes to [openrouter.ai](https://openrouter.ai). Use `agent.provider: openrouter`.
+
+| Field | Default | Description |
+| :--- | :--- | :--- |
+| `api_key` | `""` | OpenRouter API key. |
+| `default_model` | `anthropic/claude-sonnet-4-20250514` | Default model (uses OpenRouter model IDs). |
+| `base_url` | `https://openrouter.ai/api/v1` | Base URL (override only if needed). |
+
+#### NVIDIA
+| Field | Default | Description |
+| :--- | :--- | :--- |
+| `api_key` | `""` | NVIDIA API key. |
+| `default_model` | `moonshotai/kimi-k2.5` | Default model name. |
+| `timeout_seconds` | `120` | Request timeout. |
+| `enable_thinking` | `false` | Enable deep thinking mode. |
+
+#### Gemini
+| Field | Default | Description |
+| :--- | :--- | :--- |
+| `api_key` | `""` | Google Gemini API key. |
+| `default_model` | `gemini-2.5-flash` | Default model name. |
+| `timeout_seconds` | `120` | Request timeout. |
+
+#### Ollama (Local LLM)
+| Field | Default | Description |
+| :--- | :--- | :--- |
+| `enabled` | `false` | Enable local LLM support. |
+| `host` | `http://localhost:11434` | Ollama server address. |
+| `default_model` | `llama3` | Local model name. |
+| `timeout_seconds` | `120` | Request timeout. |
 
 ### Channels
 Settings for different user interaction interfaces.
