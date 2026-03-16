@@ -306,18 +306,6 @@ providers:
     default_model: "anthropic/claude-sonnet-4-20250514"
     base_url: "https://openrouter.ai/api/v1"
 
-  # OpenAI-compatible providers: add any vendor with a compatible API here.
-  # Set agent.provider to the key name (e.g. "alibaba_qwen") to use it.
-  # openai_compatible:
-  #   alibaba_qwen:
-  #     api_key: "${DASHSCOPE_API_KEY}"
-  #     default_model: "qwen-max"
-  #     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-  #   deepseek:
-  #     api_key: "${DEEPSEEK_API_KEY}"
-  #     default_model: "deepseek-chat"
-  #     base_url: "https://api.deepseek.com/v1"
-
 channels:
   telegram:
     enabled: false
