@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 def _derive_agent_id(name: str) -> str:
@@ -39,7 +40,7 @@ class SubAgentSpec:
 
     # Skill configuration (None = inherit all from main agent)
     skills: list[str] | None = None
-    skill_overrides: dict | None = None
+    skill_overrides: dict[str, Any] | None = None
 
     # Execution
     timeout_seconds: int = 300
@@ -60,4 +61,5 @@ class ProjectState:
     session_id: str
     agent_ids: list[str]
     status: str = "active"  # 'active', 'completed', 'failed', 'cancelled'
-    config_overrides: dict = field(default_factory=dict)
+    config_overrides: dict[str, Any] = field(default_factory=dict)
+    created_by: str = ""   # agent or user that originated the project

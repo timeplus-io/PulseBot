@@ -56,6 +56,16 @@ def test_subagentspec_with_skill_overrides():
     assert spec.skill_overrides["shell"]["allowed_commands"] == ["grep"]
 
 
+def test_subagentspec_hyphenated_name_derives_agent_id():
+    spec = SubAgentSpec(
+        name="Report-Writer",
+        task_description="Write reports",
+        project_id="proj_001",
+        target_agents=[],
+    )
+    assert spec.agent_id == "agent_report_writer"
+
+
 def test_projectstate_fields():
     state = ProjectState(
         project_id="proj_abc",
