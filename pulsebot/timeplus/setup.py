@@ -17,21 +17,21 @@ MESSAGES_STREAM_DDL = """
 CREATE STREAM IF NOT EXISTS pulsebot.messages (
     id string DEFAULT uuid(),
     timestamp datetime64(3) DEFAULT now64(3),
-    
+
     -- Routing
     source string,           -- 'telegram', 'whatsapp', 'slack', 'agent', 'skill', 'system'
     target string,           -- 'agent', 'channel:telegram', 'skill:weather', 'broadcast'
     session_id string,       -- Groups related messages
-    
+
     -- Content
     message_type string,     -- 'user_input', 'agent_response', 'tool_call', 'tool_result', 'error'
     content string,          -- JSON payload
-    
+
     -- Metadata
     user_id string,
     channel_metadata string, -- Channel-specific data (JSON)
     priority int8 DEFAULT 0  -- -1: low, 0: normal, 1: high, 2: urgent
-) 
+)
 SETTINGS event_time_column='timestamp';
 """
 
@@ -39,22 +39,22 @@ LLM_LOGS_STREAM_DDL = """
 CREATE STREAM IF NOT EXISTS pulsebot.llm_logs (
     id string DEFAULT uuid(),
     timestamp datetime64(3) DEFAULT now64(3),
-    
+
     -- Request
     session_id string,
     model string,               -- 'claude-sonnet-4-20250514', 'gpt-4o', 'deepseek-r1'
     provider string,            -- 'anthropic', 'openai', 'openrouter'
-    
+
     -- Tokens & Cost
     input_tokens int32,
     output_tokens int32,
     total_tokens int32,
     estimated_cost_usd float32,
-    
+
     -- Timing
     latency_ms int32,
     time_to_first_token_ms int32 DEFAULT 0,
-    
+
     -- Content (for debugging)
     system_prompt_hash string,  -- SHA256 of system prompt (not full content)
     system_prompt_preview string,-- First 200 chars of system prompt
@@ -62,11 +62,11 @@ CREATE STREAM IF NOT EXISTS pulsebot.llm_logs (
     assistant_response_preview string,
     full_response_content string,-- Full response content for debugging
     messages_count int8,        -- Number of messages in context
-    
+
     -- Tool Usage
     tools_called array(string),
     tool_call_count int8,
-    
+
     -- Status
     status string,              -- 'success', 'error', 'rate_limited', 'timeout'
     error_message string DEFAULT ''
@@ -228,14 +228,14 @@ SETTINGS event_time_column='timestamp';
 """
 
 
-async def create_database(client: "TimeplusClient") -> None:
+async def create_database(client: TimeplusClient) -> None:
     """Create the pulsebot database.
-    
+
     Args:
         client: Timeplus client instance
     """
     logger.info("Creating pulsebot database...")
-    
+
     try:
         client.execute("CREATE DATABASE IF NOT EXISTS pulsebot")
         logger.info("Created database: pulsebot")
@@ -243,17 +243,17 @@ async def create_database(client: "TimeplusClient") -> None:
         logger.warning(f"Database pulsebot may already exist: {e}")
 
 
-async def create_streams(client: "TimeplusClient") -> None:
+async def create_streams(client: TimeplusClient) -> None:
     """Create all required Timeplus streams.
-    
+
     Args:
         client: Timeplus client instance
     """
     logger.info("Creating Timeplus streams...")
-    
+
     # First ensure the database exists
     await create_database(client)
-    
+
     # Create streams
     streams = [
         ("messages",       MESSAGES_STREAM_DDL),
@@ -266,7 +266,7 @@ async def create_streams(client: "TimeplusClient") -> None:
         ("skills",         SKILLS_STREAM_DDL),
         # TODO(Task 7): add kanban, kanban_projects, kanban_agents here
     ]
-    
+
     for name, ddl in streams:
         try:
             client.execute(ddl)
@@ -277,7 +277,7 @@ async def create_streams(client: "TimeplusClient") -> None:
     logger.info("Timeplus streams setup complete")
 
 
-async def drop_streams(client: "TimeplusClient") -> None:
+async def drop_streams(client: TimeplusClient) -> None:
     """Drop all PulseBot streams (use with caution!).
 
     Args:
@@ -301,16 +301,16 @@ async def drop_streams(client: "TimeplusClient") -> None:
             logger.info(f"Dropped stream: {stream}")
         except Exception as e:
             logger.warning(f"Could not drop stream {stream}: {e}")
-    
+
     logger.info("All streams dropped")
 
 
-def verify_streams(client: "TimeplusClient") -> dict[str, bool]:
+def verify_streams(client: TimeplusClient) -> dict[str, bool]:
     """Verify that all required streams exist.
-    
+
     Args:
         client: Timeplus client instance
-        
+
     Returns:
         Dictionary mapping stream names to existence status
     """
@@ -324,12 +324,12 @@ def verify_streams(client: "TimeplusClient") -> dict[str, bool]:
         "pulsebot.task_triggers",
     ]
     results = {}
-    
+
     for stream in required_streams:
         try:
             client.query(f"SELECT 1 FROM table({stream}) LIMIT 1")
             results[stream] = True
         except Exception:
             results[stream] = False
-    
+
     return results
