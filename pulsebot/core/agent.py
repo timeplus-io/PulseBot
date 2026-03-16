@@ -196,30 +196,29 @@ class Agent:
         self._running = False
 
     async def _ensure_streams_exist(self) -> None:
-        """Ensure all required Timeplus streams exist.
-
-        Creates streams if they don't exist using CREATE STREAM IF NOT EXISTS.
-        Note: Memory stream is optional and created separately when needed.
-        """
+        """Ensure all required Timeplus streams exist."""
         from pulsebot.timeplus.setup import (
-            create_database,
-            MESSAGES_STREAM_DDL,
-            LLM_LOGS_STREAM_DDL,
-            TOOL_LOGS_STREAM_DDL,
             EVENTS_STREAM_DDL,
+            KANBAN_AGENTS_STREAM_DDL,
+            KANBAN_PROJECTS_STREAM_DDL,
+            KANBAN_STREAM_DDL,
+            LLM_LOGS_STREAM_DDL,
+            MESSAGES_STREAM_DDL,
+            TOOL_LOGS_STREAM_DDL,
+            create_database,
         )
 
         logger.info("Ensuring required streams exist...")
-        
-        # First ensure the database exists
         await create_database(self.tp)
 
-        # Core streams required for agent operation
         streams = [
             ("messages", MESSAGES_STREAM_DDL),
             ("llm_logs", LLM_LOGS_STREAM_DDL),
             ("tool_logs", TOOL_LOGS_STREAM_DDL),
             ("events", EVENTS_STREAM_DDL),
+            ("kanban", KANBAN_STREAM_DDL),
+            ("kanban_projects", KANBAN_PROJECTS_STREAM_DDL),
+            ("kanban_agents", KANBAN_AGENTS_STREAM_DDL),
         ]
 
         for name, ddl in streams:
