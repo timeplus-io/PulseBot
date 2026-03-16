@@ -107,7 +107,7 @@ def create_skill_loader(config: "Config") -> "SkillLoader":
     skill_configs: dict = {}
 
     # Build loader for all skills except those that need special construction
-    _SPECIAL = {"workspace", "scheduler", "skill_manager"}
+    _SPECIAL = {"workspace", "scheduler", "skill_manager", "project_manager"}
     non_workspace = config.skills.model_copy(
         update={
             "builtin": [s for s in config.skills.builtin if s not in _SPECIAL]

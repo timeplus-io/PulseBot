@@ -22,6 +22,7 @@ BUILTIN_SKILLS = {
     "shell": "pulsebot.skills.builtin.shell.ShellSkill",
     "workspace":  "pulsebot.skills.builtin.workspace.WorkspaceSkill",
     "scheduler": "pulsebot.skills.builtin.scheduler.SchedulerSkill",
+    "project_manager": "pulsebot.skills.builtin.project_manager.ProjectManagerSkill",
 }
 
 
