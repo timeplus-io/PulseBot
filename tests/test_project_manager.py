@@ -81,7 +81,6 @@ async def test_create_project_returns_project_id(
         MockManager.return_value.run = AsyncMock()
         MockSubAgent.return_value.run = AsyncMock()
         mock_create_task.return_value = MagicMock()
-        pm._kanban_writer.write = AsyncMock()
         pm._projects_writer.write = AsyncMock()
         pm._agents_writer.write = AsyncMock()
 
@@ -107,7 +106,6 @@ async def test_create_project_sets_project_id_on_specs(
          patch("asyncio.create_task"):
         MockManager.return_value.run = AsyncMock()
         MockSubAgent.return_value.run = AsyncMock()
-        pm._kanban_writer.write = AsyncMock()
         pm._projects_writer.write = AsyncMock()
         pm._agents_writer.write = AsyncMock()
 
@@ -151,7 +149,6 @@ async def test_cancel_project_cancels_tasks(
         mock_task.return_value = mock_task_handle
         MockManager.return_value.run = AsyncMock()
         MockSubAgent.return_value.run = AsyncMock()
-        pm._kanban_writer.write = AsyncMock()
         pm._projects_writer.write = AsyncMock()
         pm._agents_writer.write = AsyncMock()
 
@@ -165,3 +162,50 @@ async def test_cancel_project_cancels_tasks(
         assert result is True
         # Tasks should have been cancelled
         mock_task_handle.cancel.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_create_project_raises_on_too_many_agents(
+        mock_timeplus, mock_config):
+    """Exceeding max_agents_per_project raises ValueError."""
+    mock_config.multi_agent.max_agents_per_project = 2
+    pm = make_project_manager(mock_timeplus, mock_config)
+
+    specs = [
+        SubAgentSpec(name=f"Agent{i}", task_description="task", project_id="", target_agents=[])
+        for i in range(3)
+    ]
+
+    with pytest.raises(ValueError, match="Too many agents"):
+        await pm.create_project(
+            name="Big", description="big", agents=specs,
+            session_id="s1", initial_messages=[],
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_project_raises_on_too_many_concurrent_projects(
+        mock_timeplus, mock_config):
+    """Exceeding max_concurrent_projects raises ValueError."""
+    mock_config.multi_agent.max_concurrent_projects = 1
+    pm = make_project_manager(mock_timeplus, mock_config)
+
+    specs1 = [SubAgentSpec(name="A1", task_description="t", project_id="", target_agents=[])]
+    specs2 = [SubAgentSpec(name="A2", task_description="t", project_id="", target_agents=[])]
+
+    with patch("pulsebot.agents.project_manager.ManagerAgent"), \
+         patch("pulsebot.agents.project_manager.SubAgent"), \
+         patch("asyncio.create_task"):
+        pm._projects_writer.write = AsyncMock()
+        pm._agents_writer.write = AsyncMock()
+
+        await pm.create_project(
+            name="P1", description="first", agents=specs1,
+            session_id="s1", initial_messages=[],
+        )
+
+        with pytest.raises(ValueError, match="Too many concurrent projects"):
+            await pm.create_project(
+                name="P2", description="second", agents=specs2,
+                session_id="s2", initial_messages=[],
+            )

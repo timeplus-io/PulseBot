@@ -58,7 +58,6 @@ class ProjectManager:
             username=timeplus.username,
             password=timeplus.password,
         )
-        self._kanban_writer = StreamWriter(_batch, "kanban")
         self._projects_writer = StreamWriter(_batch, "kanban_projects")
         self._agents_writer = StreamWriter(_batch, "kanban_agents")
 
@@ -123,7 +122,7 @@ class ProjectManager:
             name=name,
             description=description,
             session_id=session_id,
-            agent_ids=[spec.agent_id for spec in agents],
+            agent_ids=[manager_spec.agent_id] + [spec.agent_id for spec in agents],
         )
 
         # Spawn Manager Agent
@@ -205,8 +204,7 @@ class ProjectManager:
         if state is None:
             return False
 
-        all_ids = [f"manager_{project_id}"] + state.agent_ids
-        for agent_id in all_ids:
+        for agent_id in state.agent_ids:
             task = self._agent_tasks.pop(agent_id, None)
             if task and not task.done():
                 task.cancel()
