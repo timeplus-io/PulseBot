@@ -22,10 +22,15 @@ providers:
   openai:
     api_key: "${OPENAI_API_KEY}"
     default_model: "gpt-4o"
+    # For any OpenAI-compatible vendor, set base_url and optionally provider_name:
+    # base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"  # Alibaba Qwen
+    # base_url: "https://api.deepseek.com/v1"                         # DeepSeek
+    # provider_name: "alibaba_qwen"  # optional display name
 
   openrouter:
     api_key: "${OPENROUTER_API_KEY}"
     default_model: "anthropic/claude-sonnet-4-20250514"
+    base_url: "https://openrouter.ai/api/v1"
 
   # Local LLM via Ollama (no API key needed)
   ollama:

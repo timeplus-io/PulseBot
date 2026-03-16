@@ -56,6 +56,10 @@ class ProviderConfig(BaseModel):
     """LLM provider configuration."""
     api_key: str = ""
     default_model: str = ""
+    # Optional custom base URL for OpenAI-compatible APIs (e.g. OpenRouter, Alibaba Qwen, etc.)
+    base_url: str | None = None
+    # Optional display name override (defaults to the config key)
+    provider_name: str | None = None
 
 
 class GeminiConfig(BaseModel):
@@ -296,6 +300,11 @@ providers:
   gemini:
     api_key: "${GEMINI_API_KEY}"
     default_model: "gemini-2.5-flash"
+
+  openrouter:
+    api_key: "${OPENROUTER_API_KEY}"
+    default_model: "anthropic/claude-sonnet-4-20250514"
+    base_url: "https://openrouter.ai/api/v1"
 
 channels:
   telegram:

@@ -37,21 +37,26 @@ def create_provider(config: "Config") -> "LLMProvider":
     
     elif provider_name == "openai":
         from pulsebot.providers.openai import OpenAIProvider
+        openai_cfg = config.providers.openai
         return OpenAIProvider(
-            api_key=config.providers.openai.api_key,
+            api_key=openai_cfg.api_key,
             model=model,
+            base_url=openai_cfg.base_url,
+            provider_name=openai_cfg.provider_name,
             default_temperature=config.agent.temperature,
             default_max_tokens=config.agent.max_tokens,
         )
     
     elif provider_name == "openrouter":
         from pulsebot.providers.openai import OpenAIProvider
+        openrouter_cfg = config.providers.openrouter
         return OpenAIProvider(
-            api_key=config.providers.openrouter.api_key,
-            base_url="https://openrouter.ai/api/v1",
+            api_key=openrouter_cfg.api_key,
+            base_url=openrouter_cfg.base_url or "https://openrouter.ai/api/v1",
             model=model,
             default_temperature=config.agent.temperature,
             default_max_tokens=config.agent.max_tokens,
+            provider_name=openrouter_cfg.provider_name or "openrouter",
         )
     
     elif provider_name == "ollama":
@@ -85,7 +90,12 @@ def create_provider(config: "Config") -> "LLMProvider":
         )
 
     else:
-        raise ValueError(f"Unknown provider: {provider_name}. Supported: anthropic, openai, openrouter, ollama, nvidia, gemini")
+        raise ValueError(
+            f"Unknown provider: {provider_name}. "
+            f"Supported: anthropic, openai, openrouter, ollama, nvidia, gemini. "
+            f"For OpenAI-compatible vendors (e.g. Alibaba Qwen, DeepSeek), set "
+            f"agent.provider to 'openai' and configure providers.openai.base_url."
+        )
 
 def create_skill_loader(config: "Config") -> "SkillLoader":
     """Create a SkillLoader with all configured builtin and custom skills.

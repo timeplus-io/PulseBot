@@ -24,7 +24,8 @@ OPENAI_PRICING = {
 class OpenAIProvider(LLMProvider):
     """OpenAI ChatGPT/GPT-4 provider implementation.
     
-    Also supports OpenRouter by specifying a custom base URL.
+    Also supports any OpenAI-compatible API (OpenRouter, Alibaba Qwen, DeepSeek, etc.)
+    by specifying a custom base_url.
     
     Example:
         >>> provider = OpenAIProvider(api_key="...")
@@ -36,7 +37,16 @@ class OpenAIProvider(LLMProvider):
         >>> provider = OpenAIProvider(
         ...     api_key="...",
         ...     base_url="https://openrouter.ai/api/v1",
-        ...     model="anthropic/claude-sonnet-4-20250514"
+        ...     model="anthropic/claude-sonnet-4-20250514",
+        ...     provider_name="openrouter",
+        ... )
+        
+        # For Alibaba Qwen:
+        >>> provider = OpenAIProvider(
+        ...     api_key="...",
+        ...     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        ...     model="qwen-max",
+        ...     provider_name="alibaba_qwen",
         ... )
     """
     
@@ -49,29 +59,45 @@ class OpenAIProvider(LLMProvider):
         base_url: str | None = None,
         default_temperature: float = 0.7,
         default_max_tokens: int = 4096,
+        provider_name: str | None = None,
     ):
         """Initialize OpenAI provider.
         
         Args:
-            api_key: OpenAI API key
+            api_key: OpenAI API key (or API key for compatible vendor)
             model: Model to use
-            base_url: Optional base URL (for OpenRouter compatibility)
+            base_url: Optional base URL for OpenAI-compatible APIs
+                      (e.g. OpenRouter, Alibaba Qwen, DeepSeek, etc.)
             default_temperature: Default temperature
             default_max_tokens: Default max tokens
+            provider_name: Optional display name override (defaults to
+                           "openai" or the base_url hostname if base_url is set)
         """
         self.model = model
         self.default_temperature = default_temperature
         self.default_max_tokens = default_max_tokens
         
-        client_kwargs = {"api_key": api_key}
+        client_kwargs: dict = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
-            self.provider_name = "openrouter"
+        
+        # Resolve provider display name
+        if provider_name:
+            self.provider_name = provider_name
+        elif base_url:
+            # Derive a readable name from the URL host
+            try:
+                from urllib.parse import urlparse
+                host = urlparse(base_url).netloc
+                self.provider_name = host or "openai_compatible"
+            except Exception:
+                self.provider_name = "openai_compatible"
+        # else keep class-level default "openai"
         
         self.client = openai.OpenAI(**client_kwargs)
         
         logger.info(
-            f"Initialized OpenAI provider with model: {model}",
+            f"Initialized OpenAI-compatible provider '{self.provider_name}' with model: {model}",
             extra={"base_url": base_url}
         )
     
