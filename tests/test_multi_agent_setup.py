@@ -1,11 +1,10 @@
 """Tests for multi-agent stream DDL and config."""
 
-import pytest
 from pulsebot.config import Config, MultiAgentConfig
 from pulsebot.timeplus.setup import (
-    KANBAN_STREAM_DDL,
-    KANBAN_PROJECTS_STREAM_DDL,
     KANBAN_AGENTS_STREAM_DDL,
+    KANBAN_PROJECTS_STREAM_DDL,
+    KANBAN_STREAM_DDL,
 )
 
 
