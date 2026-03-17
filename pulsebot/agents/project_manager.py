@@ -95,6 +95,12 @@ class ProjectManager:
         for spec in agents:
             spec.project_id = project_id
 
+        # Resolve target_agents: convert human-readable names to agent IDs
+        # e.g. "Analyst" -> "agent_analyst", "manager" stays as-is
+        name_to_id = {spec.name: spec.agent_id for spec in agents}
+        for spec in agents:
+            spec.target_agents = [name_to_id.get(t, t) for t in spec.target_agents]
+
         manager_spec = SubAgentSpec(
             name="Manager",
             agent_id=f"manager_{project_id}",

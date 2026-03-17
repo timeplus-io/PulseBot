@@ -158,6 +158,42 @@ async def test_cancel_project_cancels_tasks(
 
 
 @pytest.mark.asyncio
+async def test_create_project_resolves_target_agents_names_to_ids(
+        mock_timeplus, mock_config):
+    """target_agents with human-readable names are resolved to agent IDs."""
+    pm = make_project_manager(mock_timeplus, mock_config)
+
+    specs = [
+        SubAgentSpec(
+            name="Researcher",
+            task_description="Research things",
+            project_id="",
+            target_agents=["Analyst"],   # human-readable name
+        ),
+        SubAgentSpec(
+            name="Analyst",
+            task_description="Analyse things",
+            project_id="",
+            target_agents=[],
+        ),
+    ]
+
+    with patch("pulsebot.agents.project_manager.ManagerAgent"), \
+         patch("pulsebot.agents.project_manager.SubAgent"), \
+         patch("asyncio.create_task"):
+        await pm.create_project(
+            name="Test", description="test",
+            agents=specs, session_id="sess_001",
+            initial_messages=[],
+        )
+
+    # "Analyst" should have been resolved to "agent_analyst"
+    assert specs[0].target_agents == ["agent_analyst"]
+    # Analyst's empty target_agents stays empty
+    assert specs[1].target_agents == []
+
+
+@pytest.mark.asyncio
 async def test_create_project_raises_on_too_many_agents(
         mock_timeplus, mock_config):
     """Exceeding max_agents_per_project raises ValueError."""
