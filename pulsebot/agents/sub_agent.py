@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -66,6 +67,9 @@ class SubAgent:
         self._checkpoint_sn: int = spec.checkpoint_sn
         self._running = False
         self._batch_client = batch_client
+        # Record creation time so the kanban stream query starts from here,
+        # capturing tasks dispatched during the startup race window.
+        self._start_time = datetime.datetime.utcnow()
 
     def _resolve_provider(
         self,
@@ -121,18 +125,23 @@ class SubAgent:
         """Main event loop — pull tasks from kanban, process, push results."""
         self._running = True
 
-        sn_filter = (
-            f"AND _tp_sn > {self._checkpoint_sn}"
-            if self._checkpoint_sn > 0
-            else ""
-        )
+        if self._checkpoint_sn > 0:
+            # Resume from last checkpoint
+            sn_filter = f"AND _tp_sn > {self._checkpoint_sn}"
+            seek_to = "latest"
+        else:
+            # Use creation time so tasks dispatched during the race window
+            # between ManagerAgent.run() dispatch and this query start are captured.
+            sn_filter = ""
+            seek_to = self._start_time.strftime('%Y-%m-%d %H:%M:%S')
+
         query = f"""
         SELECT *, _tp_sn FROM pulsebot.kanban
         WHERE target_id = '{self.agent_id}'
         AND project_id = '{self.project_id}'
         AND msg_type IN ('task', 'control')
         {sn_filter}
-        SETTINGS seek_to='latest'
+        SETTINGS seek_to='{seek_to}'
         """
 
         logger.info(f"SubAgent {self.agent_id} starting kanban loop")

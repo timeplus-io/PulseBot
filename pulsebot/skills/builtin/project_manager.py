@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -177,8 +176,8 @@ class ProjectManagerSkill(BaseSkill):
         lines = ["Projects:"]
         for p in projects:
             lines.append(
-                f"  [{p.status}] {p.project_id} — {p.name} "
-                f"({len(p.agent_ids)} agents)"
+                f"  [{p['status']}] {p['project_id']} — {p['name']} "
+                f"({p['agent_count']} agents)"
             )
         return ToolResult.ok("\n".join(lines))
 
@@ -194,4 +193,4 @@ class ProjectManagerSkill(BaseSkill):
         status = self._pm.get_project_status(project_id)
         if status is None:
             return ToolResult.fail(f"Project {project_id} not found.")
-        return ToolResult.ok(json.dumps(dataclasses.asdict(status), indent=2))
+        return ToolResult.ok(json.dumps(status, indent=2))

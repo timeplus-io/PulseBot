@@ -26,9 +26,23 @@ def mock_project_state():
 def mock_pm(mock_project_state):
     pm = MagicMock()
     pm.create_project = AsyncMock(return_value="proj_abc123")
-    pm.list_projects = MagicMock(return_value=[mock_project_state])
+    pm.list_projects = MagicMock(return_value=[{
+        "project_id": mock_project_state.project_id,
+        "name": mock_project_state.name,
+        "description": mock_project_state.description,
+        "status": mock_project_state.status,
+        "agent_count": len(mock_project_state.agent_ids),
+        "session_id": mock_project_state.session_id,
+    }])
     pm.cancel_project = AsyncMock(return_value=True)
-    pm.get_project_status = MagicMock(return_value=mock_project_state)
+    pm.get_project_status = MagicMock(return_value={
+        "project_id": mock_project_state.project_id,
+        "name": mock_project_state.name,
+        "description": mock_project_state.description,
+        "status": mock_project_state.status,
+        "agent_ids": mock_project_state.agent_ids,
+        "session_id": mock_project_state.session_id,
+    })
     return pm
 
 
