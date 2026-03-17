@@ -296,6 +296,9 @@ async def drop_streams(client: TimeplusClient) -> None:
         "pulsebot.events",
         "pulsebot.tasks",
         "pulsebot.task_triggers",
+        "pulsebot.kanban",
+        "pulsebot.kanban_projects",
+        "pulsebot.kanban_agents",
     ]
     for stream in streams:
         try:
