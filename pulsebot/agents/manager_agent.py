@@ -91,20 +91,25 @@ class ManagerAgent(SubAgent):
 
     async def _dispatch_initial_tasks(self) -> None:
         """Write the initial task messages to the kanban stream."""
+        # Build name->agent_id map so callers can use human-readable names
+        name_to_id = {spec.name: spec.agent_id for spec in self.worker_specs}
+
         for msg in self.initial_messages:
             target = msg.get("target", "")
             content = msg.get("content", "")
             if not target:
                 logger.warning("Initial message missing 'target' field, skipping")
                 continue
+            # Resolve agent name to agent_id (fall back to value as-is if not found)
+            target_id = name_to_id.get(target, target)
             self._batch_client.insert("pulsebot.kanban", [{
                 "project_id": self.project_id,
                 "sender_id": self.agent_id,
-                "target_id": target,
+                "target_id": target_id,
                 "msg_type": "task",
                 "content": content,
             }])
-            logger.info(f"Dispatched task to {target}")
+            logger.info(f"Dispatched task to {target_id} (resolved from '{target}')")
 
     async def _deliver_result(self, message: dict[str, Any]) -> None:
         """Write the final result to pulsebot.messages for the main agent."""

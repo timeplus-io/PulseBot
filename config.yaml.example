@@ -49,6 +49,8 @@ skills:
     - shell
     - workspace
     - scheduler
+    - skill_manager
+    - project_manager
 
   custom: []
 
