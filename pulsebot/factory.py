@@ -10,22 +10,23 @@ if TYPE_CHECKING:
     from pulsebot.core.executor import ToolExecutor
     from pulsebot.providers.base import LLMProvider
     from pulsebot.skills import SkillLoader
-    
+    from pulsebot.timeplus.client import TimeplusClient
+
 _log = logging.getLogger(__name__)
 
 
-def create_provider(config: "Config") -> "LLMProvider":
+def create_provider(config: Config) -> LLMProvider:
     """Create an LLM provider based on configuration.
-    
+
     Args:
         config: PulseBot configuration
-        
+
     Returns:
         Configured LLM provider instance
     """
     provider_name = config.agent.provider.lower()
     model = config.agent.model
-    
+
     if provider_name == "anthropic":
         from pulsebot.providers.anthropic import AnthropicProvider
         return AnthropicProvider(
@@ -34,7 +35,7 @@ def create_provider(config: "Config") -> "LLMProvider":
             default_temperature=config.agent.temperature,
             default_max_tokens=config.agent.max_tokens,
         )
-    
+
     elif provider_name == "openai":
         from pulsebot.providers.openai import OpenAIProvider
         return OpenAIProvider(
@@ -43,7 +44,7 @@ def create_provider(config: "Config") -> "LLMProvider":
             default_temperature=config.agent.temperature,
             default_max_tokens=config.agent.max_tokens,
         )
-    
+
     elif provider_name == "openrouter":
         from pulsebot.providers.openai import OpenAIProvider
         return OpenAIProvider(
@@ -53,7 +54,7 @@ def create_provider(config: "Config") -> "LLMProvider":
             default_temperature=config.agent.temperature,
             default_max_tokens=config.agent.max_tokens,
         )
-    
+
     elif provider_name == "ollama":
         from pulsebot.providers.ollama import OllamaProvider
         return OllamaProvider(
@@ -87,7 +88,12 @@ def create_provider(config: "Config") -> "LLMProvider":
     else:
         raise ValueError(f"Unknown provider: {provider_name}. Supported: anthropic, openai, openrouter, ollama, nvidia, gemini")
 
-def create_skill_loader(config: "Config") -> "SkillLoader":
+def create_skill_loader(
+    config: Config,
+    timeplus: TimeplusClient | None = None,
+    llm_provider: LLMProvider | None = None,
+    executor: ToolExecutor | None = None,
+) -> SkillLoader:
     """Create a SkillLoader with all configured builtin and custom skills.
 
     WorkspaceSkill is handled specially because its constructor takes a
@@ -97,6 +103,9 @@ def create_skill_loader(config: "Config") -> "SkillLoader":
 
     Args:
         config: Full PulseBot Config.
+        timeplus: Optional Timeplus client (required for project_manager skill).
+        llm_provider: Optional LLM provider (required for project_manager skill).
+        executor: Optional ToolExecutor (required for project_manager skill).
 
     Returns:
         Fully populated SkillLoader.
@@ -163,10 +172,37 @@ def create_skill_loader(config: "Config") -> "SkillLoader":
             extra={"tools": [t.name for t in skill.get_tools()]},
         )
 
+    # Register ProjectManagerSkill — needs ProjectManager (timeplus + llm + executor)
+    if "project_manager" in config.skills.builtin:
+        if timeplus is None or llm_provider is None or executor is None:
+            _log.warning(
+                "project_manager skill requires timeplus, llm_provider, and executor; skipping"
+            )
+        else:
+            from pulsebot.agents.project_manager import ProjectManager
+            from pulsebot.skills.builtin.project_manager import ProjectManagerSkill
+
+            pm = ProjectManager(
+                config=config,
+                timeplus=timeplus,
+                llm_provider=llm_provider,
+                skill_loader=loader,
+                executor=executor,
+            )
+            skill = ProjectManagerSkill(project_manager=pm)
+            loader._skills["project_manager"] = skill
+            for tool in skill.get_tools():
+                loader._tool_to_skill[tool.name] = "project_manager"
+
+            _log.info(
+                "ProjectManager skill registered",
+                extra={"tools": [t.name for t in skill.get_tools()]},
+            )
+
     return loader
 
 
-def create_executor(config: "Config", skill_loader: "SkillLoader") -> "ToolExecutor":
+def create_executor(config: Config, skill_loader: SkillLoader) -> ToolExecutor:
     """Create a ToolExecutor with hooks from config."""
     from pulsebot.core.executor import ToolExecutor
     from pulsebot.hooks.factory import build_hooks
