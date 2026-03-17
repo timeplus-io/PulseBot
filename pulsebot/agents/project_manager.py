@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 from pulsebot.agents.manager_agent import ManagerAgent
 from pulsebot.agents.models import ProjectState, SubAgentSpec
 from pulsebot.agents.sub_agent import SubAgent
-from pulsebot.timeplus.streams import StreamWriter
 from pulsebot.utils import get_logger
 
 if TYPE_CHECKING:
@@ -51,15 +50,15 @@ class ProjectManager:
         self._projects: dict[str, ProjectState] = {}
         self._agent_tasks: dict[str, asyncio.Task] = {}
 
-        # Dedicated batch client for metadata writes
-        _batch = TimeplusClient(
+        # Dedicated batch client for metadata writes (kanban streams don't have
+        # a generic 'id' column, so we use client.insert directly rather than
+        # StreamWriter which auto-injects 'id').
+        self._batch_client = TimeplusClient(
             host=timeplus.host,
             port=timeplus.port,
             username=timeplus.username,
             password=timeplus.password,
         )
-        self._projects_writer = StreamWriter(_batch, "kanban_projects")
-        self._agents_writer = StreamWriter(_batch, "kanban_agents")
 
     async def create_project(
         self,
@@ -221,7 +220,7 @@ class ProjectManager:
         agents: list[SubAgentSpec],
         session_id: str,
     ) -> None:
-        await self._projects_writer.write({
+        self._batch_client.insert("pulsebot.kanban_projects", [{
             "project_id": project_id,
             "name": name,
             "description": description,
@@ -229,10 +228,10 @@ class ProjectManager:
             "created_by": "main",
             "session_id": session_id,
             "agent_ids": [s.agent_id for s in agents],
-        })
+        }])
 
     async def _write_agent_metadata(self, spec: SubAgentSpec) -> None:
-        await self._agents_writer.write({
+        self._batch_client.insert("pulsebot.kanban_agents", [{
             "agent_id": spec.agent_id,
             "project_id": spec.project_id,
             "name": spec.name,
@@ -251,4 +250,4 @@ class ProjectManager:
                 "enable_memory": spec.enable_memory,
             }),
             "checkpoint_sn": 0,
-        })
+        }])

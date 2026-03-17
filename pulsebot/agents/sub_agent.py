@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from pulsebot.timeplus.streams import StreamReader, StreamWriter
+from pulsebot.timeplus.streams import StreamReader
 from pulsebot.utils import get_logger
 
 if TYPE_CHECKING:
@@ -60,8 +60,8 @@ class SubAgent:
         )
 
         self.kanban_reader = StreamReader(timeplus, "kanban")
-        self.kanban_writer = StreamWriter(batch_client, "kanban")
-        self.agents_writer = StreamWriter(batch_client, "kanban_agents")
+        # kanban streams use msg_id/agent_id, not the generic 'id' column that
+        # StreamWriter auto-injects, so we write via client.insert() directly.
 
         self._checkpoint_sn: int = spec.checkpoint_sn
         self._running = False
@@ -175,7 +175,7 @@ class SubAgent:
 
         targets = self.spec.target_agents or [self._get_manager_id()]
         for target in targets:
-            await self.kanban_writer.write({
+            self._batch_client.insert("pulsebot.kanban", [{
                 "project_id": self.project_id,
                 "sender_id": self.agent_id,
                 "target_id": target,
@@ -184,7 +184,7 @@ class SubAgent:
                 "metadata": json.dumps({
                     "source_msg_id": message.get("msg_id", ""),
                 }),
-            })
+            }])
 
     async def _reason(self, system_prompt: str, user_content: str) -> str:
         """Run the LLM + tool loop for a single task. Returns final text."""
@@ -247,7 +247,7 @@ class SubAgent:
 
     async def _write_error(self, source_message: dict[str, Any], error: str) -> None:
         """Write an error message to kanban targeting the manager."""
-        await self.kanban_writer.write({
+        self._batch_client.insert("pulsebot.kanban", [{
             "project_id": self.project_id,
             "sender_id": self.agent_id,
             "target_id": self._get_manager_id(),
@@ -256,7 +256,7 @@ class SubAgent:
             "metadata": json.dumps({
                 "source_msg_id": source_message.get("msg_id", ""),
             }),
-        })
+        }])
 
     async def _load_checkpoint(self) -> int:
         """Load last checkpoint from kanban_agents stream."""
@@ -270,7 +270,7 @@ class SubAgent:
 
     async def _persist_checkpoint(self) -> None:
         """Write current checkpoint to agent metadata stream."""
-        await self.agents_writer.write({
+        self._batch_client.insert("pulsebot.kanban_agents", [{
             "agent_id": self.agent_id,
             "project_id": self.project_id,
             "name": self.spec.name,
@@ -289,7 +289,7 @@ class SubAgent:
                 "enable_memory": self.spec.enable_memory,
             }),
             "checkpoint_sn": self._checkpoint_sn,
-        })
+        }])
 
     async def stop(self) -> None:
         """Stop this sub-agent and persist final checkpoint."""

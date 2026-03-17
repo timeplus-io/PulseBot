@@ -77,7 +77,7 @@ def mock_config():
 
 def make_agent(spec, mock_timeplus, mock_llm, mock_skill_loader, mock_executor, mock_config):
     with patch("pulsebot.agents.sub_agent.StreamReader"), \
-         patch("pulsebot.agents.sub_agent.StreamWriter"):
+         patch("pulsebot.timeplus.client.TimeplusClient", return_value=MagicMock()):
         return SubAgent(
             spec=spec,
             timeplus=mock_timeplus,
@@ -122,12 +122,9 @@ def test_sub_agent_creates_subset_when_skills_specified(
 @pytest.mark.asyncio
 async def test_process_task_calls_llm_and_writes_to_kanban(
         spec, mock_timeplus, mock_llm, mock_skill_loader, mock_executor, mock_config):
+    mock_batch = MagicMock()
     with patch("pulsebot.agents.sub_agent.StreamReader"), \
-         patch("pulsebot.agents.sub_agent.StreamWriter") as MockWriter:
-        mock_writer_instance = AsyncMock()
-        mock_writer_instance.write = AsyncMock()
-        MockWriter.return_value = mock_writer_instance
-
+         patch("pulsebot.timeplus.client.TimeplusClient", return_value=mock_batch):
         agent = SubAgent(
             spec=spec,
             timeplus=mock_timeplus,
@@ -136,8 +133,6 @@ async def test_process_task_calls_llm_and_writes_to_kanban(
             executor=mock_executor,
             config=mock_config,
         )
-        agent.kanban_writer = mock_writer_instance
-        agent.agents_writer = mock_writer_instance
 
         message = {
             "msg_id": "msg_001",
@@ -154,12 +149,15 @@ async def test_process_task_calls_llm_and_writes_to_kanban(
         # LLM should have been called
         mock_llm.chat.assert_called_once()
 
-        # Result should have been written to kanban
-        mock_writer_instance.write.assert_called()
-        write_call = mock_writer_instance.write.call_args[0][0]
-        assert write_call["msg_type"] == "result"
-        assert write_call["sender_id"] == "agent_analyst"
-        assert write_call["content"] == "Analysis complete."
+        # Result should have been written to kanban via client.insert
+        mock_batch.insert.assert_called()
+        call_args = mock_batch.insert.call_args
+        stream_name = call_args[0][0]
+        row = call_args[0][1][0]
+        assert stream_name == "pulsebot.kanban"
+        assert row["msg_type"] == "result"
+        assert row["sender_id"] == "agent_analyst"
+        assert row["content"] == "Analysis complete."
 
 
 @pytest.mark.asyncio
@@ -171,11 +169,9 @@ async def test_process_task_routes_to_target_agents(
         project_id="proj_001",
         target_agents=["agent_analyst"],
     )
+    mock_batch = MagicMock()
     with patch("pulsebot.agents.sub_agent.StreamReader"), \
-         patch("pulsebot.agents.sub_agent.StreamWriter") as MockWriter:
-        mock_writer_instance = AsyncMock()
-        MockWriter.return_value = mock_writer_instance
-
+         patch("pulsebot.timeplus.client.TimeplusClient", return_value=mock_batch):
         agent = SubAgent(
             spec=spec,
             timeplus=mock_timeplus,
@@ -184,8 +180,6 @@ async def test_process_task_routes_to_target_agents(
             executor=mock_executor,
             config=mock_config,
         )
-        agent.kanban_writer = mock_writer_instance
-        agent.agents_writer = mock_writer_instance
 
         message = {
             "msg_id": "msg_001",
@@ -198,5 +192,6 @@ async def test_process_task_routes_to_target_agents(
         }
         await agent._process_task(message)
 
-        write_call = mock_writer_instance.write.call_args_list[0][0][0]
-        assert write_call["target_id"] == "agent_analyst"
+        call_args = mock_batch.insert.call_args
+        row = call_args[0][1][0]
+        assert row["target_id"] == "agent_analyst"

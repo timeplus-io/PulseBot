@@ -58,9 +58,8 @@ def make_project_manager(mock_timeplus, mock_config):
 
     from pulsebot.agents.project_manager import ProjectManager
     with patch("pulsebot.agents.sub_agent.StreamReader"), \
-         patch("pulsebot.agents.sub_agent.StreamWriter"), \
-         patch("pulsebot.agents.manager_agent.StreamWriter"), \
-         patch("pulsebot.agents.project_manager.StreamWriter"):
+         patch("pulsebot.timeplus.client.TimeplusClient", return_value=MagicMock()), \
+         patch("pulsebot.agents.manager_agent.StreamWriter"):
         return ProjectManager(
             config=mock_config,
             timeplus=mock_timeplus,
@@ -81,8 +80,6 @@ async def test_create_project_returns_project_id(
         MockManager.return_value.run = AsyncMock()
         MockSubAgent.return_value.run = AsyncMock()
         mock_create_task.return_value = MagicMock()
-        pm._projects_writer.write = AsyncMock()
-        pm._agents_writer.write = AsyncMock()
 
         project_id = await pm.create_project(
             name="Test Project",
@@ -106,8 +103,6 @@ async def test_create_project_sets_project_id_on_specs(
          patch("asyncio.create_task"):
         MockManager.return_value.run = AsyncMock()
         MockSubAgent.return_value.run = AsyncMock()
-        pm._projects_writer.write = AsyncMock()
-        pm._agents_writer.write = AsyncMock()
 
         project_id = await pm.create_project(
             name="Test Project",
@@ -149,8 +144,6 @@ async def test_cancel_project_cancels_tasks(
         mock_task.return_value = mock_task_handle
         MockManager.return_value.run = AsyncMock()
         MockSubAgent.return_value.run = AsyncMock()
-        pm._projects_writer.write = AsyncMock()
-        pm._agents_writer.write = AsyncMock()
 
         project_id = await pm.create_project(
             name="Test", description="test",
@@ -196,9 +189,6 @@ async def test_create_project_raises_on_too_many_concurrent_projects(
     with patch("pulsebot.agents.project_manager.ManagerAgent"), \
          patch("pulsebot.agents.project_manager.SubAgent"), \
          patch("asyncio.create_task"):
-        pm._projects_writer.write = AsyncMock()
-        pm._agents_writer.write = AsyncMock()
-
         await pm.create_project(
             name="P1", description="first", agents=specs1,
             session_id="s1", initial_messages=[],

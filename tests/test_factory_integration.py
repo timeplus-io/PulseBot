@@ -23,9 +23,7 @@ def test_create_skill_loader_registers_project_manager_when_configured():
 
     with patch("pulsebot.timeplus.client.TimeplusClient") as MockClient, \
          patch("pulsebot.agents.sub_agent.StreamReader"), \
-         patch("pulsebot.agents.sub_agent.StreamWriter"), \
-         patch("pulsebot.agents.manager_agent.StreamWriter"), \
-         patch("pulsebot.agents.project_manager.StreamWriter"):
+         patch("pulsebot.agents.manager_agent.StreamWriter"):
         MockClient.return_value = mock_timeplus
         MockClient.from_config.return_value = mock_timeplus
 

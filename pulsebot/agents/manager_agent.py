@@ -49,9 +49,9 @@ class ManagerAgent(SubAgent):
         self.session_id = session_id
         self.initial_messages = initial_messages or []
 
-        # Extra writers — messages and kanban_projects use the batch client
+        # messages stream has 'id' column so StreamWriter is fine here;
+        # kanban_projects uses 'project_id' so we write via client.insert() directly.
         self.messages_writer = StreamWriter(self._batch_client, "messages")
-        self.projects_writer = StreamWriter(self._batch_client, "kanban_projects")
 
     async def run(self) -> None:
         """Manager event loop: dispatch tasks, collect results, deliver output."""
@@ -97,13 +97,13 @@ class ManagerAgent(SubAgent):
             if not target:
                 logger.warning("Initial message missing 'target' field, skipping")
                 continue
-            await self.kanban_writer.write({
+            self._batch_client.insert("pulsebot.kanban", [{
                 "project_id": self.project_id,
                 "sender_id": self.agent_id,
                 "target_id": target,
                 "msg_type": "task",
                 "content": content,
-            })
+            }])
             logger.info(f"Dispatched task to {target}")
 
     async def _deliver_result(self, message: dict[str, Any]) -> None:
@@ -151,20 +151,20 @@ class ManagerAgent(SubAgent):
     async def _complete_project(self) -> None:
         """Cancel all workers, update project status, stop self."""
         for spec in self.worker_specs:
-            await self.kanban_writer.write({
+            self._batch_client.insert("pulsebot.kanban", [{
                 "project_id": self.project_id,
                 "sender_id": self.agent_id,
                 "target_id": spec.agent_id,
                 "msg_type": "control",
                 "content": "cancel",
-            })
+            }])
         await self._update_project_status("completed")
         self._running = False
         logger.info(f"Project {self.project_id} completed")
 
     async def _update_project_status(self, status: str) -> None:
         """Write a project status update to kanban_projects stream."""
-        await self.projects_writer.write({
+        self._batch_client.insert("pulsebot.kanban_projects", [{
             "project_id": self.project_id,
             "name": "",
             "description": "",
@@ -172,4 +172,4 @@ class ManagerAgent(SubAgent):
             "created_by": "main",
             "session_id": self.session_id,
             "agent_ids": [spec.agent_id for spec in self.worker_specs],
-        })
+        }])

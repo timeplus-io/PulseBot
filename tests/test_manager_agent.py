@@ -71,7 +71,7 @@ def make_manager(manager_spec, worker_specs, mock_timeplus, mock_config, session
 
     from pulsebot.agents.manager_agent import ManagerAgent
     with patch("pulsebot.agents.sub_agent.StreamReader"), \
-         patch("pulsebot.agents.sub_agent.StreamWriter"), \
+         patch("pulsebot.timeplus.client.TimeplusClient", return_value=MagicMock()), \
          patch("pulsebot.agents.manager_agent.StreamWriter"):
         return ManagerAgent(
             spec=manager_spec,
@@ -98,7 +98,7 @@ async def test_deliver_result_writes_to_messages_stream(
         manager_spec, worker_specs, mock_timeplus, mock_config):
     from pulsebot.agents.manager_agent import ManagerAgent
     with patch("pulsebot.agents.sub_agent.StreamReader"), \
-         patch("pulsebot.agents.sub_agent.StreamWriter"), \
+         patch("pulsebot.timeplus.client.TimeplusClient", return_value=MagicMock()), \
          patch("pulsebot.agents.manager_agent.StreamWriter") as MockWriter:
         mock_writer = AsyncMock()
         MockWriter.return_value = mock_writer
