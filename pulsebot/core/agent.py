@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import time
 from typing import TYPE_CHECKING, Any
@@ -137,6 +138,9 @@ class Agent:
         self.tool_logger = StreamWriter(batch_client, "tool_logs")
 
         self._running = False
+        # Record time at agent creation so the stream query starts from here,
+        # capturing any messages written during the startup race window.
+        self._start_time = datetime.datetime.utcnow()
 
         logger.info(f"Initialized agent: {agent_id}")
 
@@ -166,11 +170,14 @@ class Agent:
         if self.skills._skill_dirs:
             skill_watcher = asyncio.create_task(self._watch_skills())
 
-        query = """
+        # Use agent creation time as seek point so messages written during the
+        # startup race window (between API ready and agent ready) are not missed.
+        seek_to = self._start_time.strftime('%Y-%m-%d %H:%M:%S')
+        query = f"""
         SELECT * FROM pulsebot.messages
         WHERE target = 'agent'
         AND message_type IN ('user_input', 'tool_result', 'heartbeat', 'scheduled_task')
-        SETTINGS seek_to='latest'
+        SETTINGS seek_to='{seek_to}'
         """
 
         logger.info(f"Agent {self.agent_id} starting message loop")
