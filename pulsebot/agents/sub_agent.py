@@ -190,13 +190,17 @@ class SubAgent:
 
         result_text = await self._reason(system_prompt, content)
 
-        targets = self.spec.target_agents or [self._get_manager_id()]
+        manager_id = self._get_manager_id()
+        targets = self.spec.target_agents or [manager_id]
         for target in targets:
+            # Use "task" when routing to another worker so it can pick it up,
+            # "result" when routing to the manager which listens for results.
+            msg_type = "result" if target == manager_id else "task"
             self._batch_client.insert("pulsebot.kanban", [{
                 "project_id": self.project_id,
                 "sender_id": self.agent_id,
                 "target_id": target,
-                "msg_type": "result",
+                "msg_type": msg_type,
                 "content": result_text,
                 "metadata": json.dumps({
                     "source_msg_id": message.get("msg_id", ""),

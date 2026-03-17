@@ -14,6 +14,7 @@ PulseBot is a lightweight, extensible AI agent framework that uses Timeplus stre
 
 - **Stream-Native Architecture** - All communication flows through Timeplus streams
 - **Multi-Provider LLM Support** - Anthropic Claude, OpenAI, OpenRouter, Ollama, and NVIDIA
+- **Multi-Agent Collaboration** - Spawn coordinated agent teams for complex tasks via kanban-based message queues
 - **Vector Memory** - Semantic search using embeddings stored in Timeplus
 - **SQL-Native Scheduling** - Timeplus Tasks replace traditional cron jobs
 - **Interactive Workspaces** - Build and publish dynamic artifacts and runnable web apps
@@ -143,6 +144,7 @@ This starts:
 | `shell` | `run_command` | Shell execution with security guards |
 | `workspace` | `workspace_create_app`, `workspace_write_file`, ... | Create and publish dynamic artifacts and web apps |
 | `scheduler` | `create_interval_task`, `create_cron_task`, `list_tasks`, `pause_task`, `resume_task`, `delete_task` | Create and manage recurring tasks backed by Timeplus native Tasks |
+| `project_manager` | `create_project`, `list_projects`, `get_project_status`, `cancel_project` | Spawn and coordinate multi-agent projects |
 
 ### AgentSkills.io & OpenClaw Support
 
@@ -223,6 +225,9 @@ Access the built-in web chat interface at `http://localhost:8000/` after startin
 | `memory` | Vector-indexed memories with semantic search |
 | `events` | System events, alerts & `task_notification` broadcasts |
 | `task_triggers` | Audit log of every scheduled task invocation |
+| `kanban` | Inter-agent message queue for multi-agent projects |
+| `kanban_projects` | Project lifecycle metadata |
+| `kanban_agents` | Per-agent state and checkpoints |
 
 > **Scheduled tasks** are Timeplus-native TASK objects created by the `scheduler` skill. Each task runs a Python UDF that POSTs to `/api/v1/task-trigger`, which the agent processes and fans out to all connected channels via the `events` stream. See [Task Design](docs/tasks.md) for details.
 
@@ -250,6 +255,7 @@ TELEGRAM_BOT_TOKEN=... # For Telegram channel
 
 - [Technical Design](docs/design.md) - Full architecture documentation
 - [Configuration Guide](docs/configuration.md) - All settings and environment variables
+- [Multi-Agent Projects](docs/multi-agent.md) - Coordinated agent teams and kanban workflows
 - [Task Design](docs/tasks.md) - Scheduled task architecture and usage
 - [Agent Workspace](docs/workspace.md) - Dynamic artifacts and full-stack apps
 - [Telegram Setup](docs/telegram.md) - Connect PulseBot to Telegram

@@ -195,3 +195,45 @@ async def test_process_task_routes_to_target_agents(
         call_args = mock_batch.insert.call_args
         row = call_args[0][1][0]
         assert row["target_id"] == "agent_analyst"
+        # Routing to another worker (not manager) must use msg_type="task"
+        # so the recipient's kanban listener (which filters 'task','control') picks it up.
+        assert row["msg_type"] == "task"
+
+
+@pytest.mark.asyncio
+async def test_process_task_uses_result_msg_type_for_manager(
+        mock_timeplus, mock_llm, mock_skill_loader, mock_executor, mock_config):
+    """When target_agents is empty the result goes to the manager with msg_type='result'."""
+    spec = SubAgentSpec(
+        name="Analyst",
+        task_description="Analyse",
+        project_id="proj_001",
+        target_agents=[],  # falls back to manager
+    )
+    mock_batch = MagicMock()
+    with patch("pulsebot.agents.sub_agent.StreamReader"), \
+         patch("pulsebot.timeplus.client.TimeplusClient", return_value=mock_batch):
+        agent = SubAgent(
+            spec=spec,
+            timeplus=mock_timeplus,
+            llm_provider=mock_llm,
+            skill_loader=mock_skill_loader,
+            executor=mock_executor,
+            config=mock_config,
+        )
+
+        message = {
+            "msg_id": "msg_002",
+            "project_id": "proj_001",
+            "sender_id": "manager_proj_001",
+            "target_id": "agent_analyst",
+            "msg_type": "task",
+            "content": "Analyse data",
+            "_tp_sn": 2,
+        }
+        await agent._process_task(message)
+
+        call_args = mock_batch.insert.call_args
+        row = call_args[0][1][0]
+        assert row["target_id"] == "manager_proj_001"
+        assert row["msg_type"] == "result"

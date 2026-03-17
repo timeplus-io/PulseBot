@@ -195,6 +195,43 @@ hooks:
 
 See [Tool Call Hooks](hooks.md) for full details.
 
+### Multi-Agent
+
+Controls resource limits for multi-agent projects. Requires the `project_manager` skill to be enabled.
+
+| Field | Default | Description |
+| :--- | :--- | :--- |
+| `enabled` | `true` | Enable multi-agent coordination. |
+| `max_agents_per_project` | `10` | Maximum number of worker agents per project. |
+| `max_concurrent_projects` | `5` | Maximum number of simultaneously active projects. |
+| `default_agent_timeout` | `300` | Per-agent task timeout in seconds. |
+| `project_timeout` | `1800` | Whole-project wall-clock timeout in seconds. |
+| `checkpoint_interval` | `1` | Checkpoint every N processed kanban messages. |
+
+Example:
+
+```yaml
+multi_agent:
+  enabled: true
+  max_agents_per_project: 10
+  max_concurrent_projects: 5
+  default_agent_timeout: 300
+  project_timeout: 1800
+  checkpoint_interval: 1
+```
+
+To enable multi-agent support, also add `project_manager` to your builtin skills:
+
+```yaml
+skills:
+  builtin:
+    - file_ops
+    - shell
+    - project_manager
+```
+
+See [Multi-Agent Projects](multi-agent.md) for full documentation.
+
 ### Other Sections
 - **API**: Controls the main API server (`host`, `port`, `cors_origins`).
 - **Logging**: Set `level` (DEBUG, INFO, etc.) and `format` (`json` or `text`).

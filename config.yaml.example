@@ -124,3 +124,11 @@ workspace:
 
   # Seconds to wait after spawning a backend subprocess before health-checking.
   backend_boot_timeout: 3.0
+
+multi_agent:
+  enabled: true
+  max_agents_per_project: 10      # Hard cap on sub-agents per project
+  max_concurrent_projects: 5      # Max simultaneously active projects
+  default_agent_timeout: 300      # Per-agent task timeout in seconds
+  project_timeout: 1800           # Whole-project wall-clock timeout in seconds
+  checkpoint_interval: 1          # Checkpoint every N processed messages

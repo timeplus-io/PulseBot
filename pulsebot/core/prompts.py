@@ -14,9 +14,6 @@ You are {agent_name}, a helpful AI assistant powered by PulseBot.
 - Current time: {current_time}
 - User: {user_name}
 - Session: {session_id}
-- Current time: {current_time}
-- User: {user_name}
-- Session: {session_id}
 - Channel: {channel_name}
 {model_info_section}
 
@@ -153,7 +150,7 @@ def build_system_prompt(
         custom_identity=custom_identity,
         current_time=datetime.now(timezone.utc).isoformat(),
         user_name=user_name,
-        session_id=session_id[:8] if session_id else "new",
+        session_id=session_id if session_id else "new",
         channel_name=channel_name,
         tools_list=tools_list,
         memories=memories_text,
