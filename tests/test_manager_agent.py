@@ -132,5 +132,5 @@ async def test_deliver_result_writes_to_messages_stream(
         mock_writer.write.assert_called_once()
         write_args = mock_writer.write.call_args[0][0]
         assert write_args["session_id"] == "sess_001"
-        assert write_args["target"] == "user"
+        assert write_args["target"] == "channel:webchat"
         assert "Final Report" in write_args["content"]

@@ -60,12 +60,15 @@ class ManagerAgent(SubAgent):
         # Write initial task messages to kanban
         await self._dispatch_initial_tasks()
 
+        # Use agent creation time as seek_to so results written between
+        # dispatch and the start of this query are not missed.
+        seek_to = self._start_time.strftime('%Y-%m-%d %H:%M:%S')
         query = f"""
         SELECT *, _tp_sn FROM pulsebot.kanban
         WHERE target_id = '{self.agent_id}'
         AND project_id = '{self.project_id}'
         AND msg_type IN ('result', 'error', 'status')
-        SETTINGS seek_to='latest'
+        SETTINGS seek_to='{seek_to}'
         """
 
         logger.info(f"ManagerAgent {self.agent_id} listening for results")
@@ -112,17 +115,14 @@ class ManagerAgent(SubAgent):
             logger.info(f"Dispatched task to {target_id} (resolved from '{target}')")
 
     async def _deliver_result(self, message: dict[str, Any]) -> None:
-        """Write the final result to pulsebot.messages for the main agent."""
+        """Write the final result to pulsebot.messages for the user."""
+        result_text = message.get("content", "")
         await self.messages_writer.write({
             "session_id": self.session_id,
             "source": "agent",
-            "target": "user",
+            "target": "channel:webchat",
             "message_type": "agent_response",
-            "content": message.get("content", ""),
-            "metadata": json.dumps({
-                "project_id": self.project_id,
-                "from_agent": message.get("sender_id", ""),
-            }),
+            "content": json.dumps({"text": result_text}),
         })
         logger.info(f"ManagerAgent {self.agent_id} delivered final result")
 
@@ -133,9 +133,9 @@ class ManagerAgent(SubAgent):
         await self.messages_writer.write({
             "session_id": self.session_id,
             "source": "agent",
-            "target": "user",
+            "target": "channel:webchat",
             "message_type": "agent_response",
-            "content": error_text,
+            "content": json.dumps({"text": error_text}),
         })
         await self._update_project_status("failed")
         self._running = False
@@ -148,7 +148,7 @@ class ManagerAgent(SubAgent):
         await self.messages_writer.write({
             "session_id": self.session_id,
             "source": "agent",
-            "target": "user",
+            "target": "channel:webchat",
             "message_type": "tool_result",
             "content": json.dumps({"status": status_text}),
         })

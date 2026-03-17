@@ -51,8 +51,16 @@ class SubAgent:
         self._skill_loader = self._resolve_skills(spec, skill_loader)
         self.executor = executor
 
-        # Use a dedicated batch client for writes to avoid conflicts with
-        # the streaming query connection.
+        # Each sub-agent needs its OWN dedicated clients to avoid
+        # "Simultaneous queries on single connection" errors with the main
+        # agent's messages stream reader (which shares the same TimeplusClient
+        # instance passed in from ProjectManager).
+        read_client = TimeplusClient(
+            host=timeplus.host,
+            port=timeplus.port,
+            username=timeplus.username,
+            password=timeplus.password,
+        )
         batch_client = TimeplusClient(
             host=timeplus.host,
             port=timeplus.port,
@@ -60,7 +68,7 @@ class SubAgent:
             password=timeplus.password,
         )
 
-        self.kanban_reader = StreamReader(timeplus, "kanban")
+        self.kanban_reader = StreamReader(read_client, "kanban")
         # kanban streams use msg_id/agent_id, not the generic 'id' column that
         # StreamWriter auto-injects, so we write via client.insert() directly.
 
@@ -213,9 +221,13 @@ class SubAgent:
             )
 
             if response.tool_calls:
-                # Add assistant turn with tool calls
-                tool_call_dicts = [
-                    {
+                # Add assistant turn with tool calls.
+                # Include tc.extra in the function dict so provider-specific
+                # fields (e.g. Gemini's thought_signature) are preserved for
+                # subsequent API calls.
+                tool_call_dicts = []
+                for tc in response.tool_calls:
+                    tc_dict = {
                         "id": tc.id,
                         "type": "function",
                         "function": {
@@ -223,8 +235,9 @@ class SubAgent:
                             "arguments": json.dumps(tc.arguments),
                         },
                     }
-                    for tc in response.tool_calls
-                ]
+                    if tc.extra:
+                        tc_dict["function"].update(tc.extra)
+                    tool_call_dicts.append(tc_dict)
                 messages.append({
                     "role": "assistant",
                     "content": response.content or "",
