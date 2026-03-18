@@ -38,37 +38,37 @@ _proxy_registry: ProxyRegistry | None = None
 
 class ChatRequest(BaseModel):
     """Chat message request."""
-    message: str
-    session_id: str | None = None
+    message: str = Field(..., description="The content of the chat message to send to the agent.")
+    session_id: str | None = Field(default=None, description="Optional UUID session ID. If not provided, a new one is generated.")
 
 
 class ChatResponse(BaseModel):
     """Chat message response."""
-    session_id: str
-    message_id: str
+    session_id: str = Field(..., description="The session ID associated with this chat.")
+    message_id: str = Field(..., description="The unique ID of the stored message in Timeplus.")
 
 
 class HealthResponse(BaseModel):
     """Health check response."""
-    status: str
-    version: str
+    status: str = Field(..., description="Health status (e.g., 'ok').")
+    version: str = Field(..., description="Current API version.")
 
 
 class TaskTriggerRequest(BaseModel):
     """Incoming callback from a Timeplus Python UDF."""
-    task_id: str
-    task_name: str
-    prompt: str
-    trigger_type: str = "interval"          # 'interval' | 'cron'
-    cron_expression: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    task_id: str = Field(..., description="The ID of the task being triggered.")
+    task_name: str = Field(..., description="The human-readable name of the task.")
+    prompt: str = Field(..., description="The LLM prompt instructing the agent what to do for this task.")
+    trigger_type: str = Field(default="interval", description="Type of trigger, either 'interval' or 'cron'.")
+    cron_expression: str | None = Field(default=None, description="The cron expression if the trigger type is cron.")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the task execution.")
 
 
 class TaskTriggerResponse(BaseModel):
     """Response to the Timeplus Python UDF callback."""
-    execution_id: str
-    session_id: str
-    status: str = "triggered"
+    execution_id: str = Field(..., description="The unique identifier for this task execution.")
+    session_id: str = Field(..., description="The global session ID used for this scheduled task.")
+    status: str = Field(default="triggered", description="The status of the trigger request.")
 
 
 @asynccontextmanager
@@ -125,6 +125,9 @@ def create_app(config: Config | None = None) -> FastAPI:
         description="Stream-native AI agent API",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
     )
     
     # Add CORS middleware
@@ -139,8 +142,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     # Include router
     app.include_router(router)
     
-    app.include_router(workspace_proxy_router)
-    app.include_router(registration_router)
+    app.include_router(workspace_proxy_router, tags=["Workspace Proxy"])
+    app.include_router(registration_router, tags=["Workspace Registration"])
 
     # Serve web UI static files
     web_dir = Path(__file__).parent.parent / "web"
@@ -166,13 +169,13 @@ async def serve_web_ui() -> FileResponse:
     raise HTTPException(status_code=404, detail="Web UI not found")
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check() -> HealthResponse:
     """Health check endpoint."""
     return HealthResponse(status="ok", version="0.1.0")
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def send_chat_message(request: ChatRequest) -> ChatResponse:
     """Send a chat message to the agent.
     
@@ -202,7 +205,7 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
     return ChatResponse(session_id=session_id, message_id=message_id)
 
 
-@router.post("/api/v1/task-trigger", response_model=TaskTriggerResponse)
+@router.post("/api/v1/task-trigger", response_model=TaskTriggerResponse, tags=["Tasks"])
 async def trigger_task(request: TaskTriggerRequest) -> TaskTriggerResponse:
     """Receive a scheduled task callback from a Timeplus Python UDF.
 
@@ -410,7 +413,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
         notify_task.cancel()
 
 
-@router.get("/sessions/{session_id}/history")
+@router.get("/sessions/{session_id}/history", tags=["Chat"])
 async def get_session_history(session_id: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get conversation history for a session."""
     if _reader is None:
