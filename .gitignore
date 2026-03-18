@@ -68,3 +68,4 @@ docker-compose.override.yml
 
 # Project specific
 config.yaml
+pulsebot/web/
