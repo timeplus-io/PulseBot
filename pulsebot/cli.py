@@ -99,6 +99,15 @@ def run(config: str):
 
         skills = create_skill_loader(cfg)
         executor = create_executor(cfg, skills)
+        # Re-register project_manager skill now that executor is available
+        if "project_manager" in cfg.skills.builtin:
+            skills = create_skill_loader(
+                cfg,
+                timeplus=tp,
+                llm_provider=provider,
+                executor=executor,
+            )
+            executor = create_executor(cfg, skills)
 
         workspace_skill = skills.get_skill("workspace")
         if workspace_skill is not None:

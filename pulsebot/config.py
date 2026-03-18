@@ -205,6 +205,16 @@ class MemoryConfig(BaseModel):
     embedding_timeout_seconds: int = 30  # Timeout for embedding requests
 
 
+class MultiAgentConfig(BaseModel):
+    """Multi-agent coordination configuration."""
+    enabled: bool = True                    # Enable multi-agent coordination
+    max_agents_per_project: int = 10        # Hard cap on sub-agents per project
+    max_concurrent_projects: int = 5        # Max simultaneously active projects
+    default_agent_timeout: int = 300        # Per-agent task timeout in seconds
+    project_timeout: int = 1800             # Whole-project wall-clock timeout in seconds
+    checkpoint_interval: int = 1            # Checkpoint every N processed messages
+
+
 class Config(BaseSettings):
     """Main PulseBot configuration."""
     model_config = {"extra": "allow"}
@@ -221,6 +231,7 @@ class Config(BaseSettings):
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    multi_agent: MultiAgentConfig = Field(default_factory=MultiAgentConfig)
 
 
 def load_config(config_path: str | Path = "config.yaml") -> Config:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import time
 from typing import TYPE_CHECKING, Any
@@ -137,6 +138,9 @@ class Agent:
         self.tool_logger = StreamWriter(batch_client, "tool_logs")
 
         self._running = False
+        # Record time at agent creation so the stream query starts from here,
+        # capturing any messages written during the startup race window.
+        self._start_time = datetime.datetime.utcnow()
 
         logger.info(f"Initialized agent: {agent_id}")
 
@@ -166,11 +170,14 @@ class Agent:
         if self.skills._skill_dirs:
             skill_watcher = asyncio.create_task(self._watch_skills())
 
-        query = """
+        # Use agent creation time as seek point so messages written during the
+        # startup race window (between API ready and agent ready) are not missed.
+        seek_to = self._start_time.strftime('%Y-%m-%d %H:%M:%S')
+        query = f"""
         SELECT * FROM pulsebot.messages
         WHERE target = 'agent'
         AND message_type IN ('user_input', 'tool_result', 'heartbeat', 'scheduled_task')
-        SETTINGS seek_to='latest'
+        SETTINGS seek_to='{seek_to}'
         """
 
         logger.info(f"Agent {self.agent_id} starting message loop")
@@ -196,30 +203,29 @@ class Agent:
         self._running = False
 
     async def _ensure_streams_exist(self) -> None:
-        """Ensure all required Timeplus streams exist.
-
-        Creates streams if they don't exist using CREATE STREAM IF NOT EXISTS.
-        Note: Memory stream is optional and created separately when needed.
-        """
+        """Ensure all required Timeplus streams exist."""
         from pulsebot.timeplus.setup import (
-            create_database,
-            MESSAGES_STREAM_DDL,
-            LLM_LOGS_STREAM_DDL,
-            TOOL_LOGS_STREAM_DDL,
             EVENTS_STREAM_DDL,
+            KANBAN_AGENTS_STREAM_DDL,
+            KANBAN_PROJECTS_STREAM_DDL,
+            KANBAN_STREAM_DDL,
+            LLM_LOGS_STREAM_DDL,
+            MESSAGES_STREAM_DDL,
+            TOOL_LOGS_STREAM_DDL,
+            create_database,
         )
 
         logger.info("Ensuring required streams exist...")
-        
-        # First ensure the database exists
         await create_database(self.tp)
 
-        # Core streams required for agent operation
         streams = [
             ("messages", MESSAGES_STREAM_DDL),
             ("llm_logs", LLM_LOGS_STREAM_DDL),
             ("tool_logs", TOOL_LOGS_STREAM_DDL),
             ("events", EVENTS_STREAM_DDL),
+            ("kanban", KANBAN_STREAM_DDL),
+            ("kanban_projects", KANBAN_PROJECTS_STREAM_DDL),
+            ("kanban_agents", KANBAN_AGENTS_STREAM_DDL),
         ]
 
         for name, ddl in streams:

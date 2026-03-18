@@ -136,6 +136,9 @@ PulseBot is an ultra-lightweight personal AI agent that leverages Timeplus's str
 | memory | Agent | Agent (context builder) |
 | events | Agent (NotificationDispatcher) | Telegram, WebSocket (task_notification), Monitoring |
 | task_triggers | Timeplus Tasks (via Python UDF) | Audit/Analytics |
+| kanban | ManagerAgent, SubAgents | SubAgents, ManagerAgent |
+| kanban_projects | ProjectManager, ManagerAgent | ProjectManager |
+| kanban_agents | SubAgents, ManagerAgent | ProjectManager |
 
 ---
 
@@ -374,11 +377,92 @@ Skills implement:
 - `execute(tool_name, arguments)` - Execute a tool
 - `name` and `description` properties
 
+### Built-in Skills (complete list)
+
+| Skill | Tools | Description |
+|-------|-------|-------------|
+| shell | `run_command` | Shell execution with security guards |
+| file_ops | `read_file`, `write_file`, `list_directory` | Sandboxed file operations |
+| workspace | `workspace_create_app`, ... | Dynamic artifact and web-app publishing |
+| scheduler | `create_interval_task`, `create_cron_task`, ... | Timeplus-native recurring tasks |
+| project_manager | `create_project`, `list_projects`, `get_project_status`, `cancel_project` | Multi-agent project orchestration |
+
 ---
 
-## 8. Real-time Features
+## 8. Multi-Agent System
 
-### 8.1 Tool Call Broadcasting
+PulseBot supports multi-agent projects where specialized worker agents collaborate via a kanban-style message queue stored in Timeplus streams.
+
+### 8.1 Architecture
+
+```
+ProjectManager
+    │
+    ├── spawns ──► ManagerAgent (1 per project)
+    │                 │  dispatches tasks via pulsebot.kanban
+    │                 ▼
+    └── spawns ──► SubAgent A          SubAgent B
+                      │  (Researcher)      │  (Analyst)
+                      │                   │
+                      └── kanban msg ─────►│
+                                           │
+                                           └── result ──► ManagerAgent
+                                                              │
+                                                              └── pulsebot.messages ──► User
+```
+
+### 8.2 Components
+
+**ProjectManager** (`pulsebot/agents/project_manager.py`)
+- Receives `create_project` tool calls from the main agent
+- Generates a `project_id`, stamps all agent specs, resolves human-readable `target_agents` names to agent IDs
+- Spawns one `ManagerAgent` and N `SubAgent` asyncio tasks
+- Provides `list_projects`, `get_project_status`, `cancel_project` operations
+
+**ManagerAgent** (`pulsebot/agents/manager_agent.py`)
+- Extends `SubAgent` with project coordination responsibilities
+- Dispatches initial task messages to workers via `pulsebot.kanban`
+- Listens for `result`/`error`/`status` messages from workers
+- Delivers the final result to `pulsebot.messages` (→ user's WebSocket session)
+- Cancels all workers and marks project complete
+
+**SubAgent** (`pulsebot/agents/sub_agent.py`)
+- Listens for `task` and `control` messages in `pulsebot.kanban` filtered by its agent ID
+- Runs the full LLM + tool loop for each task
+- Routes results to `target_agents` with `msg_type="task"` (worker targets) or `msg_type="result"` (manager target)
+- Persists checkpoints to `pulsebot.kanban_agents` for resumability
+
+### 8.3 Kanban Streams
+
+| Stream | Purpose |
+|--------|---------|
+| `pulsebot.kanban` | Inter-agent message queue (task, result, error, control) |
+| `pulsebot.kanban_projects` | Project lifecycle metadata |
+| `pulsebot.kanban_agents` | Per-agent state and `_tp_sn` checkpoints |
+
+### 8.4 Message Routing Rules
+
+Worker agents subscribe with `msg_type IN ('task', 'control')`.
+The ManagerAgent subscribes with `msg_type IN ('result', 'error', 'status')`.
+
+When a SubAgent routes its output:
+- **To another worker**: `msg_type = "task"` (so the receiving worker can pick it up)
+- **To the manager**: `msg_type = "result"` (so the manager can pick it up)
+
+This enables both sequential pipelines (A → B → C → Manager) and fan-out patterns.
+
+### 8.5 Session Routing
+
+The `session_id` from the user's WebSocket connection is threaded through the entire project:
+- Stored in `ProjectState` and passed to `ManagerAgent`
+- Written to `pulsebot.messages` when the manager delivers the final result
+- The API server's WebSocket subscription filters by this `session_id` to deliver the response to the correct client
+
+---
+
+## 9. Real-time Features
+
+### 9.1 Tool Call Broadcasting
 
 Tool executions are broadcast in real-time:
 1. **Started**: Tool name and formatted arguments
@@ -389,7 +473,7 @@ Displayed in:
 - Web Chat: Animated indicators with shimmer effect
 - CLI: Compact status lines with timing
 
-### 8.2 WebSocket Streaming
+### 9.2 WebSocket Streaming
 
 Real-time message delivery via WebSocket:
 - Agent responses stream as they're generated
@@ -399,7 +483,7 @@ Real-time message delivery via WebSocket:
 
 ---
 
-## 9. API Endpoints
+## 10. API Endpoints
 
 ### REST API
 
@@ -425,7 +509,7 @@ WebSocket message types:
 
 ---
 
-## 10. Configuration
+## 11. Configuration
 
 YAML-based configuration with environment variable substitution:
 
@@ -465,7 +549,7 @@ skills:
 
 ---
 
-## 11. Deployment
+## 12. Deployment
 
 ### Docker Compose
 
@@ -488,7 +572,7 @@ Services:
 
 ---
 
-## 12. CLI Commands
+## 13. CLI Commands
 
 | Command | Description |
 |---------|-------------|
@@ -504,7 +588,7 @@ Services:
 
 ---
 
-## 13. Design Decisions
+## 14. Design Decisions
 
 ### Why Append-Only Streams for Memory?
 
@@ -537,7 +621,7 @@ Users need visibility into what the agent is doing:
 
 ---
 
-## 14. Future Enhancements
+## 15. Future Enhancements
 
 Planned features:
 - MCP (Model Context Protocol) server support
@@ -547,7 +631,7 @@ Planned features:
 
 ---
 
-## 15. Conclusion
+## 16. Conclusion
 
 PulseBot delivers a powerful, observable, and extensible AI agent by leveraging Timeplus's streaming SQL engine. The stream-native architecture provides:
 
