@@ -83,7 +83,7 @@ class SubAgent:
         )
         # Record creation time so the kanban stream query starts from here,
         # capturing tasks dispatched during the startup race window.
-        self._start_time = datetime.datetime.utcnow()
+        self._start_time = datetime.datetime.now(datetime.timezone.utc)
 
     def _resolve_provider(
         self,

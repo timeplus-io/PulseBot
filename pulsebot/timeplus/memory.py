@@ -565,6 +565,8 @@ class MemoryManager:
         Args:
             memory_id: Memory ID to mark as deleted
         """
-        # For append-only streams, we insert a deletion marker
-        # Future queries will filter by is_deleted=false
-        logger.info("Memory deletion not fully supported in append-only mode", extra={"id": memory_id})
+        raise NotImplementedError(
+            "mark_deleted() is not yet implemented. "
+            "Soft-delete requires inserting a deletion-marker record and updating "
+            "all queries to filter by is_deleted=false."
+        )

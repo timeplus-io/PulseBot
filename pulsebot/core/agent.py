@@ -157,7 +157,7 @@ class Agent:
         self._running = False
         # Record time at agent creation so the stream query starts from here,
         # capturing any messages written during the startup race window.
-        self._start_time = datetime.datetime.utcnow()
+        self._start_time = datetime.datetime.now(datetime.timezone.utc)
 
         logger.info(f"Initialized agent: {agent_id}")
 

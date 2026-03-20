@@ -182,7 +182,7 @@ class TimeplusClient:
                 yield dict(zip(column_names, row))
         
         # Use asyncio to yield from the sync generator
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         queue: asyncio.Queue[Any | None] = asyncio.Queue()
         
         async def producer():

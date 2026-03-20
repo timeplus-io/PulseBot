@@ -305,6 +305,7 @@ class WorkspaceManager:
         port = _find_free_port()
         log_path = task_d / "backend.log"
 
+        log_file = open(log_path, "w")
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             str(backend_path),
@@ -315,9 +316,10 @@ class WorkspaceManager:
                 "TASK_ID": task_id,
             },
             cwd=str(task_d),
-            stdout=open(log_path, "w"),
+            stdout=log_file,
             stderr=asyncio.subprocess.STDOUT,
         )
+        log_file.close()
 
         # Give the process time to bind its port
         await asyncio.sleep(self._cfg.backend_boot_timeout)

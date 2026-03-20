@@ -115,11 +115,11 @@ class ProjectManager:
         )
 
         # Persist project and agent metadata
-        await self._write_project_metadata(
+        self._write_project_metadata(
             project_id, name, description, agents, session_id
         )
         for spec in [manager_spec] + agents:
-            await self._write_agent_metadata(spec)
+            self._write_agent_metadata(spec)
 
         # Track state
         self._projects[project_id] = ProjectState(
@@ -218,7 +218,7 @@ class ProjectManager:
         logger.info(f"Project {project_id} cancelled")
         return True
 
-    async def _write_project_metadata(
+    def _write_project_metadata(
         self,
         project_id: str,
         name: str,
@@ -236,7 +236,7 @@ class ProjectManager:
             "agent_ids": [s.agent_id for s in agents],
         }])
 
-    async def _write_agent_metadata(self, spec: SubAgentSpec) -> None:
+    def _write_agent_metadata(self, spec: SubAgentSpec) -> None:
         self._batch_client.insert("pulsebot.kanban_agents", [{
             "agent_id": spec.agent_id,
             "project_id": spec.project_id,

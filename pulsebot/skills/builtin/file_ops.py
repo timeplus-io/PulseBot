@@ -120,8 +120,9 @@ class FileOpsSkill(BaseSkill):
         try:
             resolved = (self.base_path / path).resolve()
             
-            # Security: ensure path is within base_path
-            if not str(resolved).startswith(str(self.base_path)):
+            # Security: ensure path is within base_path (use is_relative_to to
+            # avoid prefix-collision bypasses like /home/user vs /home/user2)
+            if not resolved.is_relative_to(self.base_path):
                 return None
             
             return resolved

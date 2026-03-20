@@ -311,7 +311,7 @@ def chat(config: str, host: str, port: int):
 
                 while True:
                     try:
-                        user_input = await asyncio.get_event_loop().run_in_executor(
+                        user_input = await asyncio.get_running_loop().run_in_executor(
                             None, console.input, "[bold blue]You>[/] "
                         )
 
