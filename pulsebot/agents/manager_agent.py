@@ -113,13 +113,13 @@ class ManagerAgent(SubAgent):
                 self._checkpoint_sn = message.get("_tp_sn", self._checkpoint_sn)
                 await self._persist_checkpoint()
         except Exception as e:
-            await self.events.emit_error("subagent.error", e, payload={
+            await self.events.emit_error("manager.error", e, payload={
                 "agent_id": self.agent_id,
                 "project_id": self.project_id,
             })
             raise
         finally:
-            await self.events.emit("subagent.stopped", payload={
+            await self.events.emit("manager.stopped", payload={
                 "agent_id": self.agent_id,
                 "project_id": self.project_id,
             })
