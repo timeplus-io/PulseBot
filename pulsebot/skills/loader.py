@@ -149,6 +149,8 @@ class SkillLoader:
         before = set(self._external_skills.keys())
         self._discover_external_skills(self._skill_dirs, self._disabled_skills)
         changed = set(self._external_skills.keys()) != before
+        # asyncio.create_task() is safe here: reload_external_skills() is only
+        # called from _watch_skills(), which runs as an async task inside the loop.
         if self._events and changed:
             import asyncio
             asyncio.create_task(self._events.emit("skill.hot_reloaded", payload={
