@@ -117,6 +117,7 @@ skills:
     - workspace
     - scheduler
     - skill_manager
+    - project_manager
 
   custom: []
 
