@@ -130,10 +130,11 @@ def create_app(config: Config | None = None) -> FastAPI:
         openapi_url="/openapi.json",
     )
     
-    # Add CORS middleware
+    # Add CORS middleware — origins controlled by config.api.cors_origins
+    cors_origins = _config.api.cors_origins if _config else ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately in production
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

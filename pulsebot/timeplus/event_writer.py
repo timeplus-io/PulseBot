@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import traceback
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pulsebot.timeplus.streams import StreamWriter
 
+
+logger = logging.getLogger(__name__)
 
 _SEVERITY_LEVELS = {"debug": 0, "info": 1, "warning": 2, "error": 3, "critical": 4}
 
@@ -72,8 +75,8 @@ class EventWriter:
                 "payload": json.dumps(payload or {}, default=str),
                 "tags": merged_tags,
             })
-        except Exception:
-            pass
+        except Exception as _write_exc:
+            logger.debug("EventWriter failed to emit %s: %s", event_type, _write_exc)
 
     async def emit_error(
         self,

@@ -9,7 +9,7 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 import httpx
 
@@ -64,9 +64,9 @@ class ClawHubClient:
 
     def __init__(
         self,
-        site_url: Optional[str] = None,
-        registry_url: Optional[str] = None,
-        auth_token: Optional[str] = None,
+        site_url: str | None = None,
+        registry_url: str | None = None,
+        auth_token: str | None = None,
     ):
         self.site_url = (site_url or self.DEFAULT_SITE).rstrip("/")
         self._registry_url = registry_url

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -16,24 +15,22 @@ class SkillSource(str, Enum):
     EXTERNAL = "external"
 
 
-@dataclass
-class SkillRequirements:
+class SkillRequirements(BaseModel):
     """Runtime requirements declared in metadata.openclaw.requires."""
-    env: list[str] = field(default_factory=list)
-    bins: list[str] = field(default_factory=list)
-    any_bins: list[str] = field(default_factory=list)
-    configs: list[str] = field(default_factory=list)
+    env: list[str] = Field(default_factory=list)
+    bins: list[str] = Field(default_factory=list)
+    any_bins: list[str] = Field(default_factory=list)
+    configs: list[str] = Field(default_factory=list)
 
 
-@dataclass
-class OpenClawMetadata:
+class OpenClawMetadata(BaseModel):
     """OpenClaw-specific extensions found in metadata.openclaw (or aliases)."""
-    requires: SkillRequirements = field(default_factory=SkillRequirements)
+    requires: SkillRequirements = Field(default_factory=SkillRequirements)
     primary_env: str | None = None
     always: bool = False
     emoji: str | None = None
     homepage: str | None = None
-    os: list[str] = field(default_factory=list)
+    os: list[str] = Field(default_factory=list)
     skill_key: str | None = None
 
 
@@ -55,8 +52,6 @@ class SkillMetadata(BaseModel):
 
     # OpenClaw extensions (None for plain agentskills.io skills)
     openclaw: OpenClawMetadata | None = None
-
-    model_config = {"arbitrary_types_allowed": True}
 
 
 class SkillContent(BaseModel):
