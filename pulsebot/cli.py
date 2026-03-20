@@ -125,6 +125,11 @@ def run(config: str):
         events_writer = StreamWriter(events_writer_client, "events")
         notifier = NotificationDispatcher(events_writer)
 
+        min_event_severity = (
+            cfg.observability.events.min_severity
+            if cfg.observability.events.enabled
+            else "disabled"
+        )
         agent = Agent(
             agent_id="main",
             timeplus=tp,
@@ -138,6 +143,7 @@ def run(config: str):
             verbose_tools=cfg.agent.verbose_tools,
             notifier=notifier,
             executor=executor,
+            min_event_severity=min_event_severity,
         )
 
         # Start Telegram channel if enabled (needs separate client to avoid connection conflicts)

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from pulsebot.core.context import ContextBuilder
 from pulsebot.core.executor import ToolExecutor
 from pulsebot.core.prompts import build_memory_extraction_prompt
+from pulsebot.timeplus.event_writer import EventWriter
 from pulsebot.timeplus.streams import StreamReader, StreamWriter
 from pulsebot.utils import get_logger, hash_content, truncate_string
 
@@ -78,6 +79,7 @@ class Agent:
         verbose_tools: bool = False,
         notifier: "NotificationDispatcher | None" = None,
         executor: "ToolExecutor | None" = None,
+        min_event_severity: str = "info",
     ):
         """Initialize the agent.
 
@@ -93,6 +95,7 @@ class Agent:
             verbose_tools: Whether to show full tool arguments in broadcasts
             notifier: Optional dispatcher for broadcasting scheduled task results
             executor: Optional pre-built ToolExecutor; created from skill_loader if not provided
+            min_event_severity: Minimum severity for events stream ('debug','info','warning','error','critical','disabled')
         """
         from pulsebot.timeplus.client import TimeplusClient
 
@@ -137,6 +140,16 @@ class Agent:
         self.llm_logger = StreamWriter(batch_client, "llm_logs")
         self.tool_logger = StreamWriter(batch_client, "tool_logs")
 
+        # Events writer — disabled if observability is turned off
+        self.events_writer = StreamWriter(batch_client, "events")
+        self.events = EventWriter(
+            self.events_writer if min_event_severity != "disabled" else None,
+            default_source=f"agent:{agent_id}",
+            default_tags=[f"agent:{agent_id}"],
+            min_severity=min_event_severity,
+        )
+        self._pending_skill_events = True  # skills.set_events() called in run() after event loop starts
+
         self._running = False
         # Record time at agent creation so the stream query starts from here,
         # capturing any messages written during the startup race window.
@@ -173,6 +186,16 @@ class Agent:
         # Use agent creation time as seek point so messages written during the
         # startup race window (between API ready and agent ready) are not missed.
         seek_to = self._start_time.strftime('%Y-%m-%d %H:%M:%S')
+
+        await self.events.emit("agent.ready", payload={
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "model": self.llm.model,
+            "provider": self.llm.provider_name,
+            "seek_to": seek_to,
+            "skills_count": len(self.skills.get_tools()),
+        })
+
         query = f"""
         SELECT * FROM pulsebot.messages
         WHERE target = 'agent'
@@ -192,10 +215,19 @@ class Agent:
                 except Exception as e:
                     logger.error(f"Error processing message: {e}", exc_info=True)
                     await self._log_error(message, e)
+        except Exception as e:
+            await self.events.emit_error("agent.crash", e, payload={"agent_id": self.agent_id})
+            raise
         finally:
+            import datetime as _dt
+            from datetime import timezone as _tz
             self._running = False
             if skill_watcher:
                 skill_watcher.cancel()
+            await self.events.emit("agent.stopped", payload={
+                "agent_id": self.agent_id,
+                "uptime_seconds": (_dt.datetime.now(_tz.utc) - self._start_time.replace(tzinfo=_tz.utc)).total_seconds(),
+            })
             logger.info(f"Agent {self.agent_id} stopped")
 
     async def stop(self) -> None:
