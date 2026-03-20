@@ -215,6 +215,28 @@ class MultiAgentConfig(BaseModel):
     checkpoint_interval: int = 1            # Checkpoint every N processed messages
 
 
+class ObservabilityEventsConfig(BaseModel):
+    """Events stream observability configuration.
+
+    min_severity gates event emission at the source — debug events never
+    serialize to JSON in production (saves CPU and stream volume).
+
+    include_debug_state controls agent.state.* events which are high-volume
+    (3-5 events per user request). Set to True only for development debugging.
+    When False, state events are emitted at 'debug' severity and will be
+    suppressed by the default min_severity='info' floor.
+    """
+    enabled: bool = True
+    min_severity: str = "info"        # 'debug', 'info', 'warning', 'error', 'critical'
+    heartbeat_interval: int = 60      # seconds, 0 to disable
+    include_debug_state: bool = False  # emit agent.state.* at 'info' vs 'debug'
+
+
+class ObservabilityConfig(BaseModel):
+    """Observability configuration."""
+    events: ObservabilityEventsConfig = Field(default_factory=ObservabilityEventsConfig)
+
+
 class Config(BaseSettings):
     """Main PulseBot configuration."""
     model_config = {"extra": "allow"}
@@ -232,6 +254,7 @@ class Config(BaseSettings):
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     multi_agent: MultiAgentConfig = Field(default_factory=MultiAgentConfig)
+    observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
 
 
 def load_config(config_path: str | Path = "config.yaml") -> Config:
