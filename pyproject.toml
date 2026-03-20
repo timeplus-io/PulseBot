@@ -37,6 +37,8 @@ dependencies = [
     "pyyaml>=6.0",
     "click>=8.1.0",
     "rich>=13.9.0",
+    # Local embeddings (zero-config memory, ~100MB model download on first use)
+    "sentence-transformers>=3.0.0",
     # Utilities
     "httpx>=0.27.0",
     # Timezone data for zoneinfo (needed on systems without system tzdata, e.g. Alpine)

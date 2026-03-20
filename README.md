@@ -247,7 +247,7 @@ TIMEPLUS_PASSWORD=...
 CLAWHUB_AUTH_TOKEN=... # Authentication token for ClawHub skill installation
 
 # Optional
-OPENAI_API_KEY=... # Also used for memory embeddings
+OPENAI_API_KEY=... # For OpenAI models or cloud embeddings (local embeddings work without this)
 TELEGRAM_BOT_TOKEN=... # For Telegram channel
 ```
 
