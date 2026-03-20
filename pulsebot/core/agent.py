@@ -275,6 +275,12 @@ class Agent:
         message_type = message.get("message_type", "")
         content_str = message.get("content", "{}")
 
+        await self.events.emit("agent.state.processing", severity="debug", payload={
+            "agent_id": self.agent_id,
+            "session_id": session_id,
+            "message_type": message_type,
+        })
+
         try:
             content = json.loads(content_str)
         except json.JSONDecodeError:
@@ -307,12 +313,28 @@ class Agent:
         # Agent loop: keep calling LLM until no more tool calls
         source = message.get("source", "webchat")
         iteration = 0
+        total_tool_calls = 0
 
         while iteration < self.max_iterations:
             iteration += 1
 
+            await self.events.emit("agent.state.thinking", severity="debug", payload={
+                "agent_id": self.agent_id,
+                "session_id": session_id,
+                "iteration": iteration,
+            })
+
             # Call LLM
             await self._broadcast_llm_thinking(session_id, source, iteration, "started")
+
+            await self.events.emit("llm.call_started", severity="debug", payload={
+                "session_id": session_id,
+                "iteration": iteration,
+                "model": self.llm.model,
+                "messages_count": len(context.messages),
+                "has_tools": bool(tools),
+            })
+
             start_time = time.time()
 
             try:
@@ -324,6 +346,13 @@ class Agent:
             except Exception as e:
                 latency_ms = int((time.time() - start_time) * 1000)
                 logger.error(f"LLM call failed (iteration {iteration}): {e}", exc_info=True)
+                await self.events.emit("llm.call_failed", severity="error", payload={
+                    "session_id": session_id,
+                    "iteration": iteration,
+                    "error": str(e),
+                    "latency_ms": int((time.time() - start_time) * 1000),
+                    "model": self.llm.model,
+                })
                 # Signal UI that thinking is done so the spinner clears
                 await self._broadcast_llm_thinking(session_id, source, iteration, "completed", latency_ms)
                 # Send user-visible error response and exit the loop
@@ -345,6 +374,16 @@ class Agent:
 
             latency_ms = (time.time() - start_time) * 1000
             await self._broadcast_llm_thinking(session_id, source, iteration, "completed", int(latency_ms))
+
+            await self.events.emit("llm.call_completed", payload={
+                "session_id": session_id,
+                "iteration": iteration,
+                "latency_ms": int(latency_ms),
+                "input_tokens": response.usage.input_tokens if response.usage else 0,
+                "output_tokens": response.usage.output_tokens if response.usage else 0,
+                "has_tool_calls": bool(response.tool_calls),
+                "tool_call_count": len(response.tool_calls or []),
+            })
 
             # Log to observability stream
             await self._log_llm_call(session_id, context, response, latency_ms)
@@ -427,6 +466,7 @@ class Agent:
                         tool_calls=[tool_call_dict],
                     )
                     context.add_tool_result(tool_call.id, result_str)
+                total_tool_calls += len(response.tool_calls)
             else:
                 # No tool calls - send final response
                 response_content = response.content if response else ""
@@ -464,6 +504,13 @@ class Agent:
                 if self.memory:
                     await self._extract_memories(session_id, context, response)
 
+                await self.events.emit("session.response_sent", payload={
+                    "session_id": session_id,
+                    "response_length": len(response_content),
+                    "total_iterations": iteration,
+                    "total_tool_calls": total_tool_calls,
+                })
+
                 break
         else:
             # Max iterations reached - send partial response or error
@@ -471,6 +518,11 @@ class Agent:
                 f"Max iterations ({self.max_iterations}) reached",
                 extra={"session_id": session_id}
             )
+            await self.events.emit("agent.max_iterations", severity="warning", payload={
+                "agent_id": self.agent_id,
+                "session_id": session_id,
+                "iterations": self.max_iterations,
+            })
             final_text = response.content if response and response.content else ""
             if not final_text:
                 final_text = (
@@ -903,6 +955,12 @@ class Agent:
         session_id = message.get("session_id", "unknown")
         source = message.get("source", "webchat")
         error_msg = str(error)
+
+        await self.events.emit("session.error", severity="error", payload={
+            "session_id": session_id,
+            "error": error_msg,
+            "original_message_id": message.get("id"),
+        })
 
         # Log error internally
         await self.messages_writer.write({
