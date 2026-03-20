@@ -8,16 +8,17 @@
 #     OPENAI_API_KEY         - API key for OpenAI
 #     OPENROUTER_API_KEY     - API key for OpenRouter
 #     NVIDIA_API_KEY         - API key for NVIDIA NIM
+#     GEMINI_API_KEY         - API key for Google Gemini
 #     OLLAMA_HOST            - Ollama server URL (default: http://localhost:11434)
 #
 #   Agent:
 #     PULSEBOT_NAME          - Agent display name (default: PulseBot)
-#     PULSEBOT_PROVIDER      - LLM provider: anthropic|openai|openrouter|ollama|nvidia (default: anthropic)
+#     PULSEBOT_PROVIDER      - LLM provider: anthropic|openai|openrouter|ollama|nvidia|gemini (default: anthropic)
 #     PULSEBOT_MODEL         - Model name for the chosen provider
 #
 #   Database (pre-configured for all-in-one; override only if needed):
 #     TIMEPLUS_HOST          - Timeplus/Proton host (default: localhost)
-#     TIMEPLUS_USER          - Database user (default: pulsebot for proton, proton for timeplus)
+#     TIMEPLUS_USER          - Database user (default: pulsebot)
 #     TIMEPLUS_PASSWORD      - Database password (default: empty)
 #
 #   API server:
@@ -26,14 +27,19 @@
 #   Channels:
 #     TELEGRAM_BOT_TOKEN     - Telegram bot token (enables Telegram channel when set)
 #
-#   Search:
-#     SEARCH_PROVIDER        - Search backend: searxng|brave (default: searxng)
-#     SEARXNG_URL            - SearXNG instance URL (default: http://localhost:8080)
-#     BRAVE_API_KEY          - Brave Search API key (required when SEARCH_PROVIDER=brave)
-#
 #   Memory / Embeddings:
-#     EMBEDDING_PROVIDER     - Embedding backend: openai|ollama (default: ollama)
-#     EMBEDDING_MODEL        - Embedding model name
+#     EMBEDDING_PROVIDER     - Embedding backend: local|openai|ollama (default: local)
+#     EMBEDDING_MODEL        - Embedding model name (default: all-MiniLM-L6-v2)
+#
+#   Logging:
+#     LOG_LEVEL              - Log level: DEBUG|INFO|WARNING|ERROR (default: INFO)
+#
+#   Workspace:
+#     WORKSPACE_DIR          - Base directory for workspaces (default: ./workspaces)
+#     WORKSPACE_PORT         - Workspace server port (default: 8002)
+#     WORKSPACE_INTERNAL_KEY - Shared secret for internal API (generate with: python -c "import secrets; print(secrets.token_hex(32))")
+#     AGENT_HOST             - Hostname the API server uses to reach the agent (default: localhost)
+#     API_SERVER_URL         - API server base URL for artifact registration (default: http://localhost:8001)
 
 # ---------------------------------------------------------------------------
 # Agent
@@ -72,6 +78,7 @@ providers:
   openrouter:
     api_key: "${OPENROUTER_API_KEY:-}"
     default_model: "anthropic/claude-sonnet-4-20250514"
+    base_url: "https://openrouter.ai/api/v1"
 
   # Local LLM via Ollama – no API key needed.
   ollama:
@@ -87,7 +94,7 @@ providers:
     timeout_seconds: 120
     enable_thinking: false
 
-  # Gemini API
+  # Google Gemini API
   gemini:
     api_key: "${GEMINI_API_KEY:-}"
     default_model: "gemini-2.5-flash"
@@ -98,7 +105,6 @@ providers:
 # ---------------------------------------------------------------------------
 channels:
   telegram:
-    # Automatically enabled when TELEGRAM_BOT_TOKEN is non-empty.
     enabled: false
     token: "${TELEGRAM_BOT_TOKEN:-}"
     allow_from: []   # Restrict to specific Telegram user IDs; empty = allow all
@@ -121,10 +127,11 @@ skills:
 
   custom: []
 
-  # Directories to scan for agentskills.io skill packages
+  # Directories to scan for agentskills.io / OpenClaw skill packages
   skill_dirs:
     - "/app/skills"
 
+  # Skill names to skip (by name field in SKILL.md frontmatter)
   disabled_skills: []
 
 # ---------------------------------------------------------------------------
@@ -176,21 +183,28 @@ logging:
 # ---------------------------------------------------------------------------
 memory:
   enabled: true
-  similarity_threshold: 0.95
+  similarity_threshold: 0.95  # Duplicate detection sensitivity (0.0–1.0)
 
-  # Embedding backend: "ollama" (local, no API key) or "openai" (cloud)
-  embedding_provider: "${EMBEDDING_PROVIDER:-ollama}"
-  embedding_model: "${EMBEDDING_MODEL:-mxbai-embed-large}"
-  # mxbai-embed-large (1024) | all-minilm (384) | nomic-embed-text (768)  ← Ollama
-  # text-embedding-3-small (1536) | text-embedding-3-large (3072)          ← OpenAI
+  # Embedding backend:
+  # "local"  — fully local via sentence-transformers, no API key needed (default)
+  # "openai" — cloud-based, higher quality, requires OPENAI_API_KEY
+  # "ollama" — local via Ollama server, requires Ollama running
+  embedding_provider: "${EMBEDDING_PROVIDER:-local}"
+  embedding_model: "${EMBEDDING_MODEL:-all-MiniLM-L6-v2}"
+  # local:  all-MiniLM-L6-v2 (384-dim, ~100MB, CPU-friendly)
+  # openai: text-embedding-3-small (1536) | text-embedding-3-large (3072)
+  # ollama: mxbai-embed-large (1024) | all-minilm (384) | nomic-embed-text (768)
 
   # Optional overrides (fall back to providers.*.api_key / host if unset)
   # embedding_api_key: "${OPENAI_API_KEY}"
   # embedding_host: "${OLLAMA_HOST}"
-  # embedding_dimensions: 1024
+  # embedding_dimensions: 384
 
   embedding_timeout_seconds: 30
 
+# ---------------------------------------------------------------------------
+# Workspace
+# ---------------------------------------------------------------------------
 workspace:
   # Root directory for all session/task workspace folders on the agent machine.
   base_dir: ${WORKSPACE_DIR:-./workspaces}
@@ -207,7 +221,50 @@ workspace:
   # Shared secret for /internal/workspace/* endpoints.
   # Generate: python -c "import secrets; print(secrets.token_hex(32))"
   # Must be identical on both agent and API server.
-  internal_api_key: ${WORKSPACE_INTERNAL_KEY:test-workspace-key-12345}
+  internal_api_key: ${WORKSPACE_INTERNAL_KEY:-}
 
   # Seconds to wait after spawning a backend subprocess before health-checking.
   backend_boot_timeout: 3.0
+
+# ---------------------------------------------------------------------------
+# Tool call hooks – intercept tool calls before execution
+# ---------------------------------------------------------------------------
+hooks:
+  tool_call:
+    pre_call: []   # Empty = approve everything (passthrough, <0.1ms overhead)
+    # Example: block shell, allow only file tools
+    # pre_call:
+    #   - type: policy
+    #     config:
+    #       deny_tools: ["run_command"]
+    #       allow_tools: ["read_file", "write_file", "list_directory"]
+    #
+    # Example: external approval webhook
+    # pre_call:
+    #   - type: webhook
+    #     config:
+    #       url: "https://your-approval-service.example.com/hook"
+    #       auth_header: "Bearer ${WEBHOOK_SECRET}"
+    #       timeout: 5.0
+    #       fail_open: true   # approve on network error; false = deny on error
+
+# ---------------------------------------------------------------------------
+# Multi-agent coordination
+# ---------------------------------------------------------------------------
+multi_agent:
+  enabled: true
+  max_agents_per_project: 10      # Hard cap on sub-agents per project
+  max_concurrent_projects: 5      # Max simultaneously active projects
+  default_agent_timeout: 300      # Per-agent task timeout in seconds
+  project_timeout: 1800           # Whole-project wall-clock timeout in seconds
+  checkpoint_interval: 1          # Checkpoint every N processed messages
+
+# ---------------------------------------------------------------------------
+# Observability – structured events emitted to the `events` stream
+# ---------------------------------------------------------------------------
+observability:
+  events:
+    enabled: true
+    min_severity: "info"       # debug|info|warning|error|critical
+    heartbeat_interval: 60     # seconds between heartbeat events; 0 to disable
+    include_debug_state: false # set true only for development (high-volume state events)

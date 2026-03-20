@@ -170,8 +170,8 @@ Vector-based memory for context retention and duplicate detection.
 | :--- | :--- | :--- |
 | `enabled` | `true` | Enable the memory system. |
 | `similarity_threshold`| `0.95` | Sensitivity for finding similar items (0.0 to 1.0). |
-| `embedding_provider` | `openai` | Provider for vector embeddings (`openai` or `ollama`). |
-| `embedding_model` | `text-embedding-3-small` | Model used for generating embeddings. |
+| `embedding_provider` | `local` | Provider for vector embeddings: `local` (default, no API key needed), `openai`, or `ollama`. |
+| `embedding_model` | `all-MiniLM-L6-v2` | Model used for generating embeddings. |
 | `embedding_api_key` | `""` | Override API key for OpenAI embeddings (optional). |
 | `embedding_host` | `""` | Override host for Ollama embeddings (optional). |
 | `embedding_dimensions` | `""` | Dimension of the embeddings (auto-detected if unset). |
