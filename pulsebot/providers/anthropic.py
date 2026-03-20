@@ -52,7 +52,7 @@ class AnthropicProvider(LLMProvider):
         self.default_temperature = default_temperature
         self.default_max_tokens = default_max_tokens
         
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.client = anthropic.AsyncAnthropic(api_key=api_key)
         
         logger.info(f"Initialized Anthropic provider with model: {model}")
     
@@ -95,7 +95,7 @@ class AnthropicProvider(LLMProvider):
         
         # Make request
         try:
-            response = self.client.messages.create(**request)
+            response = await self.client.messages.create(**request)
         except anthropic.APIError as e:
             logger.error(f"Anthropic API error: {e}")
             raise
