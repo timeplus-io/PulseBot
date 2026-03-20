@@ -98,15 +98,18 @@ logging:
 memory:
   similarity_threshold: 0.95  # Adjust duplicate detection sensitivity (0.0-1.0)
   enabled: true
-  
-  # Embedding provider configuration for memory operations
-  # Supports "openai" (cloud) or "ollama" (local)
-  embedding_provider: "openai"  # or "ollama"
-  embedding_model: "text-embedding-3-small"  # OpenAI: text-embedding-3-small (1536), text-embedding-3-large (3072)
-                                              # Ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
-  # embedding_api_key: "${OPENAI_API_KEY}"     # Optional: override OpenAI API key
-  # embedding_host: "${OLLAMA_HOST}"           # Optional: override Ollama host
-  # embedding_dimensions: 1536                 # Optional: auto-detected if not set
+
+  # Embedding provider for vector memory.
+  # "local"  — runs fully local via sentence-transformers, no API key needed (default)
+  # "openai" — cloud-based, higher quality, requires OPENAI_API_KEY
+  # "ollama" — local via Ollama server, requires Ollama running
+  embedding_provider: "local"
+  embedding_model: "all-MiniLM-L6-v2"  # local:  all-MiniLM-L6-v2 (384-dim, ~100MB, CPU-friendly)
+                                        # openai: text-embedding-3-small (1536), text-embedding-3-large (3072)
+                                        # ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
+  # embedding_api_key: "${OPENAI_API_KEY}"   # Optional: override OpenAI API key
+  # embedding_host: "${OLLAMA_HOST}"         # Optional: override Ollama host
+  # embedding_dimensions: 384               # Optional: auto-detected if not set
   embedding_timeout_seconds: 30
 
 workspace:

@@ -6,7 +6,7 @@ PulseBot implements a sophisticated memory system that enables the agent to reme
 
 ### Key Features
 
-- **Vector-Based Semantic Search**: Uses configurable embedding providers (OpenAI or Ollama) to find memories semantically similar to the current query
+- **Vector-Based Semantic Search**: Uses configurable embedding providers (local, OpenAI, or Ollama) to find memories semantically similar to the current query
 - **Hybrid Scoring**: Combines cosine similarity with importance weighting for better relevance
 - **Automatic Memory Extraction**: LLM automatically extracts important facts from conversations
 - **Memory Classification**: Memories are categorized by type (fact, preference, conversation_summary, skill_learned)
@@ -68,14 +68,11 @@ The core class that manages all memory operations.
 ```python
 from pulsebot.timeplus.memory import MemoryManager
 from pulsebot.timeplus.client import TimeplusClient
-from pulsebot.embeddings import OpenAIEmbeddingProvider
+from pulsebot.embeddings import LocalEmbeddingProvider
 
-# Initialize with OpenAI embeddings
+# Initialize with local embeddings (no API key needed)
 client = TimeplusClient(host="localhost", port=8463)
-embedding_provider = OpenAIEmbeddingProvider(
-    api_key="sk-...",
-    model="text-embedding-3-small"
-)
+embedding_provider = LocalEmbeddingProvider(model="all-MiniLM-L6-v2")
 memory = MemoryManager(
     client=client,
     embedding_provider=embedding_provider,
@@ -88,10 +85,22 @@ memory = MemoryManager(
 
 PulseBot supports multiple embedding providers:
 
+#### Local Embedding Provider (Default)
+
+Uses [sentence-transformers](https://www.sbert.net/) to run embeddings fully locally — no API key or external service required. The model (~100 MB) is downloaded automatically on first use.
+
+- `all-MiniLM-L6-v2` (384 dimensions) - **Default**, fast and CPU-friendly
+
+```python
+from pulsebot.embeddings import LocalEmbeddingProvider
+
+provider = LocalEmbeddingProvider(model="all-MiniLM-L6-v2")
+```
+
 #### OpenAI Embedding Provider
 
 Uses OpenAI's embedding API. Supports models:
-- `text-embedding-3-small` (1536 dimensions) - Default
+- `text-embedding-3-small` (1536 dimensions)
 - `text-embedding-3-large` (3072 dimensions)
 - `text-embedding-ada-002` (1536 dimensions)
 
@@ -438,7 +447,7 @@ Do NOT extract:
 ### Environment Variables
 
 ```bash
-# For OpenAI embeddings
+# For OpenAI embeddings (not needed when using local provider)
 OPENAI_API_KEY=sk-...
 
 # For Ollama embeddings
@@ -447,21 +456,25 @@ OLLAMA_HOST=http://localhost:11434
 
 ### Config YAML
 
-Memory system and embedding providers are now configured together in the memory section:
+Memory system and embedding providers are configured together in the memory section:
 
 ```yaml
 # Memory system configuration (includes embedding settings)
 memory:
   similarity_threshold: 0.95  # Adjust duplicate detection sensitivity (0.0-1.0)
   enabled: true
-  
-  # Embedding provider configuration for memory operations
-  embedding_provider: "openai"  # or "ollama"
-  embedding_model: "text-embedding-3-small"  # OpenAI: text-embedding-3-small (1536), text-embedding-3-large (3072)
-                                              # Ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
-  # embedding_api_key: "${OPENAI_API_KEY}"     # Optional: override OpenAI API key
-  # embedding_host: "${OLLAMA_HOST}"           # Optional: override Ollama host
-  # embedding_dimensions: 1536                 # Optional: auto-detected if not set
+
+  # Embedding provider:
+  # "local"  — fully local via sentence-transformers, no API key needed (default)
+  # "openai" — cloud-based, higher quality, requires OPENAI_API_KEY
+  # "ollama" — local via Ollama server, requires Ollama running
+  embedding_provider: "local"
+  embedding_model: "all-MiniLM-L6-v2"  # local:  all-MiniLM-L6-v2 (384-dim, ~100MB, CPU-friendly)
+                                        # openai: text-embedding-3-small (1536), text-embedding-3-large (3072)
+                                        # ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
+  # embedding_api_key: "${OPENAI_API_KEY}"  # Optional: override OpenAI API key
+  # embedding_host: "${OLLAMA_HOST}"        # Optional: override Ollama host
+  # embedding_dimensions: 384              # Optional: auto-detected if not set
   embedding_timeout_seconds: 30
 
 # LLM providers (separate from memory/embedding)
@@ -469,7 +482,7 @@ providers:
   openai:
     api_key: "${OPENAI_API_KEY}"
     default_model: "gpt-4o"
-  
+
   ollama:
     enabled: true
     host: "${OLLAMA_HOST:-http://localhost:11434}"
@@ -480,7 +493,7 @@ providers:
 
 - **`similarity_threshold`**: Controls how strict duplicate detection is (0.0-1.0)
   - `0.95` (Default): Very strict - only obvious duplicates skipped
-  - `0.90`: Moderate - similar concepts considered duplicates  
+  - `0.90`: Moderate - similar concepts considered duplicates
   - `0.85`: Loose - broader concept matching
   - `0.80`: Very loose - catches most related memories
 
@@ -488,7 +501,7 @@ providers:
 
 **Embedding Configuration Options:**
 
-- **`embedding_provider`**: `"openai"` or `"ollama"`
+- **`embedding_provider`**: `"local"` (default), `"openai"`, or `"ollama"`
 - **`embedding_model`**: Model name for embeddings
 - **`embedding_api_key`**: Optional override for OpenAI API key
 - **`embedding_host`**: Optional override for Ollama host
@@ -501,14 +514,16 @@ providers:
 from pulsebot.timeplus.memory import MemoryManager
 from pulsebot.timeplus.client import TimeplusClient
 from pulsebot.config import load_config
-from pulsebot.embeddings import OpenAIEmbeddingProvider, OllamaEmbeddingProvider
+from pulsebot.embeddings import LocalEmbeddingProvider, OpenAIEmbeddingProvider, OllamaEmbeddingProvider
 
 config = load_config("config.yaml")
 client = TimeplusClient.from_config(config.timeplus)
 
 # Initialize embedding provider based on memory configuration
 memory_cfg = config.memory
-if memory_cfg.embedding_provider == "openai":
+if memory_cfg.embedding_provider == "local":
+    embedding_provider = LocalEmbeddingProvider(model=memory_cfg.embedding_model)
+elif memory_cfg.embedding_provider == "openai":
     embedding_provider = OpenAIEmbeddingProvider(
         api_key=memory_cfg.embedding_api_key or config.providers.openai.api_key,
         model=memory_cfg.embedding_model,
@@ -544,13 +559,13 @@ The memory system can be completely disabled or configured via `config.yaml`:
 memory:
   similarity_threshold: 0.95  # Duplicate detection sensitivity
   enabled: true               # Enable/disable memory system
-  
-  # Embedding provider configuration
-  embedding_provider: "openai"  # or "ollama"
-  embedding_model: "text-embedding-3-small"
-  # embedding_api_key: "${OPENAI_API_KEY}"  # Optional override
-  # embedding_host: "${OLLAMA_HOST}"        # Optional override
-  # embedding_dimensions: 1536              # Optional manual dimensions
+
+  # Embedding provider: "local" (default), "openai", or "ollama"
+  embedding_provider: "local"
+  embedding_model: "all-MiniLM-L6-v2"
+  # embedding_api_key: "${OPENAI_API_KEY}"  # Optional override (OpenAI)
+  # embedding_host: "${OLLAMA_HOST}"        # Optional override (Ollama)
+  # embedding_dimensions: 384              # Optional manual dimensions
   embedding_timeout_seconds: 30
 ```
 
@@ -700,10 +715,11 @@ proton> SELECT memory_type, category, content, importance
 
 ### "Memory features not available"
 
-- **Cause**: No embedding provider configured or provider unavailable
-- **Solution**: 
-  - For OpenAI: Set `OPENAI_API_KEY` environment variable
-  - For Ollama: Ensure Ollama is running and configured in `config.yaml`
+- **Cause**: Embedding provider failed to initialize or is unavailable
+- **Solution**:
+  - For `local` (default): Ensure `sentence-transformers` is installed (`pip install sentence-transformers`). The model downloads automatically on first use (~100 MB).
+  - For `openai`: Set `OPENAI_API_KEY` environment variable
+  - For `ollama`: Ensure Ollama is running and configured in `config.yaml`
 
 ### Memories not being retrieved
 
@@ -840,15 +856,16 @@ class CustomEmbeddingProvider(EmbeddingProvider):
 
 When switching embedding providers, be aware of dimension differences:
 
-| Provider | Model | Dimensions |
-|----------|-------|------------|
-| OpenAI | text-embedding-3-small | 1536 |
-| OpenAI | text-embedding-3-large | 3072 |
-| OpenAI | text-embedding-ada-002 | 1536 |
-| Ollama | mxbai-embed-large | 1024 |
-| Ollama | all-minilm | 384 |
-| Ollama | nomic-embed-text | 768 |
-| Ollama | bge-large | 1024 |
+| Provider | Model | Dimensions | Notes |
+|----------|-------|------------|-------|
+| Local | all-MiniLM-L6-v2 | 384 | **Default** — no API key, ~100 MB download |
+| OpenAI | text-embedding-3-small | 1536 | Cloud, requires `OPENAI_API_KEY` |
+| OpenAI | text-embedding-3-large | 3072 | Cloud, requires `OPENAI_API_KEY` |
+| OpenAI | text-embedding-ada-002 | 1536 | Cloud, requires `OPENAI_API_KEY` |
+| Ollama | mxbai-embed-large | 1024 | Local via Ollama server |
+| Ollama | all-minilm | 384 | Local via Ollama server |
+| Ollama | nomic-embed-text | 768 | Local via Ollama server |
+| Ollama | bge-large | 1024 | Local via Ollama server |
 
 **Note**: Mixing embeddings with different dimensions will cause errors. When switching providers, you may need to clear existing memories or ensure all stored memories use the same embedding model.
 
@@ -863,16 +880,17 @@ PulseBot's memory system provides:
 5. **Stream-Native**: All data flows through Timeplus streams
 6. **Soft Deletes**: Append-only with deletion support
 7. **Flexible Queries**: Filter by type, category, importance, or session
-8. **Multiple Providers**: Support for OpenAI (cloud) and Ollama (local) embeddings
-9. **Auto-Detection**: Automatically detects embedding dimensions for Ollama models
+8. **Multiple Providers**: Local (default, zero-config), OpenAI (cloud), and Ollama (local server) embeddings
+9. **Auto-Detection**: Automatically detects embedding dimensions for Ollama and local models
 10. **Connection Safety**: Uses separate clients to prevent query conflicts
 11. **Intelligent Deduplication**: Automatic semantic deduplication prevents memory explosion
 12. **Pure Similarity Focus**: Uses cosine similarity (not hybrid) for content-focused duplicate detection
 13. **Near-Duplicate Monitoring**: Logs similar memories for threshold optimization
 14. **Configurable Sensitivity**: Adjustable similarity thresholds for precise control
 
-To enable memory, configure an embedding provider in `config.yaml`:
-- **OpenAI**: Set `OPENAI_API_KEY` environment variable
-- **Ollama**: Configure `providers.embedding.provider = "ollama"` with appropriate host and model
+Memory is enabled by default using the local `all-MiniLM-L6-v2` model (no API key required). To switch providers, set `memory.embedding_provider` in `config.yaml`:
+- **Local** (default): No setup needed — `sentence-transformers` downloads the model automatically (~100 MB)
+- **OpenAI**: Set `OPENAI_API_KEY` and `embedding_provider: "openai"`
+- **Ollama**: Ensure Ollama is running and set `embedding_provider: "ollama"` with appropriate host and model
 
 The agent will automatically remember and recall relevant information to provide personalized responses, while preventing duplicate storage through advanced semantic deduplication that focuses on content similarity rather than importance-weighted retrieval scores.
