@@ -7,6 +7,42 @@ from pulsebot.core.agent import Agent
 from pulsebot.timeplus.event_writer import EventWriter
 
 
+@pytest.mark.asyncio
+async def test_subagent_has_events_writer():
+    """SubAgent must have an events attribute after construction."""
+    from pulsebot.agents.sub_agent import SubAgent
+    from pulsebot.agents.models import SubAgentSpec
+
+    spec = SubAgentSpec(
+        name="worker-1",
+        project_id="proj-1",
+        task_description="You are a worker.",
+        target_agents=[],
+        role="worker",
+        skills=[],
+    )
+    tp = MagicMock()
+    tp.host = "localhost"
+    tp.port = 8463
+    tp.username = "default"
+    tp.password = ""
+    llm = MagicMock()
+    llm.model = "test"
+    llm.provider_name = "test"
+    skills = MagicMock()
+    skills.get_tools = MagicMock(return_value=[])
+    executor = MagicMock()
+    config = MagicMock()
+
+    with patch("pulsebot.timeplus.client.TimeplusClient"):
+        sub = SubAgent(spec=spec, timeplus=tp, llm_provider=llm,
+                       skill_loader=skills, executor=executor, config=config)
+
+    assert hasattr(sub, "events")
+    from pulsebot.timeplus.event_writer import EventWriter
+    assert isinstance(sub.events, EventWriter)
+
+
 def _make_agent(min_event_severity="debug"):
     """Build a minimal Agent with mocked dependencies."""
     tp = MagicMock()

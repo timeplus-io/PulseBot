@@ -7,7 +7,8 @@ import datetime
 import json
 from typing import TYPE_CHECKING, Any
 
-from pulsebot.timeplus.streams import StreamReader
+from pulsebot.timeplus.event_writer import EventWriter
+from pulsebot.timeplus.streams import StreamReader, StreamWriter
 from pulsebot.utils import get_logger
 
 if TYPE_CHECKING:
@@ -75,6 +76,11 @@ class SubAgent:
         self._checkpoint_sn: int = spec.checkpoint_sn
         self._running = False
         self._batch_client = batch_client
+        self.events = EventWriter(
+            StreamWriter(batch_client, "events"),
+            default_source=f"subagent:{spec.agent_id}",
+            default_tags=[f"agent:{spec.agent_id}", f"project:{spec.project_id}"],
+        )
         # Record creation time so the kanban stream query starts from here,
         # capturing tasks dispatched during the startup race window.
         self._start_time = datetime.datetime.utcnow()
@@ -132,47 +138,64 @@ class SubAgent:
     async def run(self) -> None:
         """Main event loop — pull tasks from kanban, process, push results."""
         self._running = True
+        await self.events.emit("subagent.started", payload={
+            "agent_id": self.agent_id,
+            "project_id": self.project_id,
+            "role": self.spec.role,
+            "model": self.llm.model,
+        })
+        try:
+            if self._checkpoint_sn > 0:
+                # Resume from last checkpoint
+                sn_filter = f"AND _tp_sn > {self._checkpoint_sn}"
+                seek_to = "latest"
+            else:
+                # Use creation time so tasks dispatched during the race window
+                # between ManagerAgent.run() dispatch and this query start are captured.
+                sn_filter = ""
+                seek_to = self._start_time.strftime('%Y-%m-%d %H:%M:%S')
 
-        if self._checkpoint_sn > 0:
-            # Resume from last checkpoint
-            sn_filter = f"AND _tp_sn > {self._checkpoint_sn}"
-            seek_to = "latest"
-        else:
-            # Use creation time so tasks dispatched during the race window
-            # between ManagerAgent.run() dispatch and this query start are captured.
-            sn_filter = ""
-            seek_to = self._start_time.strftime('%Y-%m-%d %H:%M:%S')
+            query = f"""
+            SELECT *, _tp_sn FROM pulsebot.kanban
+            WHERE target_id = '{self.agent_id}'
+            AND project_id = '{self.project_id}'
+            AND msg_type IN ('task', 'control')
+            {sn_filter}
+            SETTINGS seek_to='{seek_to}'
+            """
 
-        query = f"""
-        SELECT *, _tp_sn FROM pulsebot.kanban
-        WHERE target_id = '{self.agent_id}'
-        AND project_id = '{self.project_id}'
-        AND msg_type IN ('task', 'control')
-        {sn_filter}
-        SETTINGS seek_to='{seek_to}'
-        """
+            logger.info(f"SubAgent {self.agent_id} starting kanban loop")
 
-        logger.info(f"SubAgent {self.agent_id} starting kanban loop")
+            async for message in self.kanban_reader.stream(query):
+                if not self._running:
+                    break
 
-        async for message in self.kanban_reader.stream(query):
-            if not self._running:
-                break
+                msg_type = message.get("msg_type", "")
+                try:
+                    if msg_type == "control":
+                        await self._handle_control(message)
+                    elif msg_type == "task":
+                        await self._process_task(message)
+                except Exception as e:
+                    logger.error(
+                        f"SubAgent {self.agent_id} error processing message: {e}",
+                        exc_info=True,
+                    )
+                    await self._write_error(message, str(e))
 
-            msg_type = message.get("msg_type", "")
-            try:
-                if msg_type == "control":
-                    await self._handle_control(message)
-                elif msg_type == "task":
-                    await self._process_task(message)
-            except Exception as e:
-                logger.error(
-                    f"SubAgent {self.agent_id} error processing message: {e}",
-                    exc_info=True,
-                )
-                await self._write_error(message, str(e))
-
-            self._checkpoint_sn = message.get("_tp_sn", self._checkpoint_sn)
-            await self._persist_checkpoint()
+                self._checkpoint_sn = message.get("_tp_sn", self._checkpoint_sn)
+                await self._persist_checkpoint()
+        except Exception as e:
+            await self.events.emit_error("subagent.error", e, payload={
+                "agent_id": self.agent_id,
+                "project_id": self.project_id,
+            })
+            raise
+        finally:
+            await self.events.emit("subagent.stopped", payload={
+                "agent_id": self.agent_id,
+                "project_id": self.project_id,
+            })
 
     async def _handle_control(self, message: dict[str, Any]) -> None:
         """Handle control messages (cancel, pause, resume)."""
