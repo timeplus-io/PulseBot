@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from proton_driver import client
@@ -11,6 +12,35 @@ from pulsebot.utils import get_logger
 
 if TYPE_CHECKING:
     from pulsebot.config import TimeplusConfig
+
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_.]*$')
+
+
+def escape_sql_str(value: str) -> str:
+    """Escape a string value for safe interpolation into a SQL string literal.
+
+    Replaces single quotes with two single quotes (SQL standard escaping).
+    Use whenever interpolating user-controlled strings into SQL WHERE clauses.
+
+    Example:
+        WHERE session_id = '{escape_sql_str(session_id)}'
+    """
+    return value.replace("'", "''")
+
+
+def validate_sql_identifier(name: str) -> str:
+    """Validate a SQL identifier (table/stream name) against injection.
+
+    Only allows alphanumeric characters, underscores, and dots (for schema.table).
+    Raises ValueError if the name contains invalid characters.
+
+    Example:
+        FROM table(pulsebot.{validate_sql_identifier(stream_name)})
+    """
+    if not _SAFE_IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return name
+
 
 logger = get_logger(__name__)
 
@@ -67,7 +97,7 @@ class TimeplusClient:
         )
     
     @property
-    def _get_client(self) -> client.Client:
+    def _client_conn(self) -> client.Client:
         """Get or create client (lazy initialization)."""
         if self._client is None:
             self._client = client.Client(
@@ -90,7 +120,7 @@ class TimeplusClient:
             Command result (usually None for DDL)
         """
         logger.debug("Executing command", extra={"query": query[:100]})
-        return self._get_client.execute(query)
+        return self._client_conn.execute(query)
     
     def query(self, query: str) -> list[dict[str, Any]]:
         """Execute a historical query and return results as list of dicts.
@@ -106,7 +136,7 @@ class TimeplusClient:
         logger.debug("Executing query", extra={"query": query[:100]})
 
         # Use execute_iter with column types to get column names
-        result_iter = self._get_client.execute_iter(query, with_column_types=True)
+        result_iter = self._client_conn.execute_iter(query, with_column_types=True)
 
         # First item contains column metadata: [(name, type), ...]
         columns_with_types = next(result_iter)
@@ -149,7 +179,7 @@ class TimeplusClient:
         placeholders = ", ".join(column_names)
         query = f"INSERT INTO {stream} ({placeholders}) VALUES"
         
-        self._get_client.execute(query, rows)
+        self._client_conn.execute(query, rows)
     
     async def stream_query(self, query: str) -> AsyncIterator[dict[str, Any]]:
         """Execute a streaming query and yield results as they arrive.
@@ -167,7 +197,7 @@ class TimeplusClient:
         # Run the blocking stream in a thread pool
         def _stream_sync():
             # Use with_column_types=True to get column metadata
-            result = self._get_client.execute_iter(
+            result = self._client_conn.execute_iter(
                 query,
                 with_column_types=True
             )

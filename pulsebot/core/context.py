@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pulsebot.core.prompts import build_system_prompt
+from pulsebot.timeplus.client import escape_sql_str
 from pulsebot.utils import get_logger, safe_json_dumps, truncate_string
 
 if TYPE_CHECKING:
@@ -207,7 +208,7 @@ class ContextBuilder:
         try:
             query = f"""
             SELECT * FROM table(pulsebot.messages)
-            WHERE session_id = '{session_id}'
+            WHERE session_id = '{escape_sql_str(session_id)}'
             AND message_type IN ('user_input', 'agent_response', 'tool_call', 'tool_result')
             ORDER BY timestamp DESC
             LIMIT {limit}

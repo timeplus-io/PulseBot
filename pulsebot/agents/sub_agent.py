@@ -7,6 +7,7 @@ import datetime
 import json
 from typing import TYPE_CHECKING, Any
 
+from pulsebot.timeplus.client import escape_sql_str
 from pulsebot.timeplus.event_writer import EventWriter
 from pulsebot.timeplus.streams import StreamReader, StreamWriter
 from pulsebot.utils import get_logger
@@ -157,8 +158,8 @@ class SubAgent:
 
             query = f"""
             SELECT *, _tp_sn FROM pulsebot.kanban
-            WHERE target_id = '{self.agent_id}'
-            AND project_id = '{self.project_id}'
+            WHERE target_id = '{escape_sql_str(self.agent_id)}'
+            AND project_id = '{escape_sql_str(self.project_id)}'
             AND msg_type IN ('task', 'control')
             {sn_filter}
             SETTINGS seek_to='{seek_to}'
@@ -311,8 +312,8 @@ class SubAgent:
         """Load last checkpoint from kanban_agents stream."""
         rows = self._batch_client.query(f"""
             SELECT checkpoint_sn FROM table(pulsebot.kanban_agents)
-            WHERE agent_id = '{self.agent_id}'
-            AND project_id = '{self.project_id}'
+            WHERE agent_id = '{escape_sql_str(self.agent_id)}'
+            AND project_id = '{escape_sql_str(self.project_id)}'
             ORDER BY timestamp DESC LIMIT 1
         """)
         return rows[0]["checkpoint_sn"] if rows else 0

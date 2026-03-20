@@ -7,6 +7,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from pulsebot.agents.sub_agent import SubAgent
+from pulsebot.timeplus.client import escape_sql_str
 from pulsebot.timeplus.event_writer import EventWriter
 from pulsebot.timeplus.streams import StreamWriter
 from pulsebot.utils import get_logger
@@ -80,8 +81,8 @@ class ManagerAgent(SubAgent):
             seek_to = self._start_time.strftime('%Y-%m-%d %H:%M:%S')
             query = f"""
             SELECT *, _tp_sn FROM pulsebot.kanban
-            WHERE target_id = '{self.agent_id}'
-            AND project_id = '{self.project_id}'
+            WHERE target_id = '{escape_sql_str(self.agent_id)}'
+            AND project_id = '{escape_sql_str(self.project_id)}'
             AND msg_type IN ('result', 'error', 'status')
             SETTINGS seek_to='{seek_to}'
             """
