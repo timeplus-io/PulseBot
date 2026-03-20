@@ -12,6 +12,7 @@ from pulsebot.utils import get_logger
 
 if TYPE_CHECKING:
     from pulsebot.config import SkillsConfig
+    from pulsebot.timeplus.event_writer import EventWriter
 
 logger = get_logger(__name__)
 
@@ -50,6 +51,8 @@ class SkillLoader:
         # Stored for hot-reload
         self._skill_dirs: list[str] = []
         self._disabled_skills: list[str] = []
+        self._builtin_names: set[str] = set()
+        self._events: "EventWriter | None" = None
 
     @classmethod
     def from_config(cls, config: SkillsConfig, **skill_configs: dict[str, Any]) -> SkillLoader:
@@ -145,7 +148,29 @@ class SkillLoader:
             return False
         before = set(self._external_skills.keys())
         self._discover_external_skills(self._skill_dirs, self._disabled_skills)
-        return set(self._external_skills.keys()) != before
+        changed = set(self._external_skills.keys()) != before
+        if self._events and changed:
+            import asyncio
+            asyncio.create_task(self._events.emit("skill.hot_reloaded", payload={
+                "external_skill_count": len(self._external_skills),
+            }))
+        return changed
+
+    async def set_events(self, events: "EventWriter") -> None:
+        """Inject the EventWriter and retroactively emit skill.loaded for all loaded skills.
+
+        Called from Agent.run() (inside async context) after the event loop is running.
+        """
+        self._events = events
+        # Emit skill.loaded for skills that were already loaded synchronously
+        for skill_name, skill_instance in self._skills.items():
+            tools = skill_instance.get_tools()
+            await events.emit("skill.loaded", payload={
+                "skill_name": skill_name,
+                "tool_count": len(tools),
+                "tool_names": [t.name for t in tools],
+                "source": "builtin" if skill_name in self._builtin_names else "external",
+            })
 
     def load_builtin(self, name: str, **config: Any) -> None:
         """Load a built-in skill by name.
@@ -159,6 +184,7 @@ class SkillLoader:
 
         module_path = BUILTIN_SKILLS[name]
         self._load_skill(name, module_path, config)
+        self._builtin_names.add(name)
 
     def load_custom(self, module_path: str, **config: Any) -> None:
         """Load a custom skill from a module path.

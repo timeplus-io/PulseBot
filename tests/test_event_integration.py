@@ -24,6 +24,7 @@ def _make_agent(min_event_severity="debug"):
     skills.get_tools = MagicMock(return_value=[])
     skills.format_skills_for_prompt = MagicMock(return_value="")
     skills._skill_dirs = []
+    skills.set_events = AsyncMock()
 
     # TimeplusClient is imported inside Agent.__init__ so we patch it at its
     # definition site (pulsebot.timeplus.client) and also at the local import

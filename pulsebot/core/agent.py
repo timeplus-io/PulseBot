@@ -200,6 +200,10 @@ class Agent:
             "skills_count": len(self.skills.get_tools()),
         })
 
+        if self._pending_skill_events:
+            await self.skills.set_events(self.events)
+            self._pending_skill_events = False
+
         query = f"""
         SELECT * FROM pulsebot.messages
         WHERE target = 'agent'
