@@ -41,6 +41,15 @@ RUN python3.12 -m pip install --no-cache-dir \
     --extra-index-url https://d.timeplus.com/simple/ \
     pulsebot==${PULSEBOT_VERSION}
 
+# Build the web UI and copy it into the installed package location.
+# vite outputs to ../pulsebot/web relative to pulsebot_ui/, so from
+# /tmp/pulsebot_ui the output lands at /tmp/pulsebot/web/.
+COPY pulsebot_ui/ /tmp/pulsebot_ui/
+RUN cd /tmp/pulsebot_ui && npm install && npm run build \
+    && SITE=$(python3.12 -c "import pulsebot, os; print(os.path.dirname(pulsebot.__file__))") \
+    && cp -r /tmp/pulsebot/web "${SITE}/web" \
+    && rm -rf /tmp/pulsebot_ui /tmp/pulsebot
+
 # Copy config template and scripts
 COPY docker/config.yaml ./config.yaml
 COPY docker/start-all-in-one.sh /usr/local/bin/
