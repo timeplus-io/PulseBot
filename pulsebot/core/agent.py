@@ -219,14 +219,12 @@ class Agent:
             await self.events.emit_error("agent.crash", e, payload={"agent_id": self.agent_id})
             raise
         finally:
-            import datetime as _dt
-            from datetime import timezone as _tz
             self._running = False
             if skill_watcher:
                 skill_watcher.cancel()
             await self.events.emit("agent.stopped", payload={
                 "agent_id": self.agent_id,
-                "uptime_seconds": (_dt.datetime.now(_tz.utc) - self._start_time.replace(tzinfo=_tz.utc)).total_seconds(),
+                "uptime_seconds": (datetime.datetime.now(datetime.timezone.utc) - self._start_time.replace(tzinfo=datetime.timezone.utc)).total_seconds(),
             })
             logger.info(f"Agent {self.agent_id} stopped")
 
