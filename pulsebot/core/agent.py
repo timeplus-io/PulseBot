@@ -806,6 +806,10 @@ class Agent:
             "Memory extraction started",
             extra={"session_id": session_id, "message_count": message_count}
         )
+        await self.events.emit("memory.extraction_started", payload={
+            "session_id": session_id,
+            "message_count": message_count,
+        })
 
         extraction_prompt = build_memory_extraction_prompt()
 
@@ -879,6 +883,10 @@ class Agent:
                         "content": truncate_string(response_content, 500)
                     }
                 )
+                await self.events.emit("memory.extraction_failed", severity="warning", payload={
+                    "session_id": session_id,
+                    "error": str(e),
+                })
                 
                 # Try to extract JSON from within text (LLM sometimes adds explanatory text)
                 import re
@@ -937,6 +945,11 @@ class Agent:
                     )
                     stored_count += 1
 
+            await self.events.emit("memory.extraction_completed", payload={
+                "session_id": session_id,
+                "extracted_count": memory_count,
+                "stored_count": stored_count,
+            })
             logger.info(
                 f"Memory extraction complete - stored {stored_count}/{memory_count} memories",
                 extra={"session_id": session_id}
@@ -944,6 +957,10 @@ class Agent:
 
         except Exception as e:
             logger.error(f"Memory extraction failed: {e}", exc_info=True)
+            await self.events.emit("memory.extraction_failed", severity="warning", payload={
+                "session_id": session_id,
+                "error": str(e),
+            })
 
     async def _log_error(self, message: dict[str, Any], error: Exception) -> None:
         """Log an error and send error response to client.
