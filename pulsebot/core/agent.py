@@ -131,7 +131,6 @@ class Agent:
             model_info=model_info,
             skills_index=skill_loader.format_skills_for_prompt(),
         )
-        self.executor = executor if executor is not None else ToolExecutor(skill_loader)
 
         # Stream reader uses main client for streaming query
         self.messages_reader = StreamReader(timeplus, "messages")
@@ -147,6 +146,11 @@ class Agent:
             default_source=f"agent:{agent_id}",
             default_tags=[f"agent:{agent_id}"],
             min_severity=min_event_severity,
+        )
+
+        # Executor must be created after self.events so it can receive the EventWriter
+        self.executor = executor if executor is not None else ToolExecutor(
+            skill_loader, events=self.events
         )
         self._pending_skill_events = True  # skills.set_events() called in run() after event loop starts
 

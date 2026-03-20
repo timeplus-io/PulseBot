@@ -9,6 +9,7 @@ from pulsebot.utils import get_logger
 if TYPE_CHECKING:
     from pulsebot.hooks.base import ToolCallHook
     from pulsebot.skills.loader import SkillLoader
+    from pulsebot.timeplus.event_writer import EventWriter
 
 logger = get_logger(__name__)
 
@@ -24,15 +25,22 @@ class ToolExecutor:
         >>> result = await executor.execute("shell", {"command": "ls -l"})
     """
 
-    def __init__(self, skill_loader: SkillLoader, hooks: list[ToolCallHook] | None = None):
+    def __init__(
+        self,
+        skill_loader: "SkillLoader",
+        hooks: "list[ToolCallHook] | None" = None,
+        events: "EventWriter | None" = None,
+    ):
         """Initialize tool executor.
 
         Args:
             skill_loader: Loaded skills manager
             hooks: Optional list of ToolCallHook instances for pre/post execution
+            events: Optional EventWriter for emitting tool/hook events
         """
         self.skills = skill_loader
         self._hooks: list[ToolCallHook] = hooks if hooks is not None else []
+        self._events = events
         self._execution_count = 0
 
     async def execute(
@@ -78,6 +86,12 @@ class ToolExecutor:
                         "error": "Invalid tool call: tool name is empty and could not be inferred.",
                     }
 
+            await self._emit("tool.call_started", severity="debug", payload={
+                "session_id": session_id,
+                "tool_name": tool_name,
+                "execution_id": self._execution_count,
+            })
+
             # Run pre-call hooks; allow modification or denial of the call
             effective_arguments = dict(arguments)
             for hook in self._hooks:
@@ -88,6 +102,12 @@ class ToolExecutor:
                         "Pre-call hook raised an exception (approving by default)",
                         extra={"hook": type(hook).__name__, "tool": tool_name, "error": str(hook_exc)},
                     )
+                    await self._emit("tool.hook_error", severity="warning", payload={
+                        "tool_name": tool_name,
+                        "hook_name": type(hook).__name__,
+                        "error": str(hook_exc),
+                        "session_id": session_id,
+                    })
                     continue
                 if verdict.verdict == "deny":
                     reason = verdict.reasoning or "no reason given"
@@ -95,12 +115,24 @@ class ToolExecutor:
                         "Tool call denied by hook",
                         extra={"tool": tool_name, "hook": type(hook).__name__, "reason": reason},
                     )
+                    await self._emit("tool.hook_denied", severity="warning", payload={
+                        "tool_name": tool_name,
+                        "hook_name": type(hook).__name__,
+                        "reason": reason,
+                        "session_id": session_id,
+                    })
                     return {
                         "success": False,
                         "output": None,
                         "error": f"Tool call denied by {type(hook).__name__}: {reason}",
                     }
                 if verdict.verdict == "modify" and verdict.modified_arguments is not None:
+                    await self._emit("tool.hook_modified", payload={
+                        "tool_name": tool_name,
+                        "hook_name": type(hook).__name__,
+                        "modified_keys": list(verdict.modified_arguments.keys()),
+                        "session_id": session_id,
+                    })
                     effective_arguments = verdict.modified_arguments
 
             # Find the skill that provides this tool
@@ -131,6 +163,12 @@ class ToolExecutor:
                 "error": result.error,
             }
 
+            await self._emit("tool.call_completed", payload={
+                "session_id": session_id,
+                "tool_name": tool_name,
+                "success": result.success,
+            })
+
             # Run post-call hooks; errors are logged but do not affect the result
             for hook in self._hooks:
                 try:
@@ -152,6 +190,12 @@ class ToolExecutor:
                     "execution_id": self._execution_count,
                 }
             )
+
+            await self._emit("tool.call_failed", severity="error", payload={
+                "session_id": session_id,
+                "tool_name": tool_name,
+                "error": str(e),
+            })
 
             return {
                 "success": False,
@@ -224,6 +268,17 @@ class ToolExecutor:
             return possible_tools[0]
 
         return None
+
+    async def _emit(
+        self,
+        event_type: str,
+        *,
+        severity: str = "info",
+        payload: dict | None = None,
+    ) -> None:
+        """Emit an event if EventWriter is configured."""
+        if self._events:
+            await self._events.emit(event_type, severity=severity, payload=payload)
 
     @property
     def execution_count(self) -> int:

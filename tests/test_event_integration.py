@@ -71,3 +71,51 @@ async def test_agent_emits_agent_ready_and_stopped():
     event_types = [c["event_type"] for c in calls]
     assert "agent.ready" in event_types
     assert "agent.stopped" in event_types
+
+
+@pytest.mark.asyncio
+async def test_executor_emits_tool_events():
+    from pulsebot.core.executor import ToolExecutor
+
+    mock_sw = MagicMock()
+    mock_sw.write = AsyncMock()
+    events = EventWriter(mock_sw, default_source="test")
+
+    skills = MagicMock()
+    skill = MagicMock()
+    skill.execute = AsyncMock(return_value=MagicMock(success=True, output="ok", error=None))
+    skills.get_skill_for_tool = MagicMock(return_value=skill)
+    skills.get_tool_definitions = MagicMock(return_value=[])
+
+    executor = ToolExecutor(skills, events=events)
+    await executor.execute("test_tool", {"arg": "val"}, session_id="sess1")
+
+    calls = [c[0][0] for c in mock_sw.write.call_args_list]
+    event_types = [c["event_type"] for c in calls]
+    assert "tool.call_started" in event_types
+    assert "tool.call_completed" in event_types
+
+
+@pytest.mark.asyncio
+async def test_executor_emits_hook_denied_event():
+    from pulsebot.core.executor import ToolExecutor
+    from pulsebot.hooks.base import HookVerdict, ToolCallHook
+
+    mock_sw = MagicMock()
+    mock_sw.write = AsyncMock()
+    events = EventWriter(mock_sw, default_source="test")
+
+    class DenyHook(ToolCallHook):
+        async def pre_call(self, tool_name, arguments, session_id=""):
+            return HookVerdict(verdict="deny", reasoning="blocked")
+        async def post_call(self, tool_name, arguments, result, session_id=""):
+            pass
+
+    skills = MagicMock()
+    skills.get_tool_definitions = MagicMock(return_value=[])
+    executor = ToolExecutor(skills, hooks=[DenyHook()], events=events)
+    await executor.execute("shell", {}, session_id="sess1")
+
+    calls = [c[0][0] for c in mock_sw.write.call_args_list]
+    event_types = [c["event_type"] for c in calls]
+    assert "tool.hook_denied" in event_types
