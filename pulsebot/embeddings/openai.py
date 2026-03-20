@@ -79,8 +79,8 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         """Get or create OpenAI client (lazy initialization)."""
         if self._client is None:
             try:
-                from openai import OpenAI
-                self._client = OpenAI(api_key=self.api_key)
+                from openai import AsyncOpenAI
+                self._client = AsyncOpenAI(api_key=self.api_key)
             except ImportError:
                 raise ImportError("OpenAI package not installed. Run: pip install openai")
         return self._client
@@ -106,7 +106,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             raise ValueError("OpenAI API key not configured")
 
         try:
-            response = self.client.embeddings.create(
+            response = await self.client.embeddings.create(
                 model=self.model,
                 input=text,
             )
@@ -131,7 +131,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             return []
 
         try:
-            response = self.client.embeddings.create(
+            response = await self.client.embeddings.create(
                 model=self.model,
                 input=texts,
             )

@@ -52,4 +52,4 @@ class WorkspaceConfig(BaseSettings):
     def agent_base_url(self) -> str:
         host = os.environ.get("AGENT_HOST") or self.agent_host
         port = os.environ.get("WORKSPACE_PORT") or str(self.workspace_port)
-        return f"http://{self.agent_host}:{self.workspace_port}"
+        return f"http://{host}:{port}"

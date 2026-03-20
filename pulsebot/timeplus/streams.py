@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
+from pulsebot.timeplus.client import escape_sql_str, validate_sql_identifier
 from pulsebot.utils import get_logger
 
 if TYPE_CHECKING:
@@ -79,17 +80,17 @@ class StreamReader:
         conditions = []
         
         if session_id:
-            conditions.append(f"session_id = '{session_id}'")
+            conditions.append(f"session_id = '{escape_sql_str(session_id)}'")
         if since:
             conditions.append(f"timestamp >= '{since.isoformat()}'")
         if message_types:
-            types_str = ", ".join(f"'{t}'" for t in message_types)
+            types_str = ", ".join(f"'{escape_sql_str(t)}'" for t in message_types)
             conditions.append(f"message_type IN ({types_str})")
         
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         
         query = f"""
-            SELECT * FROM table(pulsebot.{self.stream_name})
+            SELECT * FROM table(pulsebot.{validate_sql_identifier(self.stream_name)})
             {where_clause}
             ORDER BY timestamp DESC
             LIMIT {limit}

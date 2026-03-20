@@ -157,7 +157,7 @@ class Agent:
         self._running = False
         # Record time at agent creation so the stream query starts from here,
         # capturing any messages written during the startup race window.
-        self._start_time = datetime.datetime.utcnow()
+        self._start_time = datetime.datetime.now(datetime.timezone.utc)
 
         logger.info(f"Initialized agent: {agent_id}")
 
@@ -651,7 +651,7 @@ class Agent:
             duration_ms: Execution duration in milliseconds
         """
         # Create a readable summary of the tool call
-        if getattr(self, "verbose_tools", False):
+        if self.verbose_tools:
             # Format arguments as multi-line JSON for verbose mode
             # Skip indent if arguments is empty to avoid printing '{}' on formatted lines
             args_summary = json.dumps(arguments, indent=2) if arguments else ""
@@ -665,7 +665,7 @@ class Agent:
             "status": status,
         }
         if result is not None:
-            if getattr(self, "verbose_tools", False):
+            if self.verbose_tools:
                 content["result_preview"] = result
             else:
                 content["result_preview"] = truncate_string(result, 200)

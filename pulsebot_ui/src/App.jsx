@@ -39,6 +39,7 @@ const ThinkingIndicator = ({ think }) => {
 
 export default function App() {
   const [isConnected, setIsConnected] = useState(false);
+  const [isAgentReady, setIsAgentReady] = useState(false);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [messages, setMessages] = useState([]);
   const [activeToolCalls, setActiveToolCalls] = useState(new Map());
@@ -92,11 +93,14 @@ export default function App() {
       } else if (data.type === 'task_notification') {
         const label = data.task_name ? `[Scheduled: ${data.task_name}] ` : '[Scheduled Task] ';
         addMessage(label + data.text, 'assistant');
+      } else if (data.type === 'agent_ready') {
+        setIsAgentReady(true);
       }
     };
 
     socket.onclose = () => {
       setIsConnected(false);
+      setIsAgentReady(false);
       console.log('Disconnected from PulseBot');
       // Clear in progress thinking
       setActiveLlmThinking(new Map());
@@ -217,7 +221,7 @@ export default function App() {
 
   const sendMessage = () => {
     const text = inputValue.trim();
-    if (!text || !isConnected || isWaitingForResponse) return;
+    if (!text || !isConnected || !isAgentReady || isWaitingForResponse) return;
 
     addMessage(text, 'user');
     
@@ -247,7 +251,7 @@ export default function App() {
     }
   };
 
-  const isSendDisabled = !inputValue.trim() || !isConnected || isWaitingForResponse;
+  const isSendDisabled = !inputValue.trim() || !isConnected || !isAgentReady || isWaitingForResponse;
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 text-gray-900 font-sans">
@@ -367,7 +371,7 @@ export default function App() {
           <textarea
             ref={textareaRef}
             className="flex-1 bg-transparent border-none outline-none font-sans text-[14px] leading-[1.5] resize-none min-h-[24px] max-h-[120px] placeholder:text-gray-500"
-            placeholder="Type a message..."
+            placeholder={!isConnected ? "Connecting..." : !isAgentReady ? "Waiting for agent..." : "Type a message..."}
             rows="1"
             value={inputValue}
             onChange={handleInputChange}

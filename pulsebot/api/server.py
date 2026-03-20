@@ -130,10 +130,11 @@ def create_app(config: Config | None = None) -> FastAPI:
         openapi_url="/openapi.json",
     )
     
-    # Add CORS middleware
+    # Add CORS middleware — origins controlled by config.api.cors_origins
+    cors_origins = _config.api.cors_origins if _config else ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately in production
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -393,14 +394,45 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
         except Exception as e:
             logger.error(f"WebSocket task_notification stream error: {e}")
 
+    async def forward_agent_status():
+        """Forward agent.ready events so the UI can gate message sending.
+
+        Seeks back 10 minutes to catch agents already running when the client
+        connects. Sends {"type": "agent_ready"} to the UI on each agent.ready
+        event (covers restarts too).
+        """
+        import datetime as _dt
+        ws_status_client = TimeplusClient.from_config(_config.timeplus)
+        ws_status_reader = StreamReader(ws_status_client, "events")
+
+        seek_back = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+        status_query = f"""
+            SELECT * FROM pulsebot.events
+            WHERE event_type = 'agent.ready'
+            SETTINGS seek_to='{seek_back}'
+        """
+        try:
+            async for _event in ws_status_reader.stream(status_query):
+                if websocket.client_state.name != "CONNECTED":
+                    break
+                try:
+                    await websocket.send_json({"type": "agent_ready"})
+                except RuntimeError:
+                    break
+        except WebSocketDisconnect:
+            pass
+        except Exception as e:
+            logger.error(f"WebSocket agent_status stream error: {e}")
+
     # Run all tasks concurrently
     receive_task = asyncio.create_task(receive_messages())
     send_task = asyncio.create_task(send_responses())
     notify_task = asyncio.create_task(forward_task_notifications())
+    agent_status_task = asyncio.create_task(forward_agent_status())
 
     try:
         done, pending = await asyncio.wait(
-            {receive_task, send_task, notify_task},
+            {receive_task, send_task, notify_task, agent_status_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
         for task in pending:
@@ -411,6 +443,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
         receive_task.cancel()
         send_task.cancel()
         notify_task.cancel()
+        agent_status_task.cancel()
 
 
 @router.get("/sessions/{session_id}/history", tags=["Chat"])

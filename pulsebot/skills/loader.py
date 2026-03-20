@@ -18,7 +18,6 @@ logger = get_logger(__name__)
 
 # Registry of built-in skills
 BUILTIN_SKILLS = {
-    "web_search": "pulsebot.skills.builtin.web_search.WebSearchSkill",
     "file_ops": "pulsebot.skills.builtin.file_ops.FileOpsSkill",
     "shell": "pulsebot.skills.builtin.shell.ShellSkill",
     "workspace":  "pulsebot.skills.builtin.workspace.WorkspaceSkill",

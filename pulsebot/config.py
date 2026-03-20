@@ -239,7 +239,7 @@ class ObservabilityConfig(BaseModel):
 
 class Config(BaseSettings):
     """Main PulseBot configuration."""
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "ignore"}
 
     agent: AgentConfig = Field(default_factory=AgentConfig)
     timeplus: TimeplusConfig = Field(default_factory=TimeplusConfig)

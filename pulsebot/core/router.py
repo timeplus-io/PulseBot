@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from pulsebot.utils import get_logger
@@ -117,7 +118,6 @@ class MessageRouter:
         Returns:
             Message ID
         """
-        import json
         content = json.dumps({
             "tool_name": tool_name,
             "tool_call_id": tool_call_id,
@@ -150,7 +150,6 @@ class MessageRouter:
         Returns:
             Message ID
         """
-        import json
         content = json.dumps({
             "tool_call_id": tool_call_id,
             "result": result,
@@ -220,7 +219,6 @@ class MessageRouter:
         Returns:
             Message ID
         """
-        import json
         content = json.dumps({"error": error})
         
         return await self.writer.write_message(

@@ -9,7 +9,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from pulsebot.channels.base import BaseChannel, ChannelMessage
-from pulsebot.core.router import MessageRouter
 from pulsebot.timeplus.streams import StreamReader, StreamWriter
 from pulsebot.utils import get_logger
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from pulsebot.timeplus.client import escape_sql_str, validate_sql_identifier
 from pulsebot.utils import get_logger, truncate_string
 
 if TYPE_CHECKING:
@@ -246,10 +247,10 @@ class MemoryManager:
             
             # Only filter by type/category if specified (for more targeted deduplication)
             if memory_type:
-                conditions.append(f"memory_type = '{memory_type}'")
-            
+                conditions.append(f"memory_type = '{escape_sql_str(memory_type)}'")
+
             if category:
-                conditions.append(f"category = '{category}'")
+                conditions.append(f"category = '{escape_sql_str(category)}'")
             
             where_clause = " AND ".join(conditions)
             
@@ -266,14 +267,14 @@ class MemoryManager:
                 cosine_distance(embedding, {embedding_str}) as distance,
                 (1 - cosine_distance(embedding, {embedding_str})) * importance as score,
                 (1 - cosine_distance(embedding, {embedding_str})) as similarity
-            FROM table(pulsebot.{self.stream_name})
+            FROM table(pulsebot.{validate_sql_identifier(self.stream_name)})
             WHERE {where_clause}
             ORDER BY score DESC
             LIMIT {limit}
             """
-            
+
             results = self.client.query(sql)
-            
+
             logger.debug(
                 "Similarity search for deduplication complete",
                 extra={
@@ -307,8 +308,8 @@ class MemoryManager:
             # Get existing memory to copy other fields
             sql = f"""
             SELECT content, memory_type, category, embedding, source_session_id
-            FROM table(pulsebot.{self.stream_name})
-            WHERE id = '{memory_id}' AND is_deleted = false
+            FROM table(pulsebot.{validate_sql_identifier(self.stream_name)})
+            WHERE id = '{escape_sql_str(memory_id)}' AND is_deleted = false
             ORDER BY timestamp DESC
             LIMIT 1
             """
@@ -363,7 +364,7 @@ class MemoryManager:
                 COUNT(DISTINCT content) as unique_contents,
                 memory_type,
                 category
-            FROM table(pulsebot.{self.stream_name})
+            FROM table(pulsebot.{validate_sql_identifier(self.stream_name)})
             WHERE is_deleted = false
             GROUP BY memory_type, category
             ORDER BY total_memories DESC
@@ -428,11 +429,11 @@ class MemoryManager:
         ]
 
         if memory_types:
-            types_str = ", ".join(f"'{t}'" for t in memory_types)
+            types_str = ", ".join(f"'{escape_sql_str(t)}'" for t in memory_types)
             conditions.append(f"memory_type IN ({types_str})")
 
         if categories:
-            cats_str = ", ".join(f"'{c}'" for c in categories)
+            cats_str = ", ".join(f"'{escape_sql_str(c)}'" for c in categories)
             conditions.append(f"category IN ({cats_str})")
 
         where_clause = " AND ".join(conditions)
@@ -449,7 +450,7 @@ class MemoryManager:
             timestamp,
             cosine_distance(embedding, {embedding_str}) as distance,
             (1 - cosine_distance(embedding, {embedding_str})) * importance as score
-        FROM table(pulsebot.{self.stream_name})
+        FROM table(pulsebot.{validate_sql_identifier(self.stream_name)})
         WHERE {where_clause}
         ORDER BY score DESC
         LIMIT {limit}
@@ -510,8 +511,8 @@ class MemoryManager:
             category,
             importance,
             timestamp
-        FROM table(pulsebot.{self.stream_name})
-        WHERE source_session_id = '{session_id}'
+        FROM table(pulsebot.{validate_sql_identifier(self.stream_name)})
+        WHERE source_session_id = '{escape_sql_str(session_id)}'
         AND is_deleted = false
         ORDER BY timestamp DESC
         LIMIT {limit}
@@ -535,7 +536,7 @@ class MemoryManager:
         """
         conditions = ["is_deleted = false"]
         if memory_types:
-            types_str = ", ".join(f"'{t}'" for t in memory_types)
+            types_str = ", ".join(f"'{escape_sql_str(t)}'" for t in memory_types)
             conditions.append(f"memory_type IN ({types_str})")
 
         where_clause = "WHERE " + " AND ".join(conditions)
@@ -548,7 +549,7 @@ class MemoryManager:
             category,
             importance,
             timestamp
-        FROM table(pulsebot.{self.stream_name})
+        FROM table(pulsebot.{validate_sql_identifier(self.stream_name)})
         {where_clause}
         ORDER BY timestamp DESC
         LIMIT {limit}
@@ -565,6 +566,8 @@ class MemoryManager:
         Args:
             memory_id: Memory ID to mark as deleted
         """
-        # For append-only streams, we insert a deletion marker
-        # Future queries will filter by is_deleted=false
-        logger.info("Memory deletion not fully supported in append-only mode", extra={"id": memory_id})
+        raise NotImplementedError(
+            "mark_deleted() is not yet implemented. "
+            "Soft-delete requires inserting a deletion-marker record and updating "
+            "all queries to filter by is_deleted=false."
+        )

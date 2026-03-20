@@ -94,7 +94,7 @@ class OpenAIProvider(LLMProvider):
                 self.provider_name = "openai_compatible"
         # else keep class-level default "openai"
         
-        self.client = openai.OpenAI(**client_kwargs)
+        self.client = openai.AsyncOpenAI(**client_kwargs)
         
         logger.info(
             f"Initialized OpenAI-compatible provider '{self.provider_name}' with model: {model}",
@@ -150,7 +150,7 @@ class OpenAIProvider(LLMProvider):
         
         # Make request
         try:
-            response = self.client.chat.completions.create(**request)
+            response = await self.client.chat.completions.create(**request)
         except openai.BadRequestError as e:
             error_str = str(e)
             if "max_tokens" in error_str and "max_completion_tokens" in error_str:
@@ -159,7 +159,7 @@ class OpenAIProvider(LLMProvider):
                     request["max_completion_tokens"] = request.pop("max_tokens")
                 if "temperature" in request:
                     request.pop("temperature") # O-series models generally don't support temperature
-                response = self.client.chat.completions.create(**request)
+                response = await self.client.chat.completions.create(**request)
             else:
                 logger.error(f"OpenAI API error: {e}")
                 raise
