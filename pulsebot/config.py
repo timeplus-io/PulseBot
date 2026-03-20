@@ -197,8 +197,8 @@ class MemoryConfig(BaseModel):
     enabled: bool = True  # Whether memory system is enabled
 
     # Embedding provider configuration for memory operations
-    embedding_provider: str = "openai"  # "openai" or "ollama"
-    embedding_model: str = "text-embedding-3-small"
+    embedding_provider: str = "local"   # "local" (default), "openai", or "ollama"
+    embedding_model: str = "all-MiniLM-L6-v2"
     embedding_api_key: str | None = None  # For OpenAI (optional, falls back to providers.openai.api_key)
     embedding_host: str | None = None  # For Ollama (optional, falls back to providers.ollama.host)
     embedding_dimensions: int | None = None  # Optional: auto-detected if not set
@@ -402,10 +402,13 @@ memory:
   enabled: true
 
   # Embedding provider configuration for memory operations
-  # Supports "openai" (cloud) or "ollama" (local)
-  embedding_provider: "openai" # or "ollama"
-  embedding_model: "text-embedding-3-small" # OpenAI: text-embedding-3-small (1536), text-embedding-3-large (3072)
-                                         # Ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
+  # "local"  — runs fully local via sentence-transformers, no API key needed (default)
+  # "openai" — cloud-based, requires OPENAI_API_KEY
+  # "ollama" — local via Ollama server, requires Ollama running
+  embedding_provider: "local"
+  embedding_model: "all-MiniLM-L6-v2" # local: all-MiniLM-L6-v2 (384-dim, ~100MB)
+                                       # OpenAI: text-embedding-3-small (1536), text-embedding-3-large (3072)
+                                       # Ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
   # embedding_api_key: "${OPENAI_API_KEY}" # Optional: override OpenAI API key
   # embedding_host: "${OLLAMA_HOST}" # Optional: override Ollama host
   # embedding_dimensions: 1536 # Optional: auto-detected if not set

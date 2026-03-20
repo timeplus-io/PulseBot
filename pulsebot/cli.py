@@ -28,7 +28,7 @@ def run(config: str):
     from pulsebot.core import Agent
     from pulsebot.factory import create_executor, create_provider, create_skill_loader
     from pulsebot.timeplus.client import TimeplusClient
-    from pulsebot.embeddings import OpenAIEmbeddingProvider, OllamaEmbeddingProvider
+    from pulsebot.embeddings import LocalEmbeddingProvider, OllamaEmbeddingProvider, OpenAIEmbeddingProvider
     from pulsebot.timeplus.memory import MemoryManager
     from pulsebot.utils import setup_logging
 
@@ -57,7 +57,13 @@ def run(config: str):
         memory_cfg = cfg.memory
 
         if memory_cfg.enabled:
-            if memory_cfg.embedding_provider == "openai":
+            if memory_cfg.embedding_provider == "local":
+                try:
+                    embedding_provider = LocalEmbeddingProvider(model=memory_cfg.embedding_model)
+                    console.print(f"[dim]Using local embeddings: {memory_cfg.embedding_model}[/]")
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Failed to initialize local embedding provider: {e}[/]")
+            elif memory_cfg.embedding_provider == "openai":
                 api_key = memory_cfg.embedding_api_key or cfg.providers.openai.api_key
                 if api_key:
                     embedding_provider = OpenAIEmbeddingProvider(
