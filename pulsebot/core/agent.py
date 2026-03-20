@@ -155,9 +155,12 @@ class Agent:
         self._pending_skill_events = True  # skills.set_events() called in run() after event loop starts
 
         self._running = False
-        # Record time at agent creation so the stream query starts from here,
-        # capturing any messages written during the startup race window.
-        self._start_time = datetime.datetime.now(datetime.timezone.utc)
+        # Record time at agent creation minus a startup buffer so the stream
+        # query captures messages written while the agent container was still
+        # initializing (API server starts ~10s earlier than the agent).
+        # 60s provides ample headroom even on slow starts.
+        _now = datetime.datetime.now(datetime.timezone.utc)
+        self._start_time = _now - datetime.timedelta(seconds=60)
 
         logger.info(f"Initialized agent: {agent_id}")
 
