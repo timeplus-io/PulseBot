@@ -8,13 +8,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from pulsebot.config import Config, load_config
+from pulsebot.timeplus.proton_proxy import (
+    build_proton_headers,
+    build_proton_url,
+    make_proton_streaming_response,
+)
 from pulsebot.timeplus.streams import StreamReader, StreamWriter
 from pulsebot.utils import get_logger
 
@@ -174,6 +179,41 @@ async def serve_web_ui() -> FileResponse:
 async def health_check() -> HealthResponse:
     """Health check endpoint."""
     return HealthResponse(status="ok", version="0.1.0")
+
+
+@router.post("/query", tags=["Query"])
+async def proton_query(request: Request) -> StreamingResponse:
+    """Proxy raw SQL to Proton and stream NDJSON results back.
+
+    Accepts a raw SQL string as the request body.
+    Results are streamed as NDJSON (one JSON object per line).
+
+    Compatible with ``@timeplus/proton-javascript-driver`` — point the driver
+    at ``http://<api-host>:<port>/query`` instead of connecting directly to Proton.
+
+    Query parameters:
+    - ``default_format``: Proton output format (default ``JSONEachRow``).
+
+    Example::
+
+        const resp = await fetch('http://localhost:8000/query', {
+          method: 'POST',
+          body: 'SELECT * FROM pulsebot.events LIMIT 10',
+        });
+        for await (const line of resp.body) { console.log(JSON.parse(line)); }
+    """
+    if _config is None:
+        raise HTTPException(status_code=500, detail="Server not initialized")
+
+    proton_url = build_proton_url(
+        host=_config.timeplus.host,
+        port=3218,
+    )
+    headers = build_proton_headers(
+        username=_config.timeplus.username,
+        password=_config.timeplus.password,
+    )
+    return await make_proton_streaming_response(request, proton_url, headers)
 
 
 @router.post("/chat", response_model=ChatResponse, tags=["Chat"])
