@@ -211,6 +211,7 @@ Access the built-in web chat interface at `http://localhost:8000/` after startin
 | GET | `/` | Web chat UI |
 | GET | `/health` | Health check |
 | POST | `/chat` | Send message (async) |
+| POST | `/query` | Proton streaming SQL proxy — accepts raw SQL, streams NDJSON; compatible with `@timeplus/proton-javascript-driver` |
 | POST | `/api/v1/task-trigger` | Timeplus UDF callback for scheduled tasks |
 | WS | `/ws/{session_id}` | Real-time chat (also streams `task_notification` events) |
 | GET | `/sessions/{id}/history` | Get conversation history |

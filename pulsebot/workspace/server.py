@@ -35,9 +35,8 @@ Auth is passed as HTTP Basic using the existing Timeplus credentials
 
 from __future__ import annotations
 
-import base64
 import asyncio
-from typing import Any, AsyncIterator
+from typing import Any
 
 import httpx
 import uvicorn
@@ -45,6 +44,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
+from pulsebot.timeplus.proton_proxy import (
+    build_proton_headers,
+    build_proton_url,
+    make_proton_streaming_response,
+)
 from pulsebot.utils import get_logger
 from pulsebot.workspace.config import WorkspaceConfig
 from pulsebot.workspace.manager import WorkspaceManager
@@ -82,12 +86,9 @@ def create_workspace_server(
         expose_headers=["*"],
     )
 
-    # Build Proton auth header once at startup — reused on every query
-    _proton_url = f"http://{proton_host}:3218"
-    _proton_headers: dict[str, str] = {"Content-Type": "text/plain"}
-    if proton_username:
-        creds = base64.b64encode(f"{proton_username}:{proton_password}".encode()).decode()
-        _proton_headers["Authorization"] = f"Basic {creds}"
+    # Build Proton connection details once at startup — reused on every query
+    _proton_url = build_proton_url(proton_host)
+    _proton_headers = build_proton_headers(proton_username, proton_password)
 
     # ── health ────────────────────────────────────────────────────────────
 
@@ -108,50 +109,7 @@ def create_workspace_server(
     @app.post("/")
     async def proton_query(request: Request) -> StreamingResponse:
         """Proxy raw SQL to Proton and stream NDJSON results back."""
-        body = await request.body()
-        sql = body.decode(errors="replace").strip()
-        fmt = request.query_params.get("default_format", "JSONEachRow")
-
-        if not sql:
-            raise HTTPException(status_code=400, detail="Request body must be a SQL query string.")
-
-        target = f"{_proton_url.rstrip('/')}/?default_format={fmt}"
-        logger.debug(f"[workspace] / sql={sql[:80]!r} → {_proton_url}")
-
-        async def stream() -> AsyncIterator[bytes]:
-            try:
-                async with httpx.AsyncClient(timeout=None) as client:
-                    async with client.stream(
-                        "POST",
-                        target,
-                        content=sql.encode(),
-                        headers=_proton_headers,
-                    ) as resp:
-                        if resp.status_code != 200:
-                            error_body = await resp.aread()
-                            logger.warning(
-                                f"[workspace] Proton error {resp.status_code}: "
-                                f"{error_body.decode()[:300]}"
-                            )
-                            yield error_body
-                            return
-                        async for chunk in resp.aiter_bytes():
-                            yield chunk
-            except httpx.ConnectError as exc:
-                logger.error(f"[workspace] Proton unreachable at {_proton_url}: {exc}")
-                import json
-                yield json.dumps({
-                    "error": f"Proton is unreachable at {_proton_url}."
-                }).encode()
-
-        return StreamingResponse(
-            content=stream(),
-            media_type="application/x-ndjson",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-            },
-        )
+        return await make_proton_streaming_response(request, _proton_url, _proton_headers)
 
     # ── session task listing ──────────────────────────────────────────────
 
