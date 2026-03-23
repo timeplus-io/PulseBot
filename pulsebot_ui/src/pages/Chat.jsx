@@ -1,9 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { generateSessionId, formatMessage } from '../utils';
-
-const WS_URL = import.meta.env.DEV
-  ? `ws://localhost:8000/ws`
-  : `ws://${window.location.host}/ws`;
+import React, { useState, useEffect, useRef } from 'react';
+import { formatMessage } from '../utils';
+import { useChatContext } from '../context/ChatContext';
 
 const ThinkingIndicator = ({ think }) => {
   const [now, setNow] = useState(Date.now());
@@ -37,19 +34,21 @@ const ThinkingIndicator = ({ think }) => {
 };
 
 export default function Chat() {
-  const [isConnected, setIsConnected] = useState(false);
-  const [isAgentReady, setIsAgentReady] = useState(false);
-  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
-  const [messages, setMessages] = useState([]);
-  const [activeToolCalls, setActiveToolCalls] = useState(new Map());
-  const [activeLlmThinking, setActiveLlmThinking] = useState(new Map());
-  const [inputValue, setInputValue] = useState('');
-  const [toast, setToast] = useState({ visible: false, message: '', isError: false });
+  const {
+    isConnected,
+    isAgentReady,
+    isWaitingForResponse,
+    messages,
+    activeToolCalls,
+    activeLlmThinking,
+    toast,
+    sendMessage: ctxSendMessage,
+    newSession,
+  } = useChatContext();
 
-  const socketRef = useRef(null);
+  const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
-  const sessionIdRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -59,162 +58,13 @@ export default function Chat() {
     scrollToBottom();
   }, [messages, activeToolCalls, activeLlmThinking, isWaitingForResponse]);
 
-  const showToast = useCallback((message, isError = false) => {
-    setToast({ visible: true, message, isError });
-    setTimeout(() => {
-      setToast(prev => ({ ...prev, visible: false }));
-    }, 3000);
-  }, []);
-
-  const connect = useCallback(() => {
-    const sessionId = generateSessionId();
-    sessionIdRef.current = sessionId;
-    const wsUrl = `${WS_URL}/${sessionId}`;
-
-    const socket = new WebSocket(wsUrl);
-    socketRef.current = socket;
-
-    let agentReadyFallback;
-
-    socket.onopen = () => {
-      setIsConnected(true);
-      // If the agent.ready event is not received within 10s (e.g. agent already
-      // running but event not replayed), assume the agent is ready.
-      agentReadyFallback = setTimeout(() => setIsAgentReady(true), 10000);
-    };
-
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'response') {
-        setIsWaitingForResponse(false);
-        removeToolCallIndicators();
-        addMessage(data.text, 'assistant');
-      } else if (data.type === 'tool_call') {
-        handleToolCall(data);
-      } else if (data.type === 'llm_thinking') {
-        handleLlmThinking(data);
-      } else if (data.type === 'task_notification') {
-        const label = data.task_name ? `[Scheduled: ${data.task_name}] ` : '[Scheduled Task] ';
-        addMessage(label + data.text, 'assistant');
-      } else if (data.type === 'agent_ready') {
-        clearTimeout(agentReadyFallback);
-        setIsAgentReady(true);
-      }
-    };
-
-    socket.onclose = () => {
-      clearTimeout(agentReadyFallback);
-      setIsConnected(false);
-      setIsAgentReady(false);
-      setActiveLlmThinking(new Map());
-      setTimeout(connect, 3000);
-    };
-
-    socket.onerror = () => {
-      showToast('Connection error. Retrying...', true);
-    };
-  }, [showToast]);
-
-  useEffect(() => {
-    connect();
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.close();
-      }
-    };
-  }, [connect]);
-
-  const addMessage = (text, role) => {
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setMessages(prev => [...prev, {
-      id: Date.now() + Math.random(),
-      type: 'message',
-      text,
-      role,
-      time,
-    }]);
-  };
-
-  const handleToolCall = (data) => {
-    const argsSummary = data.args_summary || '';
-    const toolName = data.tool_name;
-
-    if (data.status === 'started') {
-      const id = Date.now() + Math.random();
-      setMessages(prev => [...prev, {
-        id, type: 'tool_call', toolName, argsSummary,
-        status: 'started', durationMs: null, resultPreview: null,
-      }]);
-      setActiveToolCalls(prev => {
-        const next = new Map(prev);
-        next.set(toolName, id);
-        return next;
-      });
-    } else {
-      setActiveToolCalls(prev => {
-        const id = prev.get(toolName);
-        if (id) {
-          setMessages(msgs => msgs.map(m => m.id === id ? {
-            ...m, status: data.status, durationMs: data.duration_ms, resultPreview: data.result_preview,
-          } : m));
-          const next = new Map(prev);
-          next.delete(toolName);
-          return next;
-        }
-        return prev;
-      });
-    }
-  };
-
-  const handleLlmThinking = (data) => {
-    const iteration = data.iteration || 1;
-    if (data.status === 'started') {
-      const id = Date.now() + Math.random();
-      setMessages(prev => [...prev, {
-        id, type: 'llm_thinking', iteration, status: 'started', startMs: Date.now(), durationMs: null,
-      }]);
-      setActiveLlmThinking(prev => {
-        const next = new Map(prev);
-        next.set(iteration, id);
-        return next;
-      });
-    } else {
-      setActiveLlmThinking(prev => {
-        const id = prev.get(iteration);
-        if (id) {
-          setMessages(msgs => msgs.map(m => m.id === id ? {
-            ...m, status: 'completed', durationMs: data.duration_ms,
-          } : m));
-          const next = new Map(prev);
-          next.delete(iteration);
-          return next;
-        }
-        return prev;
-      });
-    }
-  };
-
-  const removeToolCallIndicators = () => {
-    setActiveToolCalls(new Map());
-    setActiveLlmThinking(new Map());
-    setMessages(msgs => msgs.map(m =>
-      (m.type === 'llm_thinking' && m.status === 'started') ? { ...m, status: 'completed' } : m
-    ));
-  };
-
   const sendMessage = () => {
     const text = inputValue.trim();
-    if (!text || !isConnected || !isAgentReady || isWaitingForResponse) return;
-
-    addMessage(text, 'user');
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: 'message', text }));
-    }
+    if (!ctxSendMessage(text)) return;
     setInputValue('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    setIsWaitingForResponse(true);
   };
 
   const handleKeyDown = (e) => {
@@ -237,11 +87,21 @@ export default function Chat() {
   return (
     <div className="flex flex-col h-full bg-gray-50 text-gray-900">
       {/* Header */}
-      <header className="glass-header ambient-shadow flex justify-end items-center px-4 py-2 flex-shrink-0">
+      <header className="glass-header ambient-shadow flex justify-between items-center px-4 py-2 flex-shrink-0">
         <div className="flex items-center gap-2 text-xs text-secondary">
           <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-tertiary' : 'bg-surface-dim'}`}></span>
           <span>{isConnected ? (isAgentReady ? 'Agent ready' : 'Connecting...') : 'Disconnected'}</span>
         </div>
+        <button
+          onClick={newSession}
+          title="New Session"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-secondary hover:bg-surface-container-high transition-colors duration-150"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+          </svg>
+          New Session
+        </button>
       </header>
 
       {/* Chat Container */}
