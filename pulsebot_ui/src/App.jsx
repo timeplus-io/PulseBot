@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Events from './pages/Events';
 import LLMLogs from './pages/LLMLogs';
 import ToolLogs from './pages/ToolLogs';
+import Memory from './pages/Memory';
 import Agents from './pages/Agents';
 import { ChatProvider } from './context/ChatContext';
 
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/events" element={<Events />} />
           <Route path="/llm-logs" element={<LLMLogs />} />
           <Route path="/tool-logs" element={<ToolLogs />} />
+          <Route path="/memory" element={<Memory />} />
           <Route path="/agents" element={<Agents />} />
         </Routes>
       </Layout>
