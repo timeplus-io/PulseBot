@@ -171,6 +171,13 @@ class SubAgent:
 
             logger.info(f"SubAgent {self.agent_id} starting kanban loop")
 
+            # Fan-in buffering: accumulate messages until at least one has been
+            # received from every expected upstream agent, then synthesize once.
+            upstream_ids = set(self.spec.upstream_agent_ids)
+            is_fan_in = len(upstream_ids) > 1
+            pending_tasks: list[dict] = []
+            heard_from: set[str] = set()
+
             async for message in self.kanban_reader.stream(query):
                 if not self._running:
                     break
@@ -180,7 +187,20 @@ class SubAgent:
                     if msg_type == "control":
                         await self._handle_control(message)
                     elif msg_type == "task":
-                        await self._process_task(message)
+                        if is_fan_in:
+                            pending_tasks.append(message)
+                            heard_from.add(message.get("sender_id", ""))
+                            logger.info(
+                                f"SubAgent {self.agent_id} buffered task from "
+                                f"{message.get('sender_id')} "
+                                f"({len(heard_from)}/{len(upstream_ids)} upstreams heard)"
+                            )
+                            if upstream_ids.issubset(heard_from):
+                                await self._process_tasks_batch(pending_tasks)
+                                pending_tasks = []
+                                heard_from = set()
+                        else:
+                            await self._process_task(message)
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -229,12 +249,31 @@ class SubAgent:
         system_prompt = self._build_system_prompt()
 
         result_text = await self._reason(system_prompt, content)
+        self._write_result(result_text, source_msg_ids=[message.get("msg_id", "")])
 
+    async def _process_tasks_batch(self, messages: list[dict[str, Any]]) -> None:
+        """Process multiple buffered task messages as a single LLM call (fan-in)."""
+        combined = "\n\n---\n\n".join(
+            f"Input {i + 1} (from {m.get('sender_id', 'unknown')}):\n{m.get('content', '')}"
+            for i, m in enumerate(messages)
+        )
+        system_prompt = self._build_system_prompt()
+        logger.info(
+            f"SubAgent {self.agent_id} synthesizing {len(messages)} buffered inputs"
+        )
+        result_text = await self._reason(system_prompt, combined)
+        self._write_result(
+            result_text,
+            source_msg_ids=[m.get("msg_id", "") for m in messages],
+        )
+
+    def _write_result(
+        self, result_text: str, source_msg_ids: list[str]
+    ) -> None:
+        """Write result(s) to kanban targets."""
         manager_id = self._get_manager_id()
         targets = self.spec.target_agents or [manager_id]
         for target in targets:
-            # Use "task" when routing to another worker so it can pick it up,
-            # "result" when routing to the manager which listens for results.
             msg_type = "result" if target == manager_id else "task"
             self._batch_client.insert("pulsebot.kanban", [{
                 "project_id": self.project_id,
@@ -243,7 +282,7 @@ class SubAgent:
                 "msg_type": msg_type,
                 "content": result_text,
                 "metadata": json.dumps({
-                    "source_msg_id": message.get("msg_id", ""),
+                    "source_msg_ids": source_msg_ids,
                 }),
             }])
 
