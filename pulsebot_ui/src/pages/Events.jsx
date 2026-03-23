@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useProtonQuery } from '../hooks/useProtonQuery';
+import PageHeader from '../components/PageHeader';
 
 function severityBadge(sev) {
   const map = {
@@ -43,24 +44,7 @@ export default function Events() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* TopAppBar */}
-      <header className="glass-header ambient-shadow sticky top-0 z-50 flex justify-between items-center w-full px-6 py-3 flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="text-xl font-bold tracking-tight text-primary">Events Monitor</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={load}
-            disabled={loading || statsLoading}
-            className="px-4 py-2 primary-gradient text-on-primary text-sm font-medium rounded-lg ambient-shadow flex items-center gap-2 active:scale-95 transition-transform disabled:opacity-50"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
-          </button>
-        </div>
-      </header>
+      <PageHeader onRefresh={load} loading={loading || statsLoading} />
 
       <div className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full space-y-8">
         {/* Headline */}

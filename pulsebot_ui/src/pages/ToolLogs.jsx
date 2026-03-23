@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useProtonQuery } from '../hooks/useProtonQuery';
+import PageHeader from '../components/PageHeader';
 
 function statusBadge(status) {
   if (status === 'success') return 'bg-[#87fd6f]/40 text-[#035300]';
@@ -22,24 +23,7 @@ export default function ToolLogs() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* TopAppBar */}
-      <header className="glass-header ambient-shadow sticky top-0 z-50 flex justify-between items-center w-full px-6 py-3 flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="text-xl font-bold tracking-tight text-primary">Tool Logs</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={load}
-            disabled={loading || metricsLoading}
-            className="bg-primary text-white px-4 py-2 rounded shadow-sm flex items-center text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 gap-2"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
-          </button>
-        </div>
-      </header>
+      <PageHeader onRefresh={load} loading={loading || metricsLoading} />
 
       <main className="flex-1 overflow-y-auto">
         <div className="p-8 max-w-7xl mx-auto">

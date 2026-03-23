@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useProtonQuery } from '../hooks/useProtonQuery';
+import PageHeader from '../components/PageHeader';
 
 function modelColor(model) {
   if (!model) return 'bg-secondary-container text-on-secondary-fixed-variant';
@@ -26,21 +27,7 @@ export default function LLMLogs() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* TopAppBar */}
-      <header className="glass-header ambient-shadow sticky top-0 z-50 flex justify-between items-center w-full px-6 py-3 flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="text-xl font-bold tracking-tight text-primary">LLM Execution Logs</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={load}
-            disabled={loading || summaryLoading}
-            className="px-3 py-1.5 rounded text-[11px] font-semibold uppercase tracking-wider bg-primary text-white hover:opacity-90 transition-colors disabled:opacity-50"
-          >
-            Refresh
-          </button>
-        </div>
-      </header>
+      <PageHeader onRefresh={load} loading={loading || summaryLoading} />
 
       <main className="flex-1 p-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto space-y-8">

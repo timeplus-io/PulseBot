@@ -74,8 +74,13 @@ export default function Chat() {
     const socket = new WebSocket(wsUrl);
     socketRef.current = socket;
 
+    let agentReadyFallback;
+
     socket.onopen = () => {
       setIsConnected(true);
+      // If the agent.ready event is not received within 10s (e.g. agent already
+      // running but event not replayed), assume the agent is ready.
+      agentReadyFallback = setTimeout(() => setIsAgentReady(true), 10000);
     };
 
     socket.onmessage = (event) => {
@@ -92,11 +97,13 @@ export default function Chat() {
         const label = data.task_name ? `[Scheduled: ${data.task_name}] ` : '[Scheduled Task] ';
         addMessage(label + data.text, 'assistant');
       } else if (data.type === 'agent_ready') {
+        clearTimeout(agentReadyFallback);
         setIsAgentReady(true);
       }
     };
 
     socket.onclose = () => {
+      clearTimeout(agentReadyFallback);
       setIsConnected(false);
       setIsAgentReady(false);
       setActiveLlmThinking(new Map());
@@ -230,11 +237,10 @@ export default function Chat() {
   return (
     <div className="flex flex-col h-full bg-gray-50 text-gray-900">
       {/* Header */}
-      <header className="glass-header ambient-shadow border-b border-surface-container-high px-6 py-4 flex items-center gap-3 flex-shrink-0">
-        <h1 className="text-base font-semibold text-on-surface">Chat</h1>
-        <div className="ml-auto flex items-center gap-2 text-xs text-gray-600">
+      <header className="glass-header ambient-shadow flex justify-end items-center px-4 py-2 flex-shrink-0">
+        <div className="flex items-center gap-2 text-xs text-secondary">
           <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-tertiary' : 'bg-surface-dim'}`}></span>
-          <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+          <span>{isConnected ? (isAgentReady ? 'Agent ready' : 'Connecting...') : 'Disconnected'}</span>
         </div>
       </header>
 
