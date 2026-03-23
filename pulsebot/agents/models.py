@@ -46,6 +46,12 @@ class SubAgentSpec:
     # None = use the default set (file_ops, shell, workspace).
     builtin_skills: list[str] | None = None
 
+    # Fan-in: agent IDs expected to send tasks to this agent.
+    # Empty = process each task immediately; non-empty = buffer until one
+    # message has been received from each upstream agent ID, then synthesize.
+    # Set automatically by ProjectManager from topology analysis.
+    upstream_agent_ids: list[str] = field(default_factory=list)
+
     # Execution
     timeout_seconds: int = 300
     checkpoint_sn: int = 0

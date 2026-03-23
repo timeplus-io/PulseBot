@@ -89,17 +89,38 @@ class ProjectManager:
             )
 
         project_id = f"proj_{uuid.uuid4().hex[:12]}"
+        manager_id = f"manager_{project_id}"
         initial_messages = initial_messages or []
 
         # Set project_id on all specs
         for spec in agents:
             spec.project_id = project_id
 
-        # Resolve target_agents: convert human-readable names to agent IDs
-        # e.g. "Analyst" -> "agent_analyst", "manager" stays as-is
+        # Resolve target_agents: convert human-readable names to agent IDs.
+        # Also add manager aliases so workers can write target_agents: ["Manager"].
         name_to_id = {spec.name: spec.agent_id for spec in agents}
+        name_to_id["Manager"] = manager_id
+        name_to_id["manager"] = manager_id
         for spec in agents:
             spec.target_agents = [name_to_id.get(t, t) for t in spec.target_agents]
+
+        # Calculate fan-in: which agents send tasks to each agent.
+        # Agents with multiple upstream senders must buffer until one message
+        # from each upstream has arrived before synthesizing.
+        upstream: dict[str, list[str]] = {spec.agent_id: [] for spec in agents}
+        for spec in agents:
+            for target_id in spec.target_agents:
+                if target_id in upstream:
+                    upstream[target_id].append(spec.agent_id)
+        for spec in agents:
+            spec.upstream_agent_ids = upstream[spec.agent_id]
+
+        # Workers that report directly to the manager: those with no
+        # target_agents (defaults to manager) or explicitly targeting the manager.
+        reporting_agent_ids = [
+            spec.agent_id for spec in agents
+            if not spec.target_agents or manager_id in spec.target_agents
+        ]
 
         manager_spec = SubAgentSpec(
             name="Manager",
@@ -140,6 +161,7 @@ class ProjectManager:
             skill_loader=self.skills,
             config=self.config,
             initial_messages=initial_messages,
+            reporting_agent_ids=reporting_agent_ids,
         )
         self._agent_tasks[manager_spec.agent_id] = asyncio.create_task(
             manager.run(), name=f"manager_{project_id}"

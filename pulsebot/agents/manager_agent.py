@@ -43,11 +43,15 @@ class ManagerAgent(SubAgent):
         skill_loader: SkillLoader,
         config: Config,
         initial_messages: list[dict[str, Any]] | None = None,
+        reporting_agent_ids: list[str] | None = None,
     ) -> None:
         super().__init__(spec, timeplus, llm_provider, skill_loader, config)
         self.worker_specs = worker_specs
         self.session_id = session_id
         self.initial_messages = initial_messages or []
+        # Agent IDs expected to report a result. Complete once all have reported
+        # at least once — ignores duplicate reports from the same sender.
+        self._reporting_agent_ids: set[str] = set(reporting_agent_ids or [])
 
         # messages stream has 'id' column so StreamWriter is fine here;
         # kanban_projects uses 'project_id' so we write via client.insert() directly.
@@ -85,7 +89,12 @@ class ManagerAgent(SubAgent):
             SETTINGS seek_to='{seek_to}'
             """
 
-            logger.info(f"ManagerAgent {self.agent_id} listening for results")
+            logger.info(
+                f"ManagerAgent {self.agent_id} listening for results "
+                f"(expecting: {self._reporting_agent_ids})"
+            )
+
+            reported: set[str] = set()
 
             async for message in self.kanban_reader.stream(query):
                 if not self._running:
@@ -99,10 +108,14 @@ class ManagerAgent(SubAgent):
                         "agent_id": self.agent_id,
                         "project_id": self.project_id,
                         "sender_id": sender_id,
+                        "reported": list(reported | {sender_id}),
+                        "expected": list(self._reporting_agent_ids),
                     })
                     await self._deliver_result(message)
-                    await self._complete_project()
-                    break
+                    reported.add(sender_id)
+                    if self._reporting_agent_ids.issubset(reported):
+                        await self._complete_project()
+                        break
                 elif msg_type == "error":
                     await self._handle_worker_error(message)
                     break

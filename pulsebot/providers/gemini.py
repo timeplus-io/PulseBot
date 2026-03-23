@@ -160,12 +160,20 @@ class GeminiProvider(LLMProvider):
             contents.append(types.Content(role=gemini_role, parts=parts))
 
         try:
-            # Using async generate_content
-            response = await self.client.aio.models.generate_content(
-                model=self.model,
-                contents=contents,
-                config=config,
+            # Using async generate_content with a timeout so rate-limit retries
+            # inside the SDK don't hang indefinitely.
+            import asyncio
+            response = await asyncio.wait_for(
+                self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=config,
+                ),
+                timeout=120.0,
             )
+        except asyncio.TimeoutError:
+            logger.error("Gemini API call timed out after 120s")
+            raise TimeoutError("Gemini API call timed out after 120s")
         except Exception as e:
             logger.error(f"Gemini API error: {e}")
             raise

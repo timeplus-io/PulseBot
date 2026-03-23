@@ -464,26 +464,23 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
         except Exception as e:
             logger.error(f"WebSocket agent_status stream error: {e}")
 
-    # Run all tasks concurrently
+    # Run all tasks concurrently.
+    # Only receive_messages() signals client disconnect — when it finishes,
+    # cancel the background stream tasks. Background tasks failing on their own
+    # (e.g. Proton hiccup) must NOT kill the WebSocket and miss queued results.
     receive_task = asyncio.create_task(receive_messages())
     send_task = asyncio.create_task(send_responses())
     notify_task = asyncio.create_task(forward_task_notifications())
     agent_status_task = asyncio.create_task(forward_agent_status())
 
     try:
-        done, pending = await asyncio.wait(
-            {receive_task, send_task, notify_task, agent_status_task},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in pending:
+        await receive_task
+    except Exception as e:
+        logger.error(f"WebSocket receive_task error: {e}")
+    finally:
+        for task in (send_task, notify_task, agent_status_task):
             task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
-    except Exception:
-        receive_task.cancel()
-        send_task.cancel()
-        notify_task.cancel()
-        agent_status_task.cancel()
+        await asyncio.gather(send_task, notify_task, agent_status_task, return_exceptions=True)
 
 
 @router.get("/sessions/{session_id}/history", tags=["Chat"])

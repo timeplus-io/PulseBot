@@ -297,15 +297,6 @@ const KANBAN_COLUMNS = [
       </span>
     ),
   },
-  {
-    header: 'Content',
-    cellClassName: 'max-w-xs',
-    render: row => (
-      <span className="text-xs text-on-surface truncate block" title={row.content}>
-        {row.content || '—'}
-      </span>
-    ),
-  },
 ];
 
 function AgentDetail({ agent }) {
