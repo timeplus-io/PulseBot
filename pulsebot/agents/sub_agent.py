@@ -3,19 +3,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
+import time
 from typing import TYPE_CHECKING, Any
 
 from pulsebot.timeplus.client import escape_sql_str
 from pulsebot.timeplus.event_writer import EventWriter
 from pulsebot.timeplus.streams import StreamReader, StreamWriter
-from pulsebot.utils import get_logger
+from pulsebot.utils import get_logger, truncate_string
 
 if TYPE_CHECKING:
     from pulsebot.agents.models import SubAgentSpec
     from pulsebot.config import Config
-    from pulsebot.core.executor import ToolExecutor
     from pulsebot.providers.base import LLMProvider
     from pulsebot.skills.loader import SkillLoader
     from pulsebot.timeplus.client import TimeplusClient
@@ -37,7 +38,6 @@ class SubAgent:
         timeplus: TimeplusClient,
         llm_provider: LLMProvider,
         skill_loader: SkillLoader,
-        executor: ToolExecutor,
         config: Config,
     ) -> None:
         from pulsebot.timeplus.client import TimeplusClient
@@ -49,9 +49,13 @@ class SubAgent:
         # Resolve LLM provider (override model/provider if specified)
         self.llm = self._resolve_provider(spec, llm_provider, config)
 
-        # Resolve skill set for this sub-agent
+        # Resolve skill set for this sub-agent and build a matching executor.
+        # Tool definitions (sent to LLM) and tool execution must use the same
+        # skill loader — sharing the main executor would cause a mismatch where
+        # the LLM sees filtered tools but execution routes through the full set.
         self._skill_loader = self._resolve_skills(spec, skill_loader)
-        self.executor = executor
+        from pulsebot.core.executor import ToolExecutor
+        self.executor = ToolExecutor(self._skill_loader, events=None)
 
         # Each sub-agent needs its OWN dedicated clients to avoid
         # "Simultaneous queries on single connection" errors with the main
@@ -82,6 +86,8 @@ class SubAgent:
             default_source=f"subagent:{spec.agent_id}",
             default_tags=[f"agent:{spec.agent_id}", f"project:{spec.project_id}"],
         )
+        self._llm_logger = StreamWriter(batch_client, "llm_logs")
+        self._tool_logger = StreamWriter(batch_client, "tool_logs")
         # Record creation time so the kanban stream query starts from here,
         # capturing tasks dispatched during the startup race window.
         self._start_time = datetime.datetime.now(datetime.timezone.utc)
@@ -118,23 +124,21 @@ class SubAgent:
         """Return the appropriate SkillLoader for this sub-agent.
 
         - spec.skills is None  -> inherit all skills from parent loader
-        - spec.skills is a list -> create subset with only those skills
+        - spec.skills is a list -> create subset with those skills + configured builtins
         """
         if spec.skills is None:
             return skill_loader
-        return skill_loader.create_subset(spec.skills)
+        return skill_loader.create_subset(spec.skills, builtin_skills=spec.builtin_skills)
 
     def _get_manager_id(self) -> str:
         return f"manager_{self.project_id}"
 
     def _build_system_prompt(self) -> str:
-        tools = self._skill_loader.get_tools()
-        if tools:
-            tools_text = "\n\nAvailable tools:\n" + "\n".join(
-                f"- {t.name}: {t.description}" for t in tools
-            )
-            return self.spec.task_description + tools_text
-        return self.spec.task_description
+        parts = [self.spec.task_description]
+        skills_index = self._skill_loader.format_skills_for_prompt()
+        if skills_index:
+            parts.append(skills_index)
+        return "\n\n".join(parts)
 
     async def run(self) -> None:
         """Main event loop — pull tasks from kanban, process, push results."""
@@ -177,6 +181,8 @@ class SubAgent:
                         await self._handle_control(message)
                     elif msg_type == "task":
                         await self._process_task(message)
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
                     logger.error(
                         f"SubAgent {self.agent_id} error processing message: {e}",
@@ -186,6 +192,10 @@ class SubAgent:
 
                 self._checkpoint_sn = message.get("_tp_sn", self._checkpoint_sn)
                 await self._persist_checkpoint()
+        except asyncio.CancelledError:
+            # Clean shutdown: task was cancelled (either via kanban cancel message
+            # or external ProjectManager.cancel_project). This is not an error.
+            logger.info(f"SubAgent {self.agent_id} cancelled cleanly")
         except Exception as e:
             await self.events.emit_error("subagent.error", e, payload={
                 "agent_id": self.agent_id,
@@ -193,6 +203,7 @@ class SubAgent:
             })
             raise
         finally:
+            await self._persist_checkpoint(status="cancelled")
             await self.events.emit("subagent.stopped", payload={
                 "agent_id": self.agent_id,
                 "project_id": self.project_id,
@@ -204,6 +215,11 @@ class SubAgent:
         if command == "cancel":
             logger.info(f"SubAgent {self.agent_id} received cancel")
             self._running = False
+            # Cancel the current asyncio task so the stream loop exits immediately
+            # rather than blocking indefinitely waiting for the next kanban message.
+            task = asyncio.current_task()
+            if task is not None:
+                task.cancel()
         else:
             logger.warning(f"SubAgent {self.agent_id} unknown control: {command!r}")
 
@@ -240,15 +256,35 @@ class SubAgent:
             {"role": "user", "content": user_content}
         ]
 
+        # Track recent tool calls to detect infinite loops
+        recent_calls: list[tuple[str, str]] = []
+
+        session_id = f"{self.project_id}:{self.agent_id}"
         response = None
         for _ in range(self.spec.max_iterations):
+            t0 = time.monotonic()
             response = await self.llm.chat(
                 messages=messages,
                 system=system_prompt,
                 tools=tools,
             )
+            latency_ms = int((time.monotonic() - t0) * 1000)
+            await self._log_llm_call(session_id, system_prompt, messages, response, latency_ms)
 
             if response.tool_calls:
+                # Detect repeated identical tool calls (infinite loop guard)
+                call_fingerprints = [
+                    (tc.name, json.dumps(tc.arguments, sort_keys=True))
+                    for tc in response.tool_calls
+                ]
+                if call_fingerprints == recent_calls:
+                    logger.warning(
+                        f"SubAgent {self.agent_id} detected repeated identical tool calls "
+                        f"{[f for f, _ in call_fingerprints]}, forcing text response"
+                    )
+                    break
+                recent_calls = call_fingerprints
+
                 # Add assistant turn with tool calls.
                 # Include tc.extra in the function dict so provider-specific
                 # fields (e.g. Gemini's thought_signature) are preserved for
@@ -274,15 +310,26 @@ class SubAgent:
 
                 # Execute tools and add results
                 for tc in response.tool_calls:
+                    t_tool = time.monotonic()
                     result = await self.executor.execute(
                         tool_name=tc.name,
                         arguments=tc.arguments,
-                        session_id=f"{self.project_id}:{self.agent_id}",
+                        session_id=session_id,
                     )
+                    tool_duration_ms = int((time.monotonic() - t_tool) * 1000)
+                    tool_success = result.get("success", False)
                     result_str = (
                         str(result.get("output", ""))
-                        if result.get("success")
+                        if tool_success
                         else f"Error: {result.get('error', '')}"
+                    )
+                    await self._log_tool_call(
+                        session_id=session_id,
+                        tool_name=tc.name,
+                        arguments=tc.arguments,
+                        result=result_str,
+                        status="success" if tool_success else "error",
+                        duration_ms=tool_duration_ms,
                     )
                     messages.append({
                         "role": "tool",
@@ -292,8 +339,86 @@ class SubAgent:
             else:
                 return response.content or ""
 
-        # Max iterations reached — return last content
+        # Max iterations reached (or loop detected) while still in a tool call.
+        # Force one final text-only response so the result is never empty.
+        if response is not None and response.tool_calls:
+            logger.warning(
+                f"SubAgent {self.agent_id} hit iteration limit mid-tool-call, "
+                "requesting final text synthesis"
+            )
+            messages.append({
+                "role": "user",
+                "content": (
+                    "You have reached the maximum number of tool calls. "
+                    "Based on the information gathered so far, please provide "
+                    "your best response now as plain text."
+                ),
+            })
+            try:
+                final = await self.llm.chat(
+                    messages=messages,
+                    system=system_prompt,
+                    tools=None,  # no tools — force a text response
+                )
+                return final.content or "(No response generated)"
+            except Exception as e:
+                logger.error(f"SubAgent {self.agent_id} final synthesis failed: {e}")
+                return response.content or "(Max iterations reached with no text response)"
+
         return response.content or "" if response is not None else ""
+
+    async def _log_llm_call(
+        self,
+        session_id: str,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        response: Any,
+        latency_ms: int,
+    ) -> None:
+        usage = response.usage if response else None
+        await self._llm_logger.write({
+            "session_id": session_id,
+            "model": self.llm.model,
+            "provider": self.llm.provider_name,
+            "input_tokens": usage.input_tokens if usage else 0,
+            "output_tokens": usage.output_tokens if usage else 0,
+            "total_tokens": usage.total_tokens if usage else 0,
+            "estimated_cost_usd": self.llm.estimate_cost(usage) if usage else 0.0,
+            "latency_ms": latency_ms,
+            "system_prompt_preview": truncate_string(system_prompt, 200),
+            "user_message_preview": truncate_string(
+                messages[-1].get("content", "") if messages else "", 200
+            ),
+            "assistant_response_preview": truncate_string(response.content or "", 200) if response else "",
+            "full_response_content": response.content or "" if response else "",
+            "messages_count": len(messages),
+            "tools_called": [tc.name for tc in (response.tool_calls or [])] if response else [],
+            "tool_call_count": len(response.tool_calls or []) if response else 0,
+            "status": "success",
+            "caller": self.agent_id,
+        })
+
+    async def _log_tool_call(
+        self,
+        session_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        result: str,
+        status: str,
+        duration_ms: int,
+    ) -> None:
+        await self._tool_logger.write({
+            "session_id": session_id,
+            "llm_request_id": "",
+            "tool_name": tool_name,
+            "skill_name": tool_name.split("_")[0] if "_" in tool_name else tool_name,
+            "arguments": json.dumps(arguments),
+            "status": status,
+            "result_preview": truncate_string(result, 500),
+            "error_message": result if status == "error" else "",
+            "duration_ms": duration_ms,
+            "caller": self.agent_id,
+        })
 
     async def _write_error(self, source_message: dict[str, Any], error: str) -> None:
         """Write an error message to kanban targeting the manager."""
@@ -318,7 +443,7 @@ class SubAgent:
         """)
         return rows[0]["checkpoint_sn"] if rows else 0
 
-    async def _persist_checkpoint(self) -> None:
+    async def _persist_checkpoint(self, status: str = "running") -> None:
         """Write current checkpoint to agent metadata stream."""
         self._batch_client.insert("pulsebot.kanban_agents", [{
             "agent_id": self.agent_id,
@@ -327,7 +452,7 @@ class SubAgent:
             "role": self.spec.role,
             "task_description": self.spec.task_description,
             "target_agents": self.spec.target_agents,
-            "status": "running",
+            "status": status,
             "skills": self.spec.skills or [],
             "skill_overrides": json.dumps(self.spec.skill_overrides or {}),
             "config": json.dumps({
@@ -344,4 +469,4 @@ class SubAgent:
     async def stop(self) -> None:
         """Stop this sub-agent and persist final checkpoint."""
         self._running = False
-        await self._persist_checkpoint()
+        await self._persist_checkpoint(status="cancelled")

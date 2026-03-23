@@ -627,6 +627,7 @@ class Agent:
             "tools_called": [tc.name for tc in (response_tool_calls or [])],
             "tool_call_count": len(response_tool_calls or []),
             "status": "success",
+            "caller": "main",
         })
 
     async def _broadcast_tool_call(
@@ -783,6 +784,7 @@ class Agent:
             "result_preview": truncate_string(result, 500),
             "error_message": result if status == "error" else "",
             "duration_ms": duration_ms,
+            "caller": "main",
         })
 
     async def _extract_memories(

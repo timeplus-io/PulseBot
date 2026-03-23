@@ -52,6 +52,7 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - ./skills:/app/skills:rw
       - ./workspaces:/app/workspaces:rw
+      - ./pulsebot:/usr/local/lib/python3.12/site-packages/pulsebot:rw
     ports:
       - "8001:8001"
     depends_on:
@@ -76,7 +77,7 @@ services:
       - WORKSPACE_INTERNAL_KEY=test-workspace-key-12345
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - ./pulsebot/web:/usr/local/lib/python3.12/site-packages/pulsebot/web:ro
+      - ./pulsebot:/usr/local/lib/python3.12/site-packages/pulsebot:ro
     depends_on:
       proton:
         condition: service_healthy

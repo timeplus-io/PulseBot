@@ -42,6 +42,10 @@ class SubAgentSpec:
     skills: list[str] | None = None
     skill_overrides: dict[str, Any] | None = None
 
+    # Builtin skills always included regardless of `skills` filter.
+    # None = use the default set (file_ops, shell, workspace).
+    builtin_skills: list[str] | None = None
+
     # Execution
     timeout_seconds: int = 300
     checkpoint_sn: int = 0

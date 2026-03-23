@@ -69,7 +69,10 @@ CREATE STREAM IF NOT EXISTS pulsebot.llm_logs (
 
     -- Status
     status string,              -- 'success', 'error', 'rate_limited', 'timeout'
-    error_message string DEFAULT ''
+    error_message string DEFAULT '',
+
+    -- Caller
+    caller string DEFAULT ''    -- 'main' for the main agent, agent_id for sub-agents
 )
 SETTINGS event_time_column='timestamp';
 """
@@ -117,7 +120,10 @@ CREATE STREAM IF NOT EXISTS pulsebot.tool_logs (
     error_message string DEFAULT '',
 
     -- Timing
-    duration_ms int32 DEFAULT 0
+    duration_ms int32 DEFAULT 0,
+
+    -- Caller
+    caller string DEFAULT ''    -- 'main' for the main agent, agent_id for sub-agents
 )
 SETTINGS event_time_column='timestamp';
 """
@@ -296,6 +302,7 @@ async def drop_streams(client: TimeplusClient) -> None:
         "pulsebot.events",
         "pulsebot.tasks",
         "pulsebot.task_triggers",
+        "pulsebot.skills",
         "pulsebot.kanban",
         "pulsebot.kanban_projects",
         "pulsebot.kanban_agents",
