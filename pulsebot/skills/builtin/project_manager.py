@@ -59,6 +59,11 @@ class ProjectManagerSkill(BaseSkill):
                                         "items": {"type": "string"},
                                         "description": "Skill names to load. Omit to inherit all main agent skills.",
                                     },
+                                    "builtin_skills": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "Builtin skills always available to this agent (default: file_ops, shell, workspace). Only applies when 'skills' is set.",
+                                    },
                                     "model": {"type": "string", "description": "Override LLM model"},
                                     "provider": {"type": "string", "description": "Override LLM provider"},
                                 },
@@ -121,6 +126,20 @@ class ProjectManagerSkill(BaseSkill):
                     "required": ["project_id"],
                 },
             ),
+            ToolDefinition(
+                name="delete_project",
+                description=(
+                    "Cancel a project (if still running) and permanently delete all its metadata "
+                    "from the projects, agents, and kanban message streams."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID to delete"},
+                    },
+                    "required": ["project_id"],
+                },
+            ),
         ]
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
@@ -133,6 +152,8 @@ class ProjectManagerSkill(BaseSkill):
                 return await self._cancel_project(arguments)
             elif tool_name == "get_project_status":
                 return self._get_project_status(arguments)
+            elif tool_name == "delete_project":
+                return await self._delete_project(arguments)
             else:
                 return ToolResult.fail(f"Unknown tool: {tool_name}")
         except Exception as e:
@@ -149,6 +170,7 @@ class ProjectManagerSkill(BaseSkill):
                 project_id="",  # set by ProjectManager
                 target_agents=a.get("target_agents", []),
                 skills=a.get("skills"),
+                builtin_skills=a.get("builtin_skills"),
                 model=a.get("model"),
                 provider=a.get("provider"),
             )
@@ -194,3 +216,12 @@ class ProjectManagerSkill(BaseSkill):
         if status is None:
             return ToolResult.fail(f"Project {project_id} not found.")
         return ToolResult.ok(json.dumps(status, indent=2))
+
+    async def _delete_project(self, args: dict) -> ToolResult:
+        project_id = args["project_id"]
+        deleted = await self._pm.delete_project(project_id)
+        if deleted:
+            return ToolResult.ok(
+                f"Project {project_id} deleted. All metadata removed from projects, agents, and kanban streams."
+            )
+        return ToolResult.fail(f"Project {project_id} not found.")

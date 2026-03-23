@@ -25,10 +25,11 @@ const COLUMNS = [
     ),
   },
   {
-    header: 'Session',
-    cellClassName: 'max-w-[140px]',
+    header: 'Caller',
     render: row => (
-      <span className="text-xs font-mono text-secondary truncate block">{row.session_id}</span>
+      <span className="text-xs font-mono text-secondary">
+        {row.caller || 'main'}
+      </span>
     ),
   },
   {
@@ -85,7 +86,7 @@ export default function LLMLogs() {
 
   const load = () => {
     querySummary(`SELECT round(avg(latency_ms)) as avg_latency, round(count_if(status='success') * 100.0 / count()) as success_rate, sum(total_tokens) as total_tokens FROM table(pulsebot.llm_logs)`);
-    query(`SELECT id, timestamp, session_id, model, provider, input_tokens, output_tokens, total_tokens, estimated_cost_usd, latency_ms, time_to_first_token_ms, system_prompt_hash, system_prompt_preview, user_message_preview, assistant_response_preview, full_response_content, messages_count, tools_called, tool_call_count, status, error_message FROM table(pulsebot.llm_logs) ORDER BY timestamp DESC LIMIT 200`);
+    query(`SELECT id, timestamp, session_id, caller, model, provider, input_tokens, output_tokens, total_tokens, estimated_cost_usd, latency_ms, time_to_first_token_ms, system_prompt_hash, system_prompt_preview, user_message_preview, assistant_response_preview, full_response_content, messages_count, tools_called, tool_call_count, status, error_message FROM table(pulsebot.llm_logs) ORDER BY timestamp DESC LIMIT 200`);
   };
 
   useEffect(() => { load(); }, []);

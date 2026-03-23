@@ -21,6 +21,14 @@ const COLUMNS = [
     ),
   },
   {
+    header: 'Caller',
+    render: row => (
+      <span className="text-xs font-mono text-secondary">
+        {row.caller || 'main'}
+      </span>
+    ),
+  },
+  {
     header: 'Tool Name',
     render: row => (
       <code className="text-sm font-semibold text-primary px-2 py-0.5 bg-primary-fixed/30 rounded">
@@ -48,19 +56,6 @@ const COLUMNS = [
       </span>
     ),
   },
-  {
-    header: 'Result',
-    cellClassName: 'max-w-xs',
-    render: row => row.status !== 'success' && row.error_message ? (
-      <span className="text-obs-error font-mono text-xs truncate block" title={row.error_message}>
-        {row.error_message}
-      </span>
-    ) : row.result_preview ? (
-      <span className="font-mono text-xs truncate block text-secondary" title={row.result_preview}>
-        {row.result_preview}
-      </span>
-    ) : '—',
-  },
 ];
 
 export default function ToolLogs() {
@@ -69,7 +64,7 @@ export default function ToolLogs() {
 
   const load = () => {
     queryMetrics(`SELECT count() as total, round(avg(duration_ms)) as avg_latency, round(count_if(status='success') * 100.0 / count()) as success_rate FROM table(pulsebot.tool_logs)`);
-    query(`SELECT id, timestamp, session_id, llm_request_id, tool_name, skill_name, arguments, status, duration_ms, result_preview, error_message FROM table(pulsebot.tool_logs) ORDER BY timestamp DESC LIMIT 200`);
+    query(`SELECT id, timestamp, session_id, caller, llm_request_id, tool_name, skill_name, arguments, status, duration_ms, result_preview, error_message FROM table(pulsebot.tool_logs) ORDER BY timestamp DESC LIMIT 200`);
   };
 
   useEffect(() => { load(); }, []);

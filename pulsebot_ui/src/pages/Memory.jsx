@@ -92,15 +92,6 @@ const COLUMNS = [
       );
     },
   },
-  {
-    header: 'Session',
-    cellClassName: 'max-w-[140px]',
-    render: row => (
-      <span className="text-xs font-mono text-secondary truncate block" title={row.source_session_id}>
-        {row.source_session_id || '—'}
-      </span>
-    ),
-  },
 ];
 
 export default function Memory() {

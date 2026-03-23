@@ -138,7 +138,6 @@ class ProjectManager:
             timeplus=self.timeplus,
             llm_provider=self.llm,
             skill_loader=self.skills,
-            executor=self.executor,
             config=self.config,
             initial_messages=initial_messages,
         )
@@ -153,7 +152,6 @@ class ProjectManager:
                 timeplus=self.timeplus,
                 llm_provider=self.llm,
                 skill_loader=self.skills,
-                executor=self.executor,
                 config=self.config,
             )
             self._agent_tasks[spec.agent_id] = asyncio.create_task(
@@ -169,35 +167,159 @@ class ProjectManager:
     def list_projects(self, status: str | None = None) -> list[dict[str, Any]]:
         """Return summary dicts for all tracked projects.
 
+        Queries kanban_projects stream for the latest state of each project so
+        that results survive agent restarts.
+
         Args:
             status: Optional filter ('active', 'completed', 'failed', 'cancelled').
         """
-        result = []
-        for state in self._projects.values():
-            if status is None or state.status == status:
+        try:
+            rows = self._batch_client.query("""
+                SELECT project_id, name, description, status, session_id, timestamp
+                FROM table(pulsebot.kanban_projects)
+                ORDER BY timestamp DESC
+                LIMIT 1 BY project_id
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to query kanban_projects: {e}")
+            rows = []
+
+        # Merge with in-memory state so live in-progress projects are included
+        # even before their first DB write.
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
+
+        for row in rows:
+            pid = row["project_id"]
+            seen.add(pid)
+            row_status = row.get("status", "")
+            if status is None or row_status == status:
+                # Count agents from in-memory state if available, else 0
+                in_mem = self._projects.get(pid)
+                agent_count = len(in_mem.agent_ids) if in_mem else 0
                 result.append({
-                    "project_id": state.project_id,
-                    "name": state.name,
-                    "description": state.description,
-                    "status": state.status,
-                    "agent_count": len(state.agent_ids),
-                    "session_id": state.session_id,
+                    "project_id": pid,
+                    "name": row.get("name", ""),
+                    "description": row.get("description", ""),
+                    "status": row_status,
+                    "agent_count": agent_count,
+                    "session_id": row.get("session_id", ""),
                 })
+
+        # Include any in-memory projects not yet flushed to the stream
+        for state in self._projects.values():
+            if state.project_id not in seen:
+                if status is None or state.status == status:
+                    result.append({
+                        "project_id": state.project_id,
+                        "name": state.name,
+                        "description": state.description,
+                        "status": state.status,
+                        "agent_count": len(state.agent_ids),
+                        "session_id": state.session_id,
+                    })
+
         return result
 
     def get_project_status(self, project_id: str) -> dict[str, Any] | None:
         """Return detailed status for a specific project, or None if not found."""
+        from pulsebot.timeplus.client import escape_sql_str
+
+        # Check in-memory first (live projects)
         state = self._projects.get(project_id)
-        if state is None:
+        if state is not None:
+            return {
+                "project_id": state.project_id,
+                "name": state.name,
+                "description": state.description,
+                "status": state.status,
+                "agent_ids": state.agent_ids,
+                "session_id": state.session_id,
+            }
+
+        # Fall back to stream for past projects
+        try:
+            rows = self._batch_client.query(f"""
+                SELECT project_id, name, description, status, session_id
+                FROM table(pulsebot.kanban_projects)
+                WHERE project_id = '{escape_sql_str(project_id)}'
+                ORDER BY timestamp DESC LIMIT 1
+            """)
+            if not rows:
+                return None
+            row = rows[0]
+
+            # Fetch agent IDs from kanban_agents
+            agent_rows = self._batch_client.query(f"""
+                SELECT agent_id FROM table(pulsebot.kanban_agents)
+                WHERE project_id = '{escape_sql_str(project_id)}'
+                ORDER BY timestamp DESC LIMIT 1 BY agent_id
+            """)
+            agent_ids = [r["agent_id"] for r in agent_rows]
+
+            return {
+                "project_id": row["project_id"],
+                "name": row.get("name", ""),
+                "description": row.get("description", ""),
+                "status": row.get("status", ""),
+                "agent_ids": agent_ids,
+                "session_id": row.get("session_id", ""),
+            }
+        except Exception as e:
+            logger.warning(f"Failed to query project status from stream: {e}")
             return None
-        return {
-            "project_id": state.project_id,
-            "name": state.name,
-            "description": state.description,
-            "status": state.status,
-            "agent_ids": state.agent_ids,
-            "session_id": state.session_id,
-        }
+
+    async def delete_project(self, project_id: str) -> bool:
+        """Cancel a running project (if active) and delete all its metadata from streams.
+
+        Returns:
+            True if the project existed and was deleted.
+        """
+        from pulsebot.timeplus.client import escape_sql_str
+
+        pid = escape_sql_str(project_id)
+
+        # Check existence: in-memory or DB
+        exists_in_mem = project_id in self._projects
+        if not exists_in_mem:
+            try:
+                rows = self._batch_client.query(f"""
+                    SELECT project_id FROM table(pulsebot.kanban_projects)
+                    WHERE project_id = '{pid}'
+                    LIMIT 1
+                """)
+                if not rows:
+                    return False
+            except Exception as e:
+                logger.warning(f"Could not verify project existence: {e}")
+                return False
+
+        # Cancel any running tasks
+        if exists_in_mem:
+            state = self._projects[project_id]
+            for agent_id in state.agent_ids:
+                task = self._agent_tasks.pop(agent_id, None)
+                if task and not task.done():
+                    task.cancel()
+            del self._projects[project_id]
+
+        # Delete from streams
+        try:
+            self._batch_client.execute(
+                f"DELETE FROM pulsebot.kanban_projects WHERE project_id = '{pid}'"
+            )
+            self._batch_client.execute(
+                f"DELETE FROM pulsebot.kanban_agents WHERE project_id = '{pid}'"
+            )
+            self._batch_client.execute(
+                f"DELETE FROM pulsebot.kanban WHERE project_id = '{pid}'"
+            )
+        except Exception as e:
+            logger.error(f"Failed to delete project {project_id} from streams: {e}")
+            raise
+
+        logger.info(f"Project {project_id} deleted")
+        return True
 
     async def cancel_project(self, project_id: str) -> bool:
         """Cancel a running project by cancelling all asyncio tasks.

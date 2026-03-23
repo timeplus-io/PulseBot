@@ -293,27 +293,70 @@ class SkillLoader:
         """
         return list(self._skills.values())
 
-    def create_subset(self, names: list[str]) -> SkillLoader:
+    DEFAULT_SUBAGENT_BUILTINS = ("file_ops", "shell", "workspace")
+
+    def create_subset(
+        self,
+        names: list[str],
+        builtin_skills: list[str] | None = None,
+    ) -> SkillLoader:
         """Create a new SkillLoader containing only the named skills.
 
-        Skills not present in this loader are silently skipped.
-        Useful for sub-agent skill isolation.
+        Builtin skills in `builtin_skills` (default: file_ops, shell, workspace)
+        are always included so sub-agents have basic execution capabilities.
+        External (agentskills) names in `names` are resolved to a filtered bridge.
 
         Args:
-            names: Skill names to include.
+            names: External/non-builtin skill names to include.
+            builtin_skills: Builtin skill names to always include.
+                            None = use DEFAULT_SUBAGENT_BUILTINS.
 
         Returns:
-            New SkillLoader with only the named skills.
+            New SkillLoader with the requested skills.
         """
+        defaults = (
+            builtin_skills
+            if builtin_skills is not None
+            else list(self.DEFAULT_SUBAGENT_BUILTINS)
+        )
         subset = SkillLoader()
-        for name in names:
+        requested_external: dict = {}
+
+        # Include the configured builtin skills
+        for name in defaults:
             skill = self._skills.get(name)
             if skill is None:
-                logger.warning(f"Skill '{name}' not found in loader, skipping")
+                logger.warning(f"Default builtin skill '{name}' not found in loader, skipping")
+                continue
+            subset._skills[name] = skill
+            subset._builtin_names.add(name)
+            for tool in skill.get_tools():
+                subset._tool_to_skill[tool.name] = name
+
+        # Add explicitly requested skills
+        for name in names:
+            if name in subset._skills:
+                continue  # already included via builtins
+            skill = self._skills.get(name)
+            if skill is None:
+                if name in self._external_skills:
+                    requested_external[name] = self._external_skills[name]
+                else:
+                    logger.warning(f"Skill '{name}' not found in loader, skipping")
                 continue
             subset._skills[name] = skill
             for tool in skill.get_tools():
                 subset._tool_to_skill[tool.name] = name
+
+        # Include a filtered agentskills bridge for any requested external skills
+        if requested_external:
+            from pulsebot.skills.builtin.agentskills_bridge import AgentSkillsBridge
+            filtered_bridge = AgentSkillsBridge(skill_registry=requested_external)
+            subset._skills["agentskills_bridge"] = filtered_bridge
+            subset._external_skills = requested_external  # enables format_skills_for_prompt()
+            for tool in filtered_bridge.get_tools():
+                subset._tool_to_skill[tool.name] = "agentskills_bridge"
+
         return subset
 
     @property

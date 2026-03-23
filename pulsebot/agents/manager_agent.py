@@ -15,7 +15,6 @@ from pulsebot.utils import get_logger
 if TYPE_CHECKING:
     from pulsebot.agents.models import SubAgentSpec
     from pulsebot.config import Config
-    from pulsebot.core.executor import ToolExecutor
     from pulsebot.providers.base import LLMProvider
     from pulsebot.skills.loader import SkillLoader
     from pulsebot.timeplus.client import TimeplusClient
@@ -42,11 +41,10 @@ class ManagerAgent(SubAgent):
         timeplus: TimeplusClient,
         llm_provider: LLMProvider,
         skill_loader: SkillLoader,
-        executor: ToolExecutor,
         config: Config,
         initial_messages: list[dict[str, Any]] | None = None,
     ) -> None:
-        super().__init__(spec, timeplus, llm_provider, skill_loader, executor, config)
+        super().__init__(spec, timeplus, llm_provider, skill_loader, config)
         self.worker_specs = worker_specs
         self.session_id = session_id
         self.initial_messages = initial_messages or []
