@@ -1,115 +1,164 @@
 import React, { useEffect } from 'react';
 import { useProtonQuery } from '../hooks/useProtonQuery';
 
-function statusStyle(status) {
-  if (status === 'success') return 'bg-on-tertiary-container text-tertiary';
-  if (status === 'error') return 'bg-error-container text-on-error-container';
-  return 'bg-surface-container text-on-surface-variant';
-}
-
-function RefreshButton({ onClick, loading }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high rounded transition-colors disabled:opacity-50"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}>
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-      </svg>
-      Refresh
-    </button>
-  );
+function statusBadge(status) {
+  if (status === 'success') return 'bg-[#87fd6f]/40 text-[#035300]';
+  if (status === 'error') return 'bg-obs-error text-white';
+  return 'bg-error-container text-on-error-container';
 }
 
 export default function ToolLogs() {
+  const { data: metrics, loading: metricsLoading, query: queryMetrics } = useProtonQuery();
   const { data, loading, error, query } = useProtonQuery();
 
   const load = () => {
+    queryMetrics(`SELECT count() as total, round(avg(duration_ms)) as avg_latency, round(countIf(status='success') * 100.0 / count()) as success_rate FROM table(pulsebot.tool_logs)`);
     query(`SELECT id, timestamp, session_id, tool_name, skill_name, status, duration_ms, result_preview, error_message FROM table(pulsebot.tool_logs) ORDER BY timestamp DESC LIMIT 200`);
   };
 
   useEffect(() => { load(); }, []);
 
+  const m = metrics[0] || {};
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <header className="glass-header ambient-shadow border-b border-surface-container-high px-6 py-4 flex items-center gap-3 flex-shrink-0">
-        <h1 className="text-base font-semibold text-on-surface">Tool Logs</h1>
-        {data.length > 0 && (
-          <span className="text-xs text-on-surface-variant bg-surface-container px-2 py-1 rounded">
-            {data.length} records
-          </span>
-        )}
-        <div className="ml-auto">
-          <RefreshButton onClick={load} loading={loading} />
+      {/* TopAppBar */}
+      <header className="glass-header ambient-shadow sticky top-0 z-50 flex justify-between items-center w-full px-6 py-3 flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <span className="text-xl font-bold tracking-tight text-primary">Tool Logs</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={load}
+            disabled={loading || metricsLoading}
+            className="bg-primary text-white px-4 py-2 rounded shadow-sm flex items-center text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
         </div>
       </header>
 
-      {/* Table */}
-      <div className="flex-1 overflow-auto p-6">
-        <div className="bg-surface-container-lowest rounded-lg ambient-shadow">
-          {error && (
-            <div className="px-5 py-4 text-sm text-on-error-container bg-error-container rounded-t-lg">
-              Error: {error}
+      <main className="flex-1 overflow-y-auto">
+        <div className="p-8 max-w-7xl mx-auto">
+          {/* Page Header */}
+          <div className="flex justify-between items-end mb-8">
+            <div>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-secondary">Monitoring</span>
+              <h2 className="text-2xl font-bold text-on-surface">Tool Logs</h2>
             </div>
-          )}
-          <div className="overflow-x-auto">
-            {loading ? (
-              <div className="px-5 py-12 text-center text-sm text-on-surface-variant">Loading...</div>
-            ) : data.length === 0 ? (
-              <div className="px-5 py-12 text-center text-sm text-on-surface-variant">No tool call records found</div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-surface-container border-b border-surface-container-high">
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wide whitespace-nowrap">Time</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wide whitespace-nowrap">Tool</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wide whitespace-nowrap">Skill</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wide whitespace-nowrap">Duration</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wide whitespace-nowrap">Status</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wide">Result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((row, i) => (
-                    <tr key={row.id || i} className="border-b border-surface-container last:border-0 hover:bg-surface-container-low transition-colors">
-                      <td className="px-5 py-3 text-xs text-on-surface-variant whitespace-nowrap font-mono">
-                        {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
-                      </td>
-                      <td className="px-5 py-3 font-mono text-xs text-on-surface font-medium whitespace-nowrap">
-                        {row.tool_name}
-                      </td>
-                      <td className="px-5 py-3 text-xs text-on-surface-variant whitespace-nowrap">{row.skill_name}</td>
-                      <td className="px-5 py-3 text-xs text-on-surface-variant font-mono whitespace-nowrap">
-                        {row.duration_ms != null ? `${row.duration_ms}ms` : '—'}
-                      </td>
-                      <td className="px-5 py-3 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${statusStyle(row.status)}`}>
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-xs text-on-surface-variant max-w-xs">
-                        {row.status !== 'success' && row.error_message ? (
-                          <div className="text-obs-error font-mono truncate" title={row.error_message}>
-                            {row.error_message}
-                          </div>
-                        ) : row.result_preview ? (
-                          <div className="font-mono truncate text-on-surface-variant" title={row.result_preview}>
-                            {row.result_preview}
-                          </div>
-                        ) : (
-                          <span className="text-outline">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          </div>
+
+          {/* Metric Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-surface-container-lowest p-5 rounded-lg shadow-[0_4px_20px_rgba(26,28,28,0.06)] border border-outline-variant/10">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-secondary mb-1">Total Tool Calls</p>
+              <div className="flex items-baseline space-x-2">
+                <span className="text-3xl font-bold text-on-surface">{m.total != null ? Number(m.total).toLocaleString() : '—'}</span>
+              </div>
+            </div>
+            <div className="bg-surface-container-lowest p-5 rounded-lg shadow-[0_4px_20px_rgba(26,28,28,0.06)] border border-outline-variant/10">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-secondary mb-1">Avg Latency</p>
+              <div className="flex items-baseline space-x-2">
+                <span className="text-3xl font-bold text-on-surface">{m.avg_latency ? `${m.avg_latency}ms` : '—'}</span>
+              </div>
+            </div>
+            <div className="bg-surface-container-lowest p-5 rounded-lg shadow-[0_4px_20px_rgba(26,28,28,0.06)] border border-outline-variant/10">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-secondary mb-1">Success Rate</p>
+              <div className="flex items-baseline space-x-2">
+                <span className="text-3xl font-bold text-on-surface">{m.success_rate != null ? `${m.success_rate}%` : '—'}</span>
+                {m.success_rate != null && (
+                  <span className={`text-xs font-medium ${m.success_rate >= 95 ? 'text-tertiary' : 'text-obs-error'}`}>
+                    {m.success_rate >= 95 ? 'Stable' : 'Degraded'}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="bg-surface-container-lowest p-5 rounded-lg shadow-[0_4px_20px_rgba(26,28,28,0.06)] border border-outline-variant/10">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-secondary mb-1">Unique Tools</p>
+              <div className="flex items-baseline space-x-2">
+                <span className="text-3xl font-bold text-on-surface">
+                  {data.length > 0 ? new Set(data.map(r => r.tool_name)).size : '—'}
+                </span>
+                <span className="text-xs font-medium text-secondary">Global</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabular Log View */}
+          <div className="bg-surface-container-lowest rounded-lg shadow-[0_4px_20px_rgba(26,28,28,0.06)] overflow-hidden">
+            {error && (
+              <div className="px-6 py-3 text-sm text-on-error-container bg-error-container">Error: {error}</div>
             )}
+            <div className="overflow-x-auto">
+              {loading ? (
+                <div className="px-6 py-12 text-center text-sm text-secondary">Loading...</div>
+              ) : data.length === 0 ? (
+                <div className="px-6 py-12 text-center text-sm text-secondary">No tool call records found</div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-surface-container-low border-none">
+                      <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-secondary">Timestamp</th>
+                      <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-secondary">Tool Name</th>
+                      <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-secondary">Skill</th>
+                      <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-secondary">Latency</th>
+                      <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-secondary">Status</th>
+                      <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-secondary">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-transparent">
+                    {data.map((row, i) => (
+                      <tr
+                        key={row.id || i}
+                        className={`hover:bg-surface-container transition-colors group ${i % 2 === 1 ? 'bg-surface-container-low' : ''}`}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-xs font-mono text-secondary">
+                            {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <code className="text-sm font-semibold text-primary px-2 py-0.5 bg-primary-fixed/30 rounded">
+                            {row.tool_name}
+                          </code>
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium text-secondary">{row.skill_name || '—'}</td>
+                        <td className="px-6 py-4 text-sm font-mono text-on-surface">
+                          {row.duration_ms != null ? `${row.duration_ms}ms` : '—'}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusBadge(row.status)}`}>
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-xs text-secondary max-w-xs">
+                          {row.status !== 'success' && row.error_message ? (
+                            <span className="text-obs-error font-mono truncate block" title={row.error_message}>
+                              {row.error_message}
+                            </span>
+                          ) : row.result_preview ? (
+                            <span className="font-mono truncate block text-secondary" title={row.result_preview}>
+                              {row.result_preview}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="px-6 py-4 bg-surface-container-low flex justify-between items-center border-none">
+              <span className="text-xs text-secondary font-medium">
+                Showing {data.length} tool executions
+              </span>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -1,39 +1,32 @@
 import React, { useEffect } from 'react';
 import { useProtonQuery } from '../hooks/useProtonQuery';
 
-function RefreshButton({ onClick, loading }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high rounded transition-colors disabled:opacity-50"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}>
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-      </svg>
-      Refresh
-    </button>
-  );
+function agentStatusBadge(status) {
+  const map = {
+    active: 'bg-tertiary/10 text-tertiary',
+    working: 'bg-tertiary/10 text-tertiary',
+    done: 'bg-tertiary/10 text-tertiary',
+    idle: 'bg-secondary/10 text-secondary',
+    inactive: 'bg-secondary/10 text-secondary',
+    failed: 'bg-obs-error/10 text-obs-error',
+  };
+  return map[(status || '').toLowerCase()] || 'bg-secondary/10 text-secondary';
 }
 
-function projectStatusStyle(status) {
+function projectStatusBadge(status) {
   const map = {
-    active: 'bg-on-tertiary-container text-tertiary',
-    completed: 'bg-secondary-container text-on-secondary-fixed',
+    active: 'bg-tertiary/10 text-tertiary',
+    completed: 'bg-secondary/10 text-secondary',
     paused: 'bg-[#fff3cd] text-[#856404]',
-    failed: 'bg-error-container text-on-error-container',
+    failed: 'bg-obs-error/10 text-obs-error',
   };
-  return map[status] || 'bg-surface-container text-on-surface-variant';
+  return map[(status || '').toLowerCase()] || 'bg-secondary/10 text-secondary';
 }
 
-function agentStatusStyle(status) {
-  const map = {
-    idle: 'bg-surface-container text-on-surface-variant',
-    working: 'bg-primary-fixed text-on-primary-fixed',
-    done: 'bg-on-tertiary-container text-tertiary',
-    failed: 'bg-error-container text-on-error-container',
-  };
-  return map[status] || 'bg-surface-container text-on-surface-variant';
+function borderColor(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'active' || s === 'working' || s === 'done') return 'border-primary';
+  return 'border-secondary';
 }
 
 export default function Agents() {
@@ -48,8 +41,6 @@ export default function Agents() {
   useEffect(() => { load(); }, []);
 
   const isLoading = projLoading || agentsLoading;
-
-  // Group agents by project_id
   const agentsByProject = agents.reduce((acc, agent) => {
     const pid = agent.project_id || 'unassigned';
     if (!acc[pid]) acc[pid] = [];
@@ -59,92 +50,134 @@ export default function Agents() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <header className="glass-header ambient-shadow border-b border-surface-container-high px-6 py-4 flex items-center gap-3 flex-shrink-0">
-        <h1 className="text-base font-semibold text-on-surface">Agents & Projects</h1>
-        <div className="ml-auto">
-          <RefreshButton onClick={load} loading={isLoading} />
+      {/* TopAppBar */}
+      <header className="glass-header ambient-shadow sticky top-0 z-50 flex justify-between items-center w-full px-6 py-3 flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <span className="text-xl font-bold tracking-tight text-primary">Agents &amp; Projects</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={load}
+            disabled={isLoading}
+            className="p-2 rounded-lg text-secondary hover:bg-surface-container-high transition-colors active:scale-95 duration-200 disabled:opacity-50"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
         </div>
       </header>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-y-auto p-8 max-w-[1400px] w-full mx-auto space-y-8">
         {(projError || agentsError) && (
-          <div className="mb-4 px-4 py-3 text-sm text-on-error-container bg-error-container rounded-lg">
+          <div className="px-4 py-3 text-sm text-on-error-container bg-error-container rounded-lg">
             {projError || agentsError}
           </div>
         )}
 
         {isLoading ? (
-          <div className="text-center py-12 text-sm text-on-surface-variant">Loading...</div>
-        ) : projects.length === 0 ? (
-          <div className="text-center py-16 text-sm text-on-surface-variant">
+          <div className="text-center py-16 text-sm text-secondary">Loading...</div>
+        ) : projects.length === 0 && agents.length === 0 ? (
+          <div className="text-center py-16">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-12 h-12 mx-auto mb-3 text-outline opacity-50">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            <p>No projects found</p>
+            <p className="text-sm text-secondary">No agents or projects found</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-6">
-            {projects.map((project) => {
-              const projectAgents = agentsByProject[project.project_id] || [];
-              return (
-                <div key={project.project_id} className="bg-surface-container-lowest rounded-lg ambient-shadow">
-                  {/* Project Header */}
-                  <div className="px-5 py-4 border-b border-surface-container-high flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-sm font-semibold text-on-surface">{project.name || 'Unnamed Project'}</h2>
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${projectStatusStyle(project.status)}`}>
-                          {project.status}
-                        </span>
-                      </div>
-                      {project.description && (
-                        <p className="text-xs text-on-surface-variant mt-0.5">{project.description}</p>
-                      )}
-                    </div>
-                    <div className="text-xs text-on-surface-variant text-right shrink-0">
-                      <div className="font-mono">{project.project_id?.slice(0, 8)}</div>
-                      <div>{project.timestamp ? new Date(project.timestamp).toLocaleString() : ''}</div>
-                    </div>
-                  </div>
-
-                  {/* Agents Grid */}
-                  {projectAgents.length === 0 ? (
-                    <div className="px-5 py-4 text-xs text-on-surface-variant">No agents assigned</div>
-                  ) : (
-                    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {projectAgents.map((agent) => (
-                        <div key={agent.agent_id} className="bg-surface-container rounded p-3 flex flex-col gap-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-on-surface">{agent.name || agent.role}</span>
-                            <span className={`ml-auto inline-flex px-2 py-0.5 rounded text-xs font-medium ${agentStatusStyle(agent.status)}`}>
-                              {agent.status}
-                            </span>
-                          </div>
+          <>
+            {/* Agent Cards Grid */}
+            {agents.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-primary">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                    </svg>
+                    Active Intelligence Units
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {agents.map((agent) => (
+                    <div
+                      key={agent.agent_id}
+                      className={`bg-surface-container-lowest rounded-lg p-5 shadow-[0_4px_20px_rgba(26,28,28,0.06)] border-l-2 ${borderColor(agent.status)} group hover:-translate-y-0.5 transition-transform duration-200`}
+                    >
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h4 className="font-bold text-on-surface group-hover:text-primary transition-colors">
+                            {agent.name || agent.role || 'Unnamed Agent'}
+                          </h4>
                           {agent.role && agent.name && (
-                            <div className="text-xs text-on-surface-variant">{agent.role}</div>
+                            <p className="text-[11px] text-secondary font-medium mt-0.5">{agent.role}</p>
                           )}
-                          {agent.task_description && (
-                            <div className="text-xs text-on-surface-variant line-clamp-2">{agent.task_description}</div>
-                          )}
-                          {agent.skills && (
-                            <div className="flex flex-wrap gap-1 mt-0.5">
-                              {(Array.isArray(agent.skills) ? agent.skills : String(agent.skills).split(',')).map((skill, si) => (
-                                <span key={si} className="px-1.5 py-0.5 bg-secondary-container text-on-secondary-fixed rounded text-[10px] font-medium">
-                                  {String(skill).trim()}
-                                </span>
-                              ))}
-                            </div>
+                          {agent.project_id && (
+                            <p className="text-[11px] text-secondary font-medium mt-0.5">
+                              Project: <span className="text-on-surface">{agent.project_id.slice(0, 8)}</span>
+                            </p>
                           )}
                         </div>
-                      ))}
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${agentStatusBadge(agent.status)}`}>
+                          {agent.status || 'unknown'}
+                        </span>
+                      </div>
+                      {agent.task_description && (
+                        <p className="text-xs text-secondary mb-3 line-clamp-2">{agent.task_description}</p>
+                      )}
+                      <div className="flex items-center justify-between text-[10px] text-secondary border-t border-surface-container pt-4">
+                        <span className="font-mono">{agent.agent_id?.slice(0, 12)}</span>
+                        {agent.skills && (
+                          <div className="flex flex-wrap gap-1">
+                            {(Array.isArray(agent.skills) ? agent.skills : String(agent.skills).split(',')).slice(0, 2).map((s, si) => (
+                              <span key={si} className="px-1.5 py-0.5 bg-secondary-container text-on-secondary-fixed-variant rounded text-[9px] font-bold">
+                                {String(s).trim()}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              </section>
+            )}
+
+            {/* Projects with grouped agents */}
+            {projects.length > 0 && (
+              <section className="bg-surface-container-low rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="uppercase tracking-[0.05em] text-[11px] font-semibold text-secondary">Projects</h3>
+                </div>
+                <div className="space-y-0.5">
+                  {projects.map((project) => {
+                    const projectAgents = agentsByProject[project.project_id] || [];
+                    return (
+                      <div key={project.project_id} className="flex items-center justify-between py-2 px-4 hover:bg-surface-container-high transition-colors rounded">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-6 h-6 rounded flex items-center justify-center text-white`}
+                            style={{ background: '#ad1a6c' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-3.5 h-3.5">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                          </div>
+                          <span className="text-xs font-medium text-on-surface">{project.name || project.project_id}</span>
+                          {project.description && (
+                            <span className="text-xs text-secondary hidden lg:block">{project.description}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-mono text-secondary">{projectAgents.length} agents</span>
+                          <span className={`text-[10px] font-bold uppercase tracking-tighter ${projectStatusBadge(project.status).split(' ')[1]}`}>
+                            {project.status}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+          </>
         )}
       </div>
     </div>
