@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react';
 import { useProtonQuery } from '../hooks/useProtonQuery';
 import PageHeader from '../components/PageHeader';
+import DataTable from '../components/DataTable';
+import MetricCard from '../components/MetricCard';
+import Card from '../components/Card';
 
 function severityBadge(sev) {
   const map = {
@@ -29,13 +32,56 @@ function sourceColor(source) {
   return colors[hash % colors.length];
 }
 
+const COLUMNS = [
+  {
+    header: 'Timestamp',
+    render: row => (
+      <span className="text-xs font-medium text-secondary tabular-nums whitespace-nowrap">
+        {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
+      </span>
+    ),
+  },
+  {
+    header: 'Source',
+    render: row => (
+      <div className="flex items-center gap-2">
+        <div className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${sourceColor(row.source)}`}>
+          {initials(row.source)}
+        </div>
+        <span className="font-semibold text-on-surface text-xs">{row.source}</span>
+      </div>
+    ),
+  },
+  {
+    header: 'Event Type',
+    render: row => <span className="text-xs text-on-surface/80 font-mono">{row.event_type}</span>,
+  },
+  {
+    header: 'Status',
+    render: row => (
+      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${severityBadge(row.severity)}`}>
+        {row.severity}
+      </span>
+    ),
+  },
+  {
+    header: 'Payload',
+    cellClassName: 'max-w-xs',
+    render: row => (
+      <span className="text-xs text-secondary truncate block font-mono">
+        {typeof row.payload === 'object' ? JSON.stringify(row.payload) : String(row.payload || '')}
+      </span>
+    ),
+  },
+];
+
 export default function Events() {
   const { data: stats, loading: statsLoading, query: queryStats } = useProtonQuery();
   const { data, loading, error, query } = useProtonQuery();
 
   const load = () => {
     queryStats(`SELECT count() as total, count_if(severity='error') as errors FROM table(pulsebot.events)`);
-    query(`SELECT id, timestamp, event_type, source, severity, payload FROM table(pulsebot.events) ORDER BY timestamp DESC LIMIT 200`);
+    query(`SELECT id, timestamp, event_type, source, severity, payload, tags FROM table(pulsebot.events) ORDER BY timestamp DESC LIMIT 200`);
   };
 
   useEffect(() => { load(); }, []);
@@ -55,49 +101,31 @@ export default function Events() {
           </div>
         </div>
 
-        {/* Stats Bento Grid */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-surface-container-lowest p-6 rounded-lg ambient-shadow border border-outline-variant/10 flex flex-col justify-between h-32">
-            <div className="flex justify-between items-start">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-secondary">Total Events</span>
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-tertiary">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold text-on-surface">{st.total ?? '—'}</span>
-            </div>
-          </div>
-          <div className="bg-surface-container-lowest p-6 rounded-lg ambient-shadow border border-outline-variant/10 flex flex-col justify-between h-32">
-            <div className="flex justify-between items-start">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-secondary">Event Sources</span>
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-primary">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-              </svg>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold text-on-surface">{data.length > 0 ? new Set(data.map(r => r.source)).size : '—'}</span>
-              <span className="text-primary text-[11px] font-bold">sources</span>
-            </div>
-          </div>
-          <div className="bg-surface-container-lowest p-6 rounded-lg ambient-shadow border border-outline-variant/10 flex flex-col justify-between h-32">
-            <div className="flex justify-between items-start">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-secondary">Critical Errors</span>
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-obs-error">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold text-on-surface">{st.errors ?? '—'}</span>
-              <span className={`text-[11px] font-bold ${st.errors > 0 ? 'text-obs-error' : 'text-tertiary'}`}>
-                {st.errors > 0 ? 'Active' : 'None'}
-              </span>
-            </div>
-          </div>
+          <MetricCard
+            label="Total Events"
+            value={st.total ?? '—'}
+            icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-tertiary"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
+          />
+          <MetricCard
+            label="Event Sources"
+            value={data.length > 0 ? new Set(data.map(r => r.source)).size : '—'}
+            tag="sources"
+            tagColor="text-primary"
+            icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-primary"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" /></svg>}
+          />
+          <MetricCard
+            label="Critical Errors"
+            value={st.errors ?? '—'}
+            tag={st.errors > 0 ? 'Active' : 'None'}
+            tagColor={st.errors > 0 ? 'text-obs-error' : 'text-tertiary'}
+            icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-obs-error"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>}
+          />
         </div>
 
         {/* Event Log Table */}
-        <div className="bg-surface-container-lowest rounded-lg ambient-shadow overflow-hidden border border-outline-variant/10">
+        <Card>
           <div className="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
             <h3 className="text-sm font-semibold text-on-surface uppercase tracking-wider">Event Log</h3>
             <div className="flex gap-4">
@@ -109,58 +137,14 @@ export default function Events() {
               </div>
             </div>
           </div>
-          {error && (
-            <div className="px-6 py-3 text-sm text-on-error-container bg-error-container">Error: {error}</div>
-          )}
-          <div className="overflow-x-auto">
-            {loading ? (
-              <div className="px-6 py-12 text-center text-sm text-secondary">Loading...</div>
-            ) : data.length === 0 ? (
-              <div className="px-6 py-12 text-center text-sm text-secondary">No events found</div>
-            ) : (
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-surface-container-low">
-                    <th className="px-6 py-3 text-[11px] font-bold text-secondary uppercase tracking-widest">Timestamp</th>
-                    <th className="px-6 py-3 text-[11px] font-bold text-secondary uppercase tracking-widest">Source</th>
-                    <th className="px-6 py-3 text-[11px] font-bold text-secondary uppercase tracking-widest">Event Type</th>
-                    <th className="px-6 py-3 text-[11px] font-bold text-secondary uppercase tracking-widest">Status</th>
-                    <th className="px-6 py-3 text-[11px] font-bold text-secondary uppercase tracking-widest">Payload</th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm">
-                  {data.map((row, i) => (
-                    <tr
-                      key={row.id || i}
-                      className={`hover:bg-surface transition-colors ${i % 2 === 1 ? 'bg-surface-container-low/30' : ''}`}
-                    >
-                      <td className="px-6 py-4 font-medium text-secondary tabular-nums text-xs whitespace-nowrap">
-                        {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${sourceColor(row.source)}`}>
-                            {initials(row.source)}
-                          </div>
-                          <span className="font-semibold text-on-surface text-xs">{row.source}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-on-surface/80 text-xs font-mono">{row.event_type}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${severityBadge(row.severity)}`}>
-                          {row.severity}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-xs text-secondary max-w-xs truncate font-mono">
-                        {typeof row.payload === 'object' ? JSON.stringify(row.payload) : String(row.payload || '')}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
+          <DataTable
+            data={data}
+            columns={COLUMNS}
+            loading={loading}
+            error={error}
+            emptyMessage="No events found"
+          />
+        </Card>
       </div>
     </div>
   );

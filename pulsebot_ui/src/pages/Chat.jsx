@@ -1,10 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { formatMessage } from '../utils';
 import { useChatContext } from '../context/ChatContext';
-
-const WS_URL = import.meta.env.DEV
-  ? `ws://localhost:8000/ws`
-  : `ws://${window.location.host}/ws`;
 
 const ThinkingIndicator = ({ think }) => {
   const [now, setNow] = useState(Date.now());
@@ -39,180 +35,34 @@ const ThinkingIndicator = ({ think }) => {
 
 export default function Chat() {
   const {
-    sessionId,
     messages,
-    setMessages,
-    activeToolCalls,
-    setActiveToolCalls,
-    activeLlmThinking,
-    setActiveLlmThinking,
+    isConnected,
+    isAgentReady,
+    isWaitingForResponse,
+    sendMessage: ctxSendMessage,
     clearSession,
   } = useChatContext();
 
-  // Local WebSocket state — does NOT need to persist across navigation
-  const [isConnected, setIsConnected] = useState(false);
-  const [isAgentReady, setIsAgentReady] = useState(false);
-  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [inputValue, setInputValue] = useState('');
-  const [toast, setToast] = useState({ visible: false, message: '', isError: false });
 
-  const socketRef = useRef(null);
-  const sessionIdRef = useRef(sessionId);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  const scrollToBottom = () => {
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, activeToolCalls, activeLlmThinking, isWaitingForResponse]);
-
-  const showToast = useCallback((message, isError = false) => {
-    setToast({ visible: true, message, isError });
-    setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
-  }, []);
-
-  const connect = useCallback((sid) => {
-    const wsUrl = `${WS_URL}/${sid}`;
-    const socket = new WebSocket(wsUrl);
-    socketRef.current = socket;
-    let agentReadyFallback;
-
-    socket.onopen = () => {
-      setIsConnected(true);
-      agentReadyFallback = setTimeout(() => setIsAgentReady(true), 10000);
-    };
-
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'response') {
-        setIsWaitingForResponse(false);
-        setActiveToolCalls(new Map());
-        setActiveLlmThinking(new Map());
-        setMessages(msgs => msgs.map(m =>
-          (m.type === 'llm_thinking' && m.status === 'started') ? { ...m, status: 'completed' } : m
-        ));
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setMessages(prev => [...prev, {
-          id: Date.now() + Math.random(), type: 'message', text: data.text, role: 'assistant', time,
-        }]);
-      } else if (data.type === 'tool_call') {
-        const argsSummary = data.args_summary || '';
-        const toolName = data.tool_name;
-        if (data.status === 'started') {
-          const id = Date.now() + Math.random();
-          setMessages(prev => [...prev, {
-            id, type: 'tool_call', toolName, argsSummary,
-            status: 'started', durationMs: null, resultPreview: null,
-          }]);
-          setActiveToolCalls(prev => { const n = new Map(prev); n.set(toolName, id); return n; });
-        } else {
-          setActiveToolCalls(prev => {
-            const id = prev.get(toolName);
-            if (id) {
-              setMessages(msgs => msgs.map(m => m.id === id
-                ? { ...m, status: data.status, durationMs: data.duration_ms, resultPreview: data.result_preview }
-                : m));
-              const n = new Map(prev); n.delete(toolName); return n;
-            }
-            return prev;
-          });
-        }
-      } else if (data.type === 'llm_thinking') {
-        const iteration = data.iteration || 1;
-        if (data.status === 'started') {
-          const id = Date.now() + Math.random();
-          setMessages(prev => [...prev, {
-            id, type: 'llm_thinking', iteration, status: 'started', startMs: Date.now(), durationMs: null,
-          }]);
-          setActiveLlmThinking(prev => { const n = new Map(prev); n.set(iteration, id); return n; });
-        } else {
-          setActiveLlmThinking(prev => {
-            const id = prev.get(iteration);
-            if (id) {
-              setMessages(msgs => msgs.map(m => m.id === id
-                ? { ...m, status: 'completed', durationMs: data.duration_ms }
-                : m));
-              const n = new Map(prev); n.delete(iteration); return n;
-            }
-            return prev;
-          });
-        }
-      } else if (data.type === 'task_notification') {
-        const label = data.task_name ? `[Scheduled: ${data.task_name}] ` : '[Scheduled Task] ';
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setMessages(prev => [...prev, {
-          id: Date.now() + Math.random(), type: 'message', text: label + data.text, role: 'assistant', time,
-        }]);
-      } else if (data.type === 'agent_ready') {
-        clearTimeout(agentReadyFallback);
-        setIsAgentReady(true);
-      }
-    };
-
-    socket.onclose = () => {
-      clearTimeout(agentReadyFallback);
-      setIsConnected(false);
-      setIsAgentReady(false);
-      setActiveLlmThinking(new Map());
-      // Reconnect with same session ID (from ref)
-      setTimeout(() => {
-        if (socketRef.current === socket) {
-          connect(sessionIdRef.current);
-        }
-      }, 3000);
-    };
-
-    socket.onerror = () => {
-      showToast('Connection error. Retrying...', true);
-    };
-  }, [setMessages, setActiveToolCalls, setActiveLlmThinking, showToast]);
-
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
-
-  useEffect(() => {
-    connect(sessionId);
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.onclose = null;
-        socketRef.current.close();
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [messages, isWaitingForResponse]);
 
   const sendMessage = () => {
     const text = inputValue.trim();
-    if (!text || !isConnected || !isAgentReady || isWaitingForResponse) return;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setMessages(prev => [...prev, {
-      id: Date.now() + Math.random(), type: 'message', text, role: 'user', time,
-    }]);
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: 'message', text }));
-    }
+    if (!ctxSendMessage(text)) return;
     setInputValue('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    setIsWaitingForResponse(true);
   };
 
   const newSession = () => {
-    const sid = clearSession();
-    sessionIdRef.current = sid;
-    setIsWaitingForResponse(false);
-    setIsAgentReady(false);
-    // Close current socket cleanly; reconnect will use new sid via sessionIdRef
-    if (socketRef.current) {
-      socketRef.current.onclose = null;
-      socketRef.current.close();
-    }
-    connect(sid);
+    clearSession();
   };
 
   const handleKeyDown = (e) => {
@@ -235,7 +85,7 @@ export default function Chat() {
   return (
     <div className="flex flex-col h-full bg-gray-50 text-gray-900">
       {/* Header */}
-      <header className="glass-header ambient-shadow flex justify-between items-center px-4 py-2 flex-shrink-0">
+      <header className="glass-header ambient-shadow flex justify-between items-center px-4 py-3 flex-shrink-0">
         <div className="flex items-center gap-2 text-xs text-secondary">
           <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-tertiary' : 'bg-surface-dim'}`}></span>
           <span>{isConnected ? (isAgentReady ? 'Agent ready' : 'Connecting...') : 'Disconnected'}</span>
@@ -378,10 +228,6 @@ export default function Chat() {
         </div>
       </div>
 
-      {/* Toast */}
-      <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded text-sm text-white shadow-lg transition-all duration-300 z-50 ${toast.visible ? 'translate-y-0 opacity-100' : 'translate-y-[100px] opacity-0'} ${toast.isError ? 'bg-obs-error' : 'bg-on-surface'}`}>
-        {toast.message}
-      </div>
     </div>
   );
 }

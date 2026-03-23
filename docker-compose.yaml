@@ -76,6 +76,7 @@ services:
       - WORKSPACE_INTERNAL_KEY=test-workspace-key-12345
     volumes:
       - ./config.yaml:/app/config.yaml:ro
+      - ./pulsebot/web:/usr/local/lib/python3.12/site-packages/pulsebot/web:ro
     depends_on:
       proton:
         condition: service_healthy
