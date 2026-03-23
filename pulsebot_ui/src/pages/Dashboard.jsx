@@ -32,9 +32,9 @@ export default function Dashboard() {
   const { data: recentTools, loading: recentLoading, query: queryRecent } = useProtonQuery();
 
   const load = () => {
-    queryEvents(`SELECT count() as total, countIf(severity='error') as errors FROM table(pulsebot.events)`);
+    queryEvents(`SELECT count() as total, count_if(severity='error') as errors FROM table(pulsebot.events)`);
     queryLlm(`SELECT count() as total, round(avg(latency_ms)) as avg_latency FROM table(pulsebot.llm_logs)`);
-    queryTools(`SELECT count() as total, countIf(status='success') as success FROM table(pulsebot.tool_logs)`);
+    queryTools(`SELECT count() as total, count_if(status='success') as success FROM table(pulsebot.tool_logs)`);
     queryRecent(`SELECT timestamp, tool_name, skill_name, duration_ms, status FROM table(pulsebot.tool_logs) ORDER BY timestamp DESC LIMIT 10`);
   };
 

@@ -34,7 +34,7 @@ export default function Events() {
   const { data, loading, error, query } = useProtonQuery();
 
   const load = () => {
-    queryStats(`SELECT count() as total, countIf(severity='error') as errors FROM table(pulsebot.events)`);
+    queryStats(`SELECT count() as total, count_if(severity='error') as errors FROM table(pulsebot.events)`);
     query(`SELECT id, timestamp, event_type, source, severity, payload FROM table(pulsebot.events) ORDER BY timestamp DESC LIMIT 200`);
   };
 

@@ -13,7 +13,7 @@ export default function ToolLogs() {
   const { data, loading, error, query } = useProtonQuery();
 
   const load = () => {
-    queryMetrics(`SELECT count() as total, round(avg(duration_ms)) as avg_latency, round(countIf(status='success') * 100.0 / count()) as success_rate FROM table(pulsebot.tool_logs)`);
+    queryMetrics(`SELECT count() as total, round(avg(duration_ms)) as avg_latency, round(count_if(status='success') * 100.0 / count()) as success_rate FROM table(pulsebot.tool_logs)`);
     query(`SELECT id, timestamp, session_id, tool_name, skill_name, status, duration_ms, result_preview, error_message FROM table(pulsebot.tool_logs) ORDER BY timestamp DESC LIMIT 200`);
   };
 

@@ -17,7 +17,7 @@ export default function LLMLogs() {
   const { data, loading, error, query } = useProtonQuery();
 
   const load = () => {
-    querySummary(`SELECT round(avg(latency_ms)) as avg_latency, round(countIf(status='success') * 100.0 / count()) as success_rate, sum(total_tokens) as total_tokens FROM table(pulsebot.llm_logs)`);
+    querySummary(`SELECT round(avg(latency_ms)) as avg_latency, round(count_if(status='success') * 100.0 / count()) as success_rate, sum(total_tokens) as total_tokens FROM table(pulsebot.llm_logs)`);
     query(`SELECT id, timestamp, session_id, model, provider, input_tokens, output_tokens, total_tokens, latency_ms, status, error_message FROM table(pulsebot.llm_logs) ORDER BY timestamp DESC LIMIT 200`);
   };
 

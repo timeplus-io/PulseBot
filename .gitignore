@@ -5,6 +5,7 @@ docs/superpowers/
 .clawhub
 /skills/
 pulsebot/_version.py
+docs/ui_design_mockups/
 
 # Python
 __pycache__/
