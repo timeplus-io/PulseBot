@@ -616,12 +616,12 @@ class Agent:
             "estimated_cost_usd": self.llm.estimate_cost(response_usage) if response_usage else 0.0,
             "latency_ms": int(latency_ms),
             "system_prompt_hash": hash_content(context.system_prompt),
-            "system_prompt_preview": truncate_string(context.system_prompt, 200),
+            "system_prompt_preview": truncate_string(context.system_prompt, 5000),
             "user_message_preview": truncate_string(
                 context.messages[-1].get("content", "") if context.messages else "",
-                200
+                5000
             ),
-            "assistant_response_preview": truncate_string(response_content or "", 200),
+            "assistant_response_preview": truncate_string(response_content or "", 5000),
             "full_response_content": response_content or "",  # Full response for debugging
             "messages_count": len(context.messages),
             "tools_called": [tc.name for tc in (response_tool_calls or [])],
@@ -781,7 +781,7 @@ class Agent:
             "skill_name": tool_name.split("_")[0] if "_" in tool_name else tool_name,
             "arguments": json.dumps(arguments),
             "status": status,
-            "result_preview": truncate_string(result, 500),
+            "result_preview": truncate_string(result, 5000),
             "error_message": result if status == "error" else "",
             "duration_ms": duration_ms,
             "caller": "main",
