@@ -184,6 +184,24 @@ export default function Chat() {
                   );
                 } else if (item.type === 'llm_thinking') {
                   return <ThinkingIndicator key={item.id} think={item} />;
+                } else if (item.type === 'system_error') {
+                  return (
+                    <div key={item.id} className="flex items-start gap-2.5 px-3.5 py-2.5 bg-red-50 border border-red-300 rounded text-[13px] text-red-800 animate-fade-in my-1 w-fit max-w-[80%]">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 shrink-0 mt-0.5 text-red-500">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                      </svg>
+                      <span>{item.text}</span>
+                    </div>
+                  );
+                } else if (item.type === 'system_info') {
+                  return (
+                    <div key={item.id} className="flex items-start gap-2.5 px-3.5 py-2.5 bg-green-50 border border-green-300 rounded text-[13px] text-green-800 animate-fade-in my-1 w-fit max-w-[80%]">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 shrink-0 mt-0.5 text-green-500">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>{item.text}</span>
+                    </div>
+                  );
                 }
                 return null;
               })}

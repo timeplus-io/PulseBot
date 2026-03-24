@@ -2,7 +2,7 @@ services:
   # Proton - Open Source Streaming Database
   # For enterprise Timeplus, replace with: timeplus/timeplusd:latest
   timeplus:
-    image: timeplus/pulsebot-timeplus:0.5.1
+    image: timeplus/pulsebot-timeplus:0.7.2
     platform: linux/amd64
     ports:
       - 8000:8000 # Timeplus Console

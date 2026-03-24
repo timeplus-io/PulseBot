@@ -107,6 +107,19 @@ export function ChatProvider({ children }) {
       } else if (data.type === 'agent_ready') {
         clearTimeout(agentReadyFallback);
         setAgentReady(true);
+      } else if (data.type === 'system_error') {
+        setWaiting(false);
+        setActiveToolCalls(new Map());
+        setActiveLlmThinking(new Map());
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setMessages(prev => [...prev, {
+          id: Date.now() + Math.random(), type: 'system_error', text: data.message, time,
+        }]);
+      } else if (data.type === 'system_info') {
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setMessages(prev => [...prev, {
+          id: Date.now() + Math.random(), type: 'system_info', text: data.message, time,
+        }]);
       }
     };
 
