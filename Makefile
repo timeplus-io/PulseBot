@@ -133,9 +133,14 @@ info:
 	@echo "Single Platform: $(SINGLE_PLATFORM)"
 	@echo "Multi Platforms: $(PLATFORMS)"
 
+# Build the web UI (must be run before publishing)
+.PHONY: build-ui
+build-ui:
+	cd pulsebot_ui && npm run build
+
 # Publish to PyPI
 .PHONY: publish
-publish:
+publish: build-ui
 	rm -rf dist/*
-	uvx --from build pyproject-build --installer uv
+	uvx --from build pyproject-build --installer uv --wheel
 	uvx --from twine twine upload --config-file .pypirc dist/*
