@@ -989,28 +989,36 @@ class Agent:
             "original_message_id": message.get("id"),
         })
 
-        # Log error internally
-        await self.messages_writer.write({
-            "source": "agent",
-            "target": "agent",
-            "session_id": session_id,
-            "message_type": "error",
-            "content": json.dumps({
-                "error": error_msg,
-                "original_message_id": message.get("id"),
-            }),
-            "priority": 2,
-        })
+        try:
+            # Log error internally
+            await self.messages_writer.write({
+                "source": "agent",
+                "target": "agent",
+                "session_id": session_id,
+                "message_type": "error",
+                "content": json.dumps({
+                    "error": error_msg,
+                    "original_message_id": message.get("id"),
+                }),
+                "priority": 2,
+            })
 
-        # Send error response to client
-        await self.messages_writer.write({
-            "source": "agent",
-            "target": f"channel:{source}",
-            "session_id": session_id,
-            "message_type": "agent_response",
-            "content": json.dumps({
-                "text": f"Sorry, an error occurred while processing your request: {error_msg}"
-            }),
-            "user_id": message.get("user_id", ""),
-            "priority": 0,
-        })
+            # Send error response to client
+            await self.messages_writer.write({
+                "source": "agent",
+                "target": f"channel:{source}",
+                "session_id": session_id,
+                "message_type": "agent_response",
+                "content": json.dumps({
+                    "text": f"Sorry, an error occurred while processing your request: {error_msg}"
+                }),
+                "user_id": message.get("user_id", ""),
+                "priority": 0,
+            })
+        except Exception as write_exc:
+            # Stream write failed (e.g. disk full) — log locally, cannot notify client via stream.
+            # The WebSocket health monitor in the API server will detect and forward the condition.
+            logger.error(
+                "Failed to write error response to stream (stream write unavailable): %s",
+                write_exc,
+            )

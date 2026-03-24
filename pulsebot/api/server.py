@@ -35,10 +35,64 @@ logger = get_logger(__name__)
 
 # Global state
 _config: Config | None = None
+_config_path: str = "config.yaml"
 _writer: StreamWriter | None = None
 _reader: StreamReader | None = None
 
 _proxy_registry: ProxyRegistry | None = None
+
+
+# Sensitive field names whose values should be masked in GET /config responses
+_SENSITIVE_FIELDS = {"api_key", "password", "token", "auth_token", "internal_api_key"}
+
+
+def _mask_secrets(obj: Any) -> Any:
+    """Recursively mask sensitive fields in a config dict."""
+    if isinstance(obj, dict):
+        result = {}
+        for k, v in obj.items():
+            if isinstance(v, (dict, list)):
+                result[k] = _mask_secrets(v)
+            elif k in _SENSITIVE_FIELDS and v:
+                result[k] = "***"
+            else:
+                result[k] = v
+        return result
+    if isinstance(obj, list):
+        return [_mask_secrets(i) for i in obj]
+    return obj
+
+
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    """Recursively merge overlay into base, returning a new dict."""
+    result = dict(base)
+    for k, v in overlay.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = _deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
+
+def _classify_db_error(exc: Exception) -> str:
+    """Return a human-readable message for a database write/connect failure.
+
+    Matches well-known Proton/ClickHouse error codes for a specific hint;
+    falls back to the raw exception message for everything else so that no
+    error is silently swallowed or misrepresented.
+    """
+    msg = str(exc)
+    if "max_disk_util" in msg or "2529" in msg:
+        return "Database disk is full. The agent cannot respond until disk space is freed."
+    if "Connection refused" in msg or "ConnectionRefused" in msg:
+        return "Cannot connect to the database. Check that Proton/Timeplus is running."
+    if "Authentication failed" in msg or "194" in msg:
+        return "Database authentication failed. Check credentials in config.yaml."
+    if "Code:" in msg:
+        # Generic Proton exception — include the code for actionability
+        return f"Database error: {msg}"
+    # Network / OS / unknown
+    return f"Unexpected error communicating with the database: {msg}"
 
 
 class ChatRequest(BaseModel):
@@ -79,15 +133,15 @@ class TaskTriggerResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global _config, _writer, _reader, _proxy_registry
-    
+    global _config, _config_path, _writer, _reader, _proxy_registry
+
     # Startup
     logger.info("Starting PulseBot API server")
-    
+
     try:
         from pulsebot.timeplus.client import TimeplusClient
-        
-        _config = load_config()
+
+        _config = load_config(_config_path)
         
         _proxy_registry = ProxyRegistry()
         internal_key = _config.workspace.internal_api_key
@@ -111,16 +165,18 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down API server")
 
 
-def create_app(config: Config | None = None) -> FastAPI:
+def create_app(config: Config | None = None, config_path: str = "config.yaml") -> FastAPI:
     """Create FastAPI application.
-    
+
     Args:
         config: Optional configuration override
-        
+        config_path: Path to config.yaml used for reads/writes via the config API
+
     Returns:
         Configured FastAPI app
     """
-    global _config
+    global _config, _config_path
+    _config_path = config_path
     
     if config:
         _config = config
@@ -173,6 +229,73 @@ async def serve_web_ui() -> FileResponse:
     if index_path.exists():
         return FileResponse(str(index_path))
     raise HTTPException(status_code=404, detail="Web UI not found")
+
+
+@router.get("/config", tags=["System"])
+async def get_config() -> dict[str, Any]:
+    """Return the current configuration with secrets masked.
+
+    API keys, passwords, and tokens are replaced with ``"***"`` when non-empty.
+    """
+    if _config is None:
+        raise HTTPException(status_code=500, detail="Server not initialized")
+    raw = _config.model_dump()
+    return _mask_secrets(raw)
+
+
+@router.patch("/config", tags=["System"])
+async def update_config(updates: dict[str, Any]) -> dict[str, Any]:
+    """Deep-merge partial updates into the running configuration and persist to disk.
+
+    Only the fields present in the request body are changed — omitted fields
+    keep their current values.  Secrets are masked in the response.
+
+    Changes take effect immediately for new agent interactions.  Some settings
+    (e.g. channels, Timeplus connection) require a server restart to fully
+    apply.
+
+    Example body to change just the active model::
+
+        {"agent": {"model": "gpt-4o", "provider": "openai"}}
+    """
+    global _config
+    if _config is None:
+        raise HTTPException(status_code=500, detail="Server not initialized")
+
+    # Deep-merge updates onto current config dict
+    current = _config.model_dump()
+    merged = _deep_merge(current, updates)
+
+    try:
+        _config = Config(**merged)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid config: {e}") from e
+
+    # Persist to config.yaml — best-effort; in-memory update always succeeds.
+    persist_warning: str | None = None
+    try:
+        import yaml as _yaml
+        config_file = Path(_config_path)
+        if config_file.exists():
+            with open(config_file) as f:
+                existing_yaml = _yaml.safe_load(f) or {}
+            saved = _deep_merge(existing_yaml, updates)
+        else:
+            saved = merged
+        with open(config_file, "w") as f:
+            _yaml.dump(saved, f, default_flow_style=False, allow_unicode=True)
+        logger.info("Configuration updated and persisted via API", extra={"keys": list(updates.keys())})
+    except OSError as e:
+        persist_warning = f"Settings applied in memory but could not be saved to disk: {e}"
+        logger.warning("Config persist failed (read-only fs?): %s", e)
+    except Exception as e:
+        persist_warning = f"Settings applied in memory but file write failed: {e}"
+        logger.warning("Config persist error: %s", e)
+
+    result = _mask_secrets(_config.model_dump())
+    if persist_warning:
+        result["_warning"] = persist_warning
+    return result
 
 
 @router.get("/health", response_model=HealthResponse, tags=["System"])
@@ -313,19 +436,28 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
         try:
             while True:
                 data = await websocket.receive_json()
-                
+
                 if data.get("type") == "message":
                     text = data.get("text", "")
-                    
-                    await _writer.write({
-                        "source": "webchat",
-                        "target": "agent",
-                        "session_id": session_id,
-                        "message_type": "user_input",
-                        "content": json.dumps({"text": text}),
-                        "priority": 0,
-                    })
-                    
+                    try:
+                        await _writer.write({
+                            "source": "webchat",
+                            "target": "agent",
+                            "session_id": session_id,
+                            "message_type": "user_input",
+                            "content": json.dumps({"text": text}),
+                            "priority": 0,
+                        })
+                    except Exception as write_exc:
+                        logger.error(f"WebSocket message write failed: {write_exc}")
+                        try:
+                            await websocket.send_json({
+                                "type": "system_error",
+                                "message": _classify_db_error(write_exc),
+                            })
+                        except Exception:
+                            pass
+
         except WebSocketDisconnect:
             logger.info(f"WebSocket disconnected: {session_id}")
         except Exception as e:
@@ -464,6 +596,52 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
         except Exception as e:
             logger.error(f"WebSocket agent_status stream error: {e}")
 
+    async def monitor_system_health():
+        """Periodically check Proton write availability and notify the UI on failure.
+
+        Attempts a lightweight insert every 30 seconds. If it fails with a
+        disk-full or other write error, sends a ``system_error`` event directly
+        to the WebSocket client so the UI can surface the issue without waiting
+        for a user message attempt or an agent response timeout.
+        """
+        import datetime as _dt
+        _last_error: str | None = None
+        while True:
+            await asyncio.sleep(30)
+            if websocket.client_state.name != "CONNECTED":
+                break
+            try:
+                ws_health_client = TimeplusClient.from_config(_config.timeplus)
+                ws_health_client.insert("pulsebot.events", [{
+                    "event_type": "system.health_check",
+                    "source": "api:health",
+                    "severity": "debug",
+                    "payload": "{}",
+                    "tags": ["system"],
+                    "id": "health-check",
+                    "timestamp": _dt.datetime.now(_dt.timezone.utc),
+                }])
+                # Write succeeded — clear any previous error state
+                if _last_error is not None:
+                    _last_error = None
+                    try:
+                        await websocket.send_json({
+                            "type": "system_info",
+                            "message": "Database is back online. You can send messages again.",
+                        })
+                    except Exception:
+                        pass
+            except Exception as health_exc:
+                msg = _classify_db_error(health_exc)
+                # Only send the error once per continuous failure run (avoid flooding)
+                if msg != _last_error:
+                    _last_error = msg
+                    logger.warning(f"System health check failed: {health_exc}")
+                    try:
+                        await websocket.send_json({"type": "system_error", "message": msg})
+                    except Exception:
+                        break
+
     # Run all tasks concurrently.
     # Only receive_messages() signals client disconnect — when it finishes,
     # cancel the background stream tasks. Background tasks failing on their own
@@ -472,15 +650,16 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
     send_task = asyncio.create_task(send_responses())
     notify_task = asyncio.create_task(forward_task_notifications())
     agent_status_task = asyncio.create_task(forward_agent_status())
+    health_task = asyncio.create_task(monitor_system_health())
 
     try:
         await receive_task
     except Exception as e:
         logger.error(f"WebSocket receive_task error: {e}")
     finally:
-        for task in (send_task, notify_task, agent_status_task):
+        for task in (send_task, notify_task, agent_status_task, health_task):
             task.cancel()
-        await asyncio.gather(send_task, notify_task, agent_status_task, return_exceptions=True)
+        await asyncio.gather(send_task, notify_task, agent_status_task, health_task, return_exceptions=True)
 
 
 @router.get("/sessions/{session_id}/history", tags=["Chat"])
