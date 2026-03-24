@@ -424,11 +424,11 @@ class SubAgent:
             "total_tokens": usage.total_tokens if usage else 0,
             "estimated_cost_usd": self.llm.estimate_cost(usage) if usage else 0.0,
             "latency_ms": latency_ms,
-            "system_prompt_preview": truncate_string(system_prompt, 200),
+            "system_prompt_preview": truncate_string(system_prompt, 5000),
             "user_message_preview": truncate_string(
-                messages[-1].get("content", "") if messages else "", 200
+                messages[-1].get("content", "") if messages else "", 5000
             ),
-            "assistant_response_preview": truncate_string(response.content or "", 200) if response else "",
+            "assistant_response_preview": truncate_string(response.content or "", 5000) if response else "",
             "full_response_content": response.content or "" if response else "",
             "messages_count": len(messages),
             "tools_called": [tc.name for tc in (response.tool_calls or [])] if response else [],
@@ -453,7 +453,7 @@ class SubAgent:
             "skill_name": tool_name.split("_")[0] if "_" in tool_name else tool_name,
             "arguments": json.dumps(arguments),
             "status": status,
-            "result_preview": truncate_string(result, 500),
+            "result_preview": truncate_string(result, 5000),
             "error_message": result if status == "error" else "",
             "duration_ms": duration_ms,
             "caller": self.agent_id,

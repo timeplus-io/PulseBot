@@ -1,142 +1,245 @@
 # PulseBot Configuration
-# Environment variables can be substituted with ${VAR_NAME} syntax
+# Copy this file to config.yaml and fill in your values.
+# Environment variables can be substituted with ${VAR_NAME} or ${VAR_NAME:-default} syntax.
 
+# ---------------------------------------------------------------------------
+# Agent — core LLM identity
+# ---------------------------------------------------------------------------
 agent:
-  name: "PulseBot"
-  model: "kimi-k2.5:cloud"
-  provider: "ollama"
-  temperature: 0.7
-  max_tokens: 4096
+  name: "PulseBot"                      # Display name shown in responses
+  provider: "anthropic"                 # Active LLM provider: anthropic | openai | openrouter | gemini | ollama | nvidia
+  model: "claude-sonnet-4-20250514"     # Model ID for the chosen provider
+  temperature: 0.7                      # 0.0 = deterministic, 1.0 = creative
+  max_tokens: 4096                      # Max tokens in a single LLM response
+  max_iterations: 15                    # Max tool-call iterations per user message
+  verbose_tools: false                  # Log full tool arguments/results to console
 
+# ---------------------------------------------------------------------------
+# Timeplus — streaming database backend (required)
+# ---------------------------------------------------------------------------
 timeplus:
-  host: "${TIMEPLUS_HOST:-localhost}"
-  port: 8463
+  host: "${TIMEPLUS_HOST:-localhost}"   # Timeplus/Proton server hostname
+  port: 8463                            # Native protocol port (default 8463)
   username: "${TIMEPLUS_USER:-default}"
   password: "${TIMEPLUS_PASSWORD:-}"
 
+# ---------------------------------------------------------------------------
+# Providers — API keys and default models for each LLM provider
+# Only configure the provider(s) you intend to use.
+# ---------------------------------------------------------------------------
 providers:
+  # Anthropic Claude
   anthropic:
     api_key: "${ANTHROPIC_API_KEY}"
-    default_model: "claude-sonnet-4-20250514"
+    default_model: "claude-sonnet-4-20250514"  # claude-opus-4-6, claude-haiku-4-5-20251001
 
+  # OpenAI — also works for any OpenAI-compatible API
   openai:
     api_key: "${OPENAI_API_KEY}"
     default_model: "gpt-4o"
-    # For any OpenAI-compatible vendor, set base_url and optionally provider_name:
+    # Uncomment to point at a different OpenAI-compatible endpoint:
     # base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"  # Alibaba Qwen
     # base_url: "https://api.deepseek.com/v1"                         # DeepSeek
-    # provider_name: "alibaba_qwen"  # optional display name
+    # provider_name: "deepseek"  # optional display name override
 
+  # OpenRouter — unified gateway to many models
   openrouter:
     api_key: "${OPENROUTER_API_KEY}"
     default_model: "anthropic/claude-sonnet-4-20250514"
     base_url: "https://openrouter.ai/api/v1"
 
-  # Local LLM via Ollama (no API key needed)
+  # Google Gemini
+  gemini:
+    api_key: "${GEMINI_API_KEY}"
+    default_model: "gemini-2.5-flash"   # gemini-2.5-pro, gemini-2.0-flash
+    timeout_seconds: 120                # Abort hung API calls after this many seconds
+
+  # Ollama — local LLM, no API key required
   ollama:
-    enabled: true
+    enabled: false
     host: "${OLLAMA_HOST:-http://localhost:11434}"
-    default_model: "kimi-k2.5:cloud" # or: mistral, codellama, phi3, gemma2
+    default_model: "llama3"             # llama3, mistral, phi3, gemma2, qwen2.5
+    timeout_seconds: 120
 
+  # NVIDIA NIM
+  nvidia:
+    api_key: "${NVIDIA_API_KEY}"
+    default_model: "moonshotai/kimi-k2.5"
+    timeout_seconds: 120
+    enable_thinking: false              # Enable extended thinking (supported models only)
+
+# ---------------------------------------------------------------------------
+# Channels — input sources the agent listens on
+# ---------------------------------------------------------------------------
 channels:
+  # Telegram bot integration
   telegram:
-    enabled: true
+    enabled: false
     token: "${TELEGRAM_BOT_TOKEN}"
-    allow_from: [8518633508] # Telegram user IDs, empty = allow all
+    allow_from: []                      # Restrict to these Telegram user IDs; empty = allow all
 
+  # Web chat UI (served at http://host:port/)
   webchat:
     enabled: true
     port: 8000
 
+# ---------------------------------------------------------------------------
+# Skills — tools available to the agent
+# ---------------------------------------------------------------------------
 skills:
+  # Built-in skills to load. Remove any you don't need.
   builtin:
-    - file_ops
-    - shell
-    - workspace
-    - scheduler
-    - skill_manager
-    - project_manager
+    - file_ops        # Read/write files in the workspace
+    - shell           # Run shell commands
+    - workspace       # Manage isolated session workspaces
+    - scheduler       # Create and manage scheduled tasks
+    - skill_manager   # Install/list skills from ClawHub registry
+    - project_manager # Spawn and coordinate multi-agent projects
 
+  # Custom skill class paths (rarely needed; prefer agentskills packages)
   custom: []
 
-  # Directories to scan for agentskills.io skill packages
+  # Directories to scan for agentskills.io skill packages (.zip or unpacked)
   skill_dirs:
-    - "./skills"          # relative to where you run pulsebot
+    - "./skills"      # Relative to the working directory where pulsebot runs
 
-  # Skill names to skip (by name field in SKILL.md frontmatter)
+  # Skill names (from SKILL.md frontmatter) to skip even if found on disk
   disabled_skills: []
 
+  # ClawHub skill registry integration
+  clawhub:
+    enabled: true
+    site_url: "https://clawhub.ai"
+    # registry_url:       # Auto-discovered from .well-known; override only if needed
+    # install_dir:        # Defaults to first entry in skill_dirs
+    # auth_token_path:    # Path to file containing your ClawHub auth token
+    verify_checksums: true   # Verify SHA256 checksums on downloaded skill packages
+    auto_update: false       # Auto-update installed skills on each startup
+
+# ---------------------------------------------------------------------------
+# MCP Servers — Model Context Protocol tool servers
+# ---------------------------------------------------------------------------
 mcp_servers: []
-# Example:
+# Example stdio server:
 # - name: "filesystem"
 #   transport: "stdio"
 #   command: "npx"
 #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+#
+# Example HTTP/SSE server:
+# - name: "my-mcp-server"
+#   transport: "sse"
+#   url: "http://localhost:3001/sse"
 
+# ---------------------------------------------------------------------------
+# Scheduled Tasks — background tasks the agent runs on a schedule
+# ---------------------------------------------------------------------------
 scheduled_tasks:
+  # Periodic heartbeat: agent checks calendar/reminders on an interval
   heartbeat:
-    enabled: true
-    interval: "30m"
+    enabled: false
+    interval: "30m"              # How often to run (e.g. "15m", "1h", "30m")
     actions: ["calendar", "reminders"]
 
+  # Daily summary: agent posts a digest on a cron schedule
   daily_summary:
     enabled: false
-    cron: "0 9 * * *"
-    timezone: "UTC"
+    cron: "0 9 * * *"           # Standard 5-field cron expression
+    timezone: "UTC"              # IANA timezone name (e.g. "America/Los_Angeles")
 
+# ---------------------------------------------------------------------------
+# API Server — FastAPI REST + WebSocket server
+# ---------------------------------------------------------------------------
 api:
   host: "0.0.0.0"
   port: 8000
-  cors_origins:
+  cors_origins:                  # Allowed CORS origins for browser clients
     - "http://localhost:3000"
     - "http://localhost:5173"
 
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 logging:
-  level: "INFO"
-  format: "json" # "json" or "text"
+  level: "INFO"       # DEBUG | INFO | WARNING | ERROR | CRITICAL
+  format: "json"      # "json" (structured, for log aggregators) or "text" (human-readable)
 
+# ---------------------------------------------------------------------------
+# Memory — vector-indexed long-term memory
+# ---------------------------------------------------------------------------
 memory:
-  similarity_threshold: 0.95  # Adjust duplicate detection sensitivity (0.0-1.0)
   enabled: true
+  similarity_threshold: 0.95    # Cosine similarity floor for duplicate suppression (0.0–1.0)
 
   # Embedding provider for vector memory.
-  # "local"  — runs fully local via sentence-transformers, no API key needed (default)
-  # "openai" — cloud-based, higher quality, requires OPENAI_API_KEY
-  # "ollama" — local via Ollama server, requires Ollama running
+  # "local"  — sentence-transformers, no API key, runs fully offline (default)
+  # "openai" — cloud embeddings, higher quality, requires OPENAI_API_KEY
+  # "ollama" — local via Ollama server
   embedding_provider: "local"
-  embedding_model: "all-MiniLM-L6-v2"  # local:  all-MiniLM-L6-v2 (384-dim, ~100MB, CPU-friendly)
-                                        # openai: text-embedding-3-small (1536), text-embedding-3-large (3072)
-                                        # ollama: mxbai-embed-large (1024), all-minilm (384), nomic-embed-text (768)
-  # embedding_api_key: "${OPENAI_API_KEY}"   # Optional: override OpenAI API key
-  # embedding_host: "${OLLAMA_HOST}"         # Optional: override Ollama host
-  # embedding_dimensions: 384               # Optional: auto-detected if not set
-  embedding_timeout_seconds: 30
+  embedding_model: "all-MiniLM-L6-v2"
+  # Common model options by provider:
+  #   local:  all-MiniLM-L6-v2 (384-dim, ~100 MB, CPU-friendly)
+  #   openai: text-embedding-3-small (1536-dim), text-embedding-3-large (3072-dim)
+  #   ollama: mxbai-embed-large (1024-dim), nomic-embed-text (768-dim)
 
+  # embedding_api_key: "${OPENAI_API_KEY}"  # Override OpenAI key for embeddings
+  # embedding_host: "${OLLAMA_HOST}"        # Override Ollama host for embeddings
+  # embedding_dimensions: 384              # Override vector dimensions (auto-detected if unset)
+  embedding_timeout_seconds: 30            # Abort slow embedding requests after N seconds
+
+# ---------------------------------------------------------------------------
+# Workspace — isolated per-session file workspaces
+# ---------------------------------------------------------------------------
 workspace:
-  # Root directory for all session/task workspace folders on the agent machine.
-  base_dir: ${WORKSPACE_DIR:-./workspaces}
+  # Root directory on the agent machine where session workspaces are created
+  base_dir: "${WORKSPACE_DIR:-./workspaces}"
 
-  # Port the agent's embedded WorkspaceServer listens on.
-  workspace_port: ${WORKSPACE_PORT:-8001}
+  # Port the agent's embedded WorkspaceServer listens on (for artifact delivery)
+  workspace_port: "${WORKSPACE_PORT:-8001}"
 
-  # Hostname or Docker service name the API server uses to reach this agent.
-  agent_host: ${AGENT_HOST:-localhost}
+  # Hostname or Docker service name the API server uses to reach the agent
+  agent_host: "${AGENT_HOST:-localhost}"
 
-  # API server base URL — agent calls this to register artifacts.
-  api_server_url: ${API_SERVER_URL:-http://localhost:8000}
+  # Base URL the agent uses to register artifacts with the API server
+  api_server_url: "${API_SERVER_URL:-http://localhost:8000}"
 
   # Shared secret for /internal/workspace/* endpoints.
-  # Generate: python -c "import secrets; print(secrets.token_hex(32))"
-  # Must be identical on both agent and API server.
-  internal_api_key: ${WORKSPACE_INTERNAL_KEY:-}
+  # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+  # Must be identical in both agent and API server config.
+  internal_api_key: "${WORKSPACE_INTERNAL_KEY:-}"
 
-  # Seconds to wait after spawning a backend subprocess before health-checking.
+  # Seconds to wait after spawning a workspace backend before health-checking
   backend_boot_timeout: 3.0
 
+# ---------------------------------------------------------------------------
+# Hooks — intercept tool calls for policy enforcement or auditing
+# ---------------------------------------------------------------------------
+hooks:
+  tool_call:
+    pre_call: []
+    # Example: log every tool call to a webhook before execution
+    # pre_call:
+    #   - type: "webhook"
+    #     config:
+    #       url: "https://my-audit-service.example.com/hook"
+
+# ---------------------------------------------------------------------------
+# Multi-Agent — parallel and pipeline sub-agent projects
+# ---------------------------------------------------------------------------
 multi_agent:
   enabled: true
-  max_agents_per_project: 10      # Hard cap on sub-agents per project
-  max_concurrent_projects: 5      # Max simultaneously active projects
-  default_agent_timeout: 300      # Per-agent task timeout in seconds
-  project_timeout: 1800           # Whole-project wall-clock timeout in seconds
-  checkpoint_interval: 1          # Checkpoint every N processed messages
+  max_agents_per_project: 10    # Hard cap on sub-agents spawned by a single project
+  max_concurrent_projects: 5    # Max simultaneously active projects across all sessions
+  default_agent_timeout: 300    # Per-agent task timeout in seconds (5 min)
+  project_timeout: 1800         # Whole-project wall-clock timeout in seconds (30 min)
+  checkpoint_interval: 1        # Write a checkpoint every N processed kanban messages
+
+# ---------------------------------------------------------------------------
+# Observability — event stream and debug controls
+# ---------------------------------------------------------------------------
+observability:
+  events:
+    enabled: true
+    min_severity: "info"          # Minimum severity to emit: debug | info | warning | error | critical
+    heartbeat_interval: 60        # Emit a heartbeat event every N seconds (0 = disabled)
+    include_debug_state: false    # Emit high-volume agent.state.* events at info level (dev only)

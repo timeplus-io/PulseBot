@@ -110,7 +110,7 @@ The `create_project` tool accepts:
 |-------|----------|-------------|
 | `name` | Yes | Human-readable name. Auto-converted to `agent_<slug>` ID. |
 | `task_description` | Yes | System-level role instructions for this agent. |
-| `target_agents` | Yes | Agents to send results to. Empty list = send to manager. |
+| `target_agents` | Yes | Agents to send results to. Empty list or `["Manager"]` = send to manager. Accepts names or agent IDs. |
 | `skills` | No | Skill subset to load. Omit to inherit all main agent skills. |
 | `model` | No | Override LLM model (e.g., `"gpt-4o"`). |
 | `provider` | No | Override LLM provider (e.g., `"openai"`). |
@@ -125,7 +125,7 @@ Agent names are automatically converted to IDs:
 | `SQL Analyst` | `agent_sql_analyst` |
 | `Report Writer` | `agent_report_writer` |
 
-In `target_agents`, you can use human-readable names (`"Analyst"`) or agent IDs (`"agent_analyst"`) — both are resolved correctly.
+In `target_agents`, you can use human-readable names (`"Analyst"`) or agent IDs (`"agent_analyst"`) — both are resolved correctly. You can also use `"Manager"` or `"manager"` to explicitly route results back to the project manager.
 
 ---
 
@@ -159,7 +159,7 @@ Manager ─┬─► Agent A ─┐
           └─► Agent C ─┘
 ```
 
-All agents send their results back to the manager (empty `target_agents`). The manager delivers the first result it receives as the final output.
+All agents send their results back to the manager (empty `target_agents` or `target_agents: ["Manager"]`). The manager delivers each result to the user as it arrives, and completes once **all** reporting agents have responded.
 
 ### Single-Agent Delegation
 
@@ -332,11 +332,31 @@ FROM table(pulsebot.kanban_agents)
 WHERE project_id = 'proj_abc123';
 ```
 
+### LLM and Tool Logs
+
+Each sub-agent writes to `pulsebot.llm_logs` and `pulsebot.tool_logs` tagged with its `agent_id` in the `caller` column:
+
+```sql
+-- All LLM calls for a project's agents
+SELECT caller, model, input_tokens, output_tokens, latency_ms, status
+FROM table(pulsebot.llm_logs)
+WHERE caller LIKE 'agent_%'
+ORDER BY timestamp;
+
+-- Tool calls by sub-agents
+SELECT caller, tool_name, status, duration_ms
+FROM table(pulsebot.tool_logs)
+WHERE caller LIKE 'agent_%'
+ORDER BY timestamp;
+```
+
+Preview columns (`system_prompt_preview`, `user_message_preview`, `assistant_response_preview`, `result_preview`) store up to 5,000 characters — enough to inspect full prompts and responses in the Observability UI without truncation.
+
 ---
 
 ## Limitations
 
-- **Single result collection**: The ManagerAgent delivers the first `result` message it receives and then cancels remaining workers. For fan-out patterns where you need to aggregate multiple results, the Analyst agent should aggregate them before sending a single result to the manager.
 - **No cross-project communication**: Agents in different projects cannot communicate directly.
 - **LLM awareness**: Workers only know about their task description and available tools. They don't inherently know about other agents in the project unless you mention them in the task description.
 - **Idle connection timeout**: Long-running projects may hit Timeplus streaming connection idle timeouts (~3 minutes). Ensure agent tasks complete within this window or configure appropriate keep-alive settings.
+- **LLM provider rate limits**: If many agents run concurrently against the same provider, API rate limits may cause delayed responses. The Gemini provider enforces a 120-second per-call timeout to surface hung requests as errors rather than silently stalling.

@@ -12,10 +12,16 @@ function SearchIcon() {
 
 function formatDetailValue(v) {
   if (v === null || v === undefined) return '—';
-  if (Array.isArray(v)) return `[array · ${v.length} items]`;
+  if (Array.isArray(v)) return v.length === 0 ? '[]' : v.join(', ');
   if (typeof v === 'object') return JSON.stringify(v, null, 2);
   if (typeof v === 'boolean') return v ? 'true' : 'false';
   return String(v);
+}
+
+function isLongValue(v) {
+  if (Array.isArray(v)) return v.length > 3;
+  if (typeof v === 'object' && v !== null) return true;
+  return typeof v === 'string' && v.length > 80;
 }
 
 function RowDetail({ row, onClose, colSpan }) {
@@ -35,14 +41,17 @@ function RowDetail({ row, onClose, colSpan }) {
             </button>
           </div>
           <dl className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3">
-            {Object.entries(row).map(([key, value]) => (
-              <div key={key} className="min-w-0">
-                <dt className="text-[10px] font-bold uppercase tracking-wider text-secondary mb-0.5">{key}</dt>
-                <dd className="text-xs font-mono text-on-surface break-all whitespace-pre-wrap">
-                  {formatDetailValue(value)}
-                </dd>
-              </div>
-            ))}
+            {Object.entries(row).map(([key, value]) => {
+              const long = isLongValue(value);
+              return (
+                <div key={key} className={`min-w-0 ${long ? 'col-span-full' : ''}`}>
+                  <dt className="text-[10px] font-bold uppercase tracking-wider text-secondary mb-0.5">{key}</dt>
+                  <dd className="text-xs font-mono text-on-surface break-words whitespace-pre-wrap">
+                    {formatDetailValue(value)}
+                  </dd>
+                </div>
+              );
+            })}
           </dl>
         </div>
       </td>
