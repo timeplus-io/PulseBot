@@ -337,8 +337,8 @@ class ProjectManager:
         # Clear busy state
         self._busy_projects.discard(project_id)
 
-        # Drop associated Timeplus Task for scheduled projects
-        if state is not None and state.is_scheduled:
+        # Drop associated Timeplus Task (only for interval/cron; event-driven use EventWatcher)
+        if state is not None and state.schedule_type in ("interval", "cron"):
             from pulsebot.timeplus.tasks import TaskManager
             task_manager = TaskManager(self._batch_client)
             task_name = task_manager._sanitise_task_name(state.name)
@@ -349,6 +349,13 @@ class ProjectManager:
                     f"Could not drop Timeplus task '{task_name}' for project "
                     f"{project_id}: {e}"
                 )
+
+        # Cancel EventWatcher for event-driven projects
+        if state is not None and state.schedule_type == "event":
+            watcher_key = f"event_watcher_{project_id}"
+            watcher_task = self._agent_tasks.pop(watcher_key, None)
+            if watcher_task and not watcher_task.done():
+                watcher_task.cancel()
 
         # Delete from streams
         try:
@@ -398,6 +405,8 @@ class ProjectManager:
         schedule_type: str = "",
         schedule_expr: str = "",
         trigger_prompt: str = "",
+        event_query: str = "",
+        context_field: str = "",
     ) -> None:
         self._batch_client.insert("pulsebot.kanban_projects", [{
             "project_id": project_id,
@@ -411,6 +420,8 @@ class ProjectManager:
             "schedule_type": schedule_type,
             "schedule_expr": schedule_expr,
             "trigger_prompt": trigger_prompt,
+            "event_query": event_query,
+            "context_field": context_field,
         }])
 
     def _write_agent_metadata(self, spec: SubAgentSpec) -> None:
@@ -614,6 +625,174 @@ class ProjectManager:
         )
         return project_id
 
+    async def create_event_driven_project(
+        self,
+        name: str,
+        description: str,
+        agents: list[SubAgentSpec],
+        session_id: str,
+        event_query: str,
+        context_field: str,
+        trigger_prompt: str,
+        initial_messages: list[dict[str, Any]] | None = None,
+    ) -> str:
+        """Create an event-driven multi-agent project.
+
+        Identical to create_scheduled_project but uses schedule_type='event',
+        starts an EventWatcher asyncio task, and creates no Timeplus Task UDF.
+
+        Raises:
+            ValueError: If event_query or context_field are invalid.
+        """
+        if not event_query.strip():
+            raise ValueError("event_query must not be empty.")
+        if "FROM (" in event_query.upper():
+            raise ValueError(
+                "event_query must be a direct stream query; nested subqueries "
+                "(FROM (...)) are not supported because _tp_sn may not propagate "
+                "through subquery boundaries."
+            )
+        if not context_field.strip() or not context_field.isidentifier():
+            raise ValueError(
+                f"context_field must be a non-empty valid identifier, got: '{context_field}'"
+            )
+
+        max_agents = self.config.multi_agent.max_agents_per_project
+        if len(agents) > max_agents:
+            raise ValueError(f"Too many agents: {len(agents)} > max {max_agents}")
+        max_projects = self.config.multi_agent.max_concurrent_projects
+        active = sum(1 for p in self._projects.values() if p.status == "active")
+        if active >= max_projects:
+            raise ValueError(
+                f"Too many concurrent projects: {active} >= max {max_projects}"
+            )
+
+        project_id = f"proj_{uuid.uuid4().hex[:12]}"
+        manager_id = f"manager_{project_id}"
+        initial_messages = initial_messages or []
+
+        for spec in agents:
+            spec.project_id = project_id
+            spec.is_scheduled = True
+
+        name_to_id = {spec.name: spec.agent_id for spec in agents}
+        name_to_id["Manager"] = manager_id
+        name_to_id["manager"] = manager_id
+        for spec in agents:
+            spec.target_agents = [name_to_id.get(t, t) for t in spec.target_agents]
+
+        upstream: dict[str, list[str]] = {spec.agent_id: [] for spec in agents}
+        for spec in agents:
+            for target_id in spec.target_agents:
+                if target_id in upstream:
+                    upstream[target_id].append(spec.agent_id)
+        for spec in agents:
+            spec.upstream_agent_ids = upstream[spec.agent_id]
+
+        reporting_agent_ids = [
+            spec.agent_id for spec in agents
+            if not spec.target_agents or manager_id in spec.target_agents
+        ]
+
+        manager_spec = SubAgentSpec(
+            name="Manager",
+            agent_id=manager_id,
+            role="manager",
+            task_description=(
+                "You are the project manager for an event-driven recurring project. "
+                "Coordinate worker agents, collect their results, and deliver "
+                "the final output. You are triggered by real-time streaming events."
+            ),
+            project_id=project_id,
+            target_agents=[],
+            skills=[],
+            is_scheduled=True,
+            schedule_type="event",
+            schedule_expr="",
+            trigger_prompt=trigger_prompt,
+            event_query=event_query,
+            context_field=context_field,
+        )
+
+        self._write_project_metadata(
+            project_id, name, description, agents, session_id,
+            is_scheduled=True,
+            schedule_type="event",
+            trigger_prompt=trigger_prompt,
+            event_query=event_query,
+            context_field=context_field,
+        )
+        for spec in [manager_spec] + agents:
+            self._write_agent_metadata(spec)
+
+        state = ProjectState(
+            project_id=project_id,
+            name=name,
+            description=description,
+            session_id=session_id,
+            agent_ids=[manager_id] + [spec.agent_id for spec in agents],
+            is_scheduled=True,
+            schedule_type="event",
+            trigger_prompt=trigger_prompt,
+            event_query=event_query,
+            context_field=context_field,
+        )
+        self._projects[project_id] = state
+
+        manager = ManagerAgent(
+            spec=manager_spec,
+            worker_specs=agents,
+            session_id=session_id,
+            timeplus=self.timeplus,
+            llm_provider=self.llm,
+            skill_loader=self.skills,
+            config=self.config,
+            initial_messages=initial_messages,
+            reporting_agent_ids=reporting_agent_ids,
+            on_run_complete=lambda: self.mark_project_idle(project_id),
+        )
+        self._agent_tasks[manager_id] = asyncio.create_task(
+            manager.run(), name=f"manager_{project_id}"
+        )
+
+        for spec in agents:
+            agent = SubAgent(
+                spec=spec,
+                timeplus=self.timeplus,
+                llm_provider=self.llm,
+                skill_loader=self.skills,
+                config=self.config,
+            )
+            self._agent_tasks[spec.agent_id] = asyncio.create_task(
+                agent.run(), name=spec.agent_id
+            )
+
+        # Start EventWatcher
+        from datetime import UTC, datetime
+
+        from pulsebot.agents.event_watcher import EventWatcher
+        watcher = EventWatcher(
+            project_id=project_id,
+            event_query=event_query,
+            context_field=context_field,
+            trigger_prompt=trigger_prompt,
+            project_manager=self,
+            timeplus=self.timeplus,
+            config=self.config,
+            checkpoint_sn=0,
+            start_time=datetime.now(UTC),
+        )
+        watcher_task = asyncio.create_task(
+            watcher.run(), name=f"event_watcher_{project_id}"
+        )
+        self._agent_tasks[f"event_watcher_{project_id}"] = watcher_task
+
+        logger.info(
+            f"Event-driven project {project_id} created",
+            extra={"project_id": project_id, "session_id": session_id},
+        )
+        return project_id
+
     def trigger_project(self, project_id: str, trigger_prompt: str | None = None) -> bool:
         """Attempt to trigger a scheduled project run.
 
@@ -659,6 +838,40 @@ class ProjectManager:
         )
         return True
 
+    def trigger_project_with_context(self, project_id: str, prompt: str) -> bool:
+        """Write a trigger kanban message for an event-driven project.
+
+        Called by EventWatcher. Identical semantics to trigger_project() —
+        checks busy, marks busy, writes trigger kanban message.
+
+        Returns:
+            True if trigger was sent; False if project is busy or not found.
+        """
+        if project_id in self._busy_projects:
+            logger.info(f"Project {project_id} is busy, event trigger skipped")
+            return False
+
+        state = self._projects.get(project_id)
+        if state is None:
+            return False
+
+        self._busy_projects.add(project_id)
+
+        manager_id = f"manager_{project_id}"
+        self._batch_client.insert("pulsebot.kanban", [{
+            "project_id": project_id,
+            "sender_id": "event_watcher",
+            "target_id": manager_id,
+            "msg_type": "trigger",
+            "content": prompt,
+        }])
+
+        logger.info(
+            f"Event trigger sent to project {project_id}",
+            extra={"project_id": project_id, "manager_id": manager_id},
+        )
+        return True
+
     def mark_project_idle(self, project_id: str) -> None:
         """Clear the busy flag for a project after a run completes."""
         self._busy_projects.discard(project_id)
@@ -678,7 +891,8 @@ class ProjectManager:
         try:
             rows = self._batch_client.query("""
                 SELECT project_id, name, description, session_id,
-                       schedule_type, schedule_expr, trigger_prompt, agent_ids
+                       schedule_type, schedule_expr, trigger_prompt, agent_ids,
+                       event_query, context_field
                 FROM table(pulsebot.kanban_projects)
                 WHERE is_scheduled = true AND status = 'active'
                 ORDER BY timestamp DESC
@@ -715,6 +929,8 @@ class ProjectManager:
         schedule_type = row.get("schedule_type", "interval")
         schedule_expr = row.get("schedule_expr", "")
         trigger_prompt = row.get("trigger_prompt", "")
+        event_query = row.get("event_query", "")
+        context_field = row.get("context_field", "")
 
         # Load agent metadata
         try:
@@ -762,6 +978,8 @@ class ProjectManager:
                 schedule_type=schedule_type,
                 schedule_expr=schedule_expr,
                 trigger_prompt=trigger_prompt,
+                event_query=event_query,
+                context_field=context_field,
             )
 
         worker_specs = [_build_spec(r) for r in worker_rows]
@@ -780,6 +998,8 @@ class ProjectManager:
             schedule_type=schedule_type,
             schedule_expr=schedule_expr,
             trigger_prompt=trigger_prompt,
+            event_query=event_query,
+            context_field=context_field,
         )
 
         reporting_agent_ids = [
@@ -797,6 +1017,8 @@ class ProjectManager:
             schedule_type=schedule_type,
             schedule_expr=schedule_expr,
             trigger_prompt=trigger_prompt,
+            event_query=event_query,
+            context_field=context_field,
         )
         self._projects[project_id] = state
 
@@ -829,6 +1051,48 @@ class ProjectManager:
                 )
                 self._agent_tasks[spec.agent_id] = asyncio.create_task(
                     agent.run(), name=spec.agent_id
+                )
+
+        # For event-driven projects, start an EventWatcher.
+        if schedule_type == "event":
+            from datetime import UTC, datetime
+
+            from pulsebot.agents.event_watcher import EventWatcher
+
+            # Load EventWatcher checkpoint
+            watcher_agent_id = f"event_watcher_{project_id}"
+            try:
+                watcher_rows = self._batch_client.query(f"""
+                    SELECT checkpoint_sn
+                    FROM table(pulsebot.kanban_agents)
+                    WHERE agent_id = '{escape_sql_str(watcher_agent_id)}'
+                    ORDER BY timestamp DESC LIMIT 1
+                """)
+                watcher_checkpoint = watcher_rows[0]["checkpoint_sn"] if watcher_rows else 0
+            except Exception as e:
+                logger.warning(
+                    f"Could not load EventWatcher checkpoint for {project_id}: {e}"
+                )
+                watcher_checkpoint = 0
+
+            if watcher_agent_id not in self._agent_tasks or self._agent_tasks[watcher_agent_id].done():
+                watcher = EventWatcher(
+                    project_id=project_id,
+                    event_query=event_query,
+                    context_field=context_field,
+                    trigger_prompt=trigger_prompt,
+                    project_manager=self,
+                    timeplus=self.timeplus,
+                    config=self.config,
+                    checkpoint_sn=watcher_checkpoint,
+                    start_time=datetime.now(UTC),
+                )
+                self._agent_tasks[watcher_agent_id] = asyncio.create_task(
+                    watcher.run(), name=watcher_agent_id
+                )
+                logger.info(
+                    f"Recovered EventWatcher for project {project_id} "
+                    f"(checkpoint_sn={watcher_checkpoint})"
                 )
 
         logger.info(
