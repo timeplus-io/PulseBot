@@ -787,6 +787,7 @@ class ProjectManager:
             config=self.config,
             checkpoint_sn=0,
             start_time=datetime.now(UTC),
+            on_query_failed=self.fail_event_project,
         )
         watcher_task = asyncio.create_task(
             watcher.run(), name=f"event_watcher_{project_id}"
@@ -883,6 +884,77 @@ class ProjectManager:
         self._busy_projects.discard(project_id)
         logger.info(f"Project {project_id} is now idle")
 
+    async def fail_event_project(self, project_id: str, error_message: str) -> None:
+        """Mark an event-driven project as failed due to repeated EventWatcher errors.
+
+        Cancels all agent tasks, persists status='failed' to kanban_projects,
+        and writes an error event to pulsebot.events so the failure is visible
+        in the observability UI and can be delivered to the session.
+        """
+        import json
+
+        state = self._projects.get(project_id)
+
+        # Cancel all agent tasks
+        if state is not None:
+            for agent_id in state.agent_ids:
+                task = self._agent_tasks.pop(agent_id, None)
+                if task and not task.done():
+                    task.cancel()
+            state.status = "failed"
+
+        # Cancel EventWatcher (it called us, but clean up the task entry)
+        watcher_key = f"event_watcher_{project_id}"
+        self._agent_tasks.pop(watcher_key, None)
+        self._busy_projects.discard(project_id)
+
+        # Persist failed status to kanban_projects (append-only write)
+        if state is not None:
+            try:
+                self._batch_client.insert("pulsebot.kanban_projects", [{
+                    "project_id": project_id,
+                    "name": state.name,
+                    "description": state.description,
+                    "status": "failed",
+                    "created_by": "event_watcher",
+                    "session_id": state.session_id,
+                    "agent_ids": state.agent_ids,
+                    "is_scheduled": True,
+                    "schedule_type": "event",
+                    "schedule_expr": "",
+                    "trigger_prompt": state.trigger_prompt,
+                    "event_query": state.event_query,
+                    "context_field": state.context_field,
+                }])
+            except Exception as e:
+                logger.warning(
+                    f"fail_event_project: could not persist failed status "
+                    f"for {project_id}: {e}"
+                )
+
+        # Write error event to pulsebot.events
+        try:
+            self._batch_client.insert("pulsebot.events", [{
+                "event_type": "project_failed",
+                "source": f"event_watcher_{project_id}",
+                "severity": "error",
+                "payload": json.dumps({
+                    "project_id": project_id,
+                    "name": state.name if state else project_id,
+                    "error": error_message,
+                }),
+                "tags": ["event_watcher", "project_failed"],
+            }])
+        except Exception as e:
+            logger.warning(
+                f"fail_event_project: could not write error event "
+                f"for {project_id}: {e}"
+            )
+
+        logger.error(
+            f"Event-driven project {project_id} marked as failed: {error_message}"
+        )
+
     def is_project_busy(self, project_id: str) -> bool:
         """Return True if the project currently has a run in progress."""
         return project_id in self._busy_projects
@@ -960,7 +1032,13 @@ class ProjectManager:
 
         manager_id = f"manager_{project_id}"
         manager_row = next((r for r in agent_rows if r["agent_id"] == manager_id), None)
-        worker_rows = [r for r in agent_rows if r["agent_id"] != manager_id]
+        # Exclude EventWatcher checkpoint records — they are not SubAgents.
+        # EventWatcher writes to kanban_agents for checkpoint persistence only.
+        worker_rows = [
+            r for r in agent_rows
+            if r["agent_id"] != manager_id
+            and not r["agent_id"].startswith("event_watcher_")
+        ]
 
         def _build_spec(r: dict[str, Any]) -> SubAgentSpec:
             cfg = json.loads(r.get("config", "{}"))
@@ -1092,6 +1170,7 @@ class ProjectManager:
                     config=self.config,
                     checkpoint_sn=watcher_checkpoint,
                     start_time=datetime.now(UTC),
+                    on_query_failed=self.fail_event_project,
                 )
                 self._agent_tasks[watcher_agent_id] = asyncio.create_task(
                     watcher.run(), name=watcher_agent_id

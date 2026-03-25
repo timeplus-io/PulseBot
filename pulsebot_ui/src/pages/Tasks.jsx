@@ -54,7 +54,7 @@ const TRIGGER_COLUMNS = [
   },
 ];
 
-function TaskDetail({ task }) {
+function TaskDetail({ task, refreshKey }) {
   const { data: triggers, loading: triggersLoading, error: triggersError, query: queryTriggers } = useProtonQuery();
   const { data: taskDef, loading: defLoading, error: defError, query: queryDef } = useProtonQuery();
 
@@ -67,7 +67,7 @@ function TaskDetail({ task }) {
       `ORDER BY triggered_at DESC LIMIT 50`
     );
     queryDef(`SHOW CREATE TASK \`${task.task_name}\``);
-  }, [task.task_id]);
+  }, [task.task_id, refreshKey]);
 
   // Extract DDL: Proton returns a row whose first value is the statement
   const ddl = taskDef.length > 0
@@ -161,6 +161,7 @@ export default function Tasks() {
   const { data: tasks, loading, error, query: queryTasks } = useProtonQuery();
   const [selected, setSelected] = useState(null);
   const [expandedGroups, setExpandedGroups] = useState(new Set(['interval', 'cron']));
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const load = () => {
     queryTasks(
@@ -168,6 +169,7 @@ export default function Tasks() {
       `FROM table(pulsebot.tasks) ` +
       `ORDER BY created_at DESC LIMIT 1 BY task_id`
     );
+    setRefreshKey(k => k + 1);
   };
 
   useEffect(() => { load(); }, []);
@@ -277,7 +279,7 @@ export default function Tasks() {
         {/* Right detail panel */}
         <main className="flex-1 overflow-y-auto">
           {selectedTask ? (
-            <TaskDetail task={selectedTask} />
+            <TaskDetail task={selectedTask} refreshKey={refreshKey} />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center gap-3 text-secondary">
               <svg

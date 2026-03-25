@@ -48,7 +48,9 @@ function nodeColor(status, isManager) {
   return { fill: '#f8fafc', stroke: '#cbd5e1', text: '#475569' };
 }
 
-function buildLayout(agents) {
+const WATCHER_ID = '__event_watcher__';
+
+function buildLayout(agents, isEventDriven = false) {
   const allIds = new Set(agents.map(a => a.agent_id));
 
   // Identify manager agent (agent_id starts with 'manager_')
@@ -73,9 +75,13 @@ function buildLayout(agents) {
       .forEach(w => edges.push({ from: managerId, to: w.agent_id, dispatch: true }));
   }
 
-  // Assign depth rows: manager = 0, workers via BFS on target_agents
+  // Assign depth rows: manager = 0 (or 1 if event-driven), workers via BFS
+  // For event-driven projects, EventWatcher sits at row 0, manager at row 1
+  const watcherRow = isEventDriven ? 0 : null;
+  const managerRow = isEventDriven ? 1 : 0;
+
   const depth = {};
-  if (managerId) depth[managerId] = 0;
+  if (managerId) depth[managerId] = managerRow;
 
   const workerInDeg = {};
   workers.forEach(w => { workerInDeg[w.agent_id] = 0; });
@@ -86,7 +92,7 @@ function buildLayout(agents) {
   });
 
   const roots = workers.filter(w => !workerInDeg[w.agent_id]);
-  roots.forEach(w => { depth[w.agent_id] = 1; });
+  roots.forEach(w => { depth[w.agent_id] = managerRow + 1; });
 
   const bfs = roots.map(w => w.agent_id);
   while (bfs.length) {
@@ -95,16 +101,25 @@ function buildLayout(agents) {
     const targets = Array.isArray(agent?.target_agents) ? agent.target_agents : [];
     targets.forEach(t => {
       if (workerIds.has(t)) {
-        depth[t] = Math.max(depth[t] ?? 1, (depth[cur] ?? 1) + 1);
+        depth[t] = Math.max(depth[t] ?? managerRow + 1, (depth[cur] ?? managerRow + 1) + 1);
         bfs.push(t);
       }
     });
   }
-  workers.forEach(w => { if (depth[w.agent_id] == null) depth[w.agent_id] = 1; });
+  workers.forEach(w => { if (depth[w.agent_id] == null) depth[w.agent_id] = managerRow + 1; });
+
+  // Add EventWatcher pseudo-node and edge for event-driven projects
+  const extraNodes = [];
+  if (isEventDriven && managerId) {
+    depth[WATCHER_ID] = watcherRow;
+    extraNodes.push({ agent_id: WATCHER_ID, name: 'EventWatcher', role: 'watcher', status: 'running' });
+    edges.push({ from: WATCHER_ID, to: managerId, dispatch: false, watcher: true });
+  }
 
   // Group by depth row, assign columns (centered)
+  const allAgents = [...agents, ...extraNodes];
   const rowGroups = {};
-  agents.forEach(a => {
+  allAgents.forEach(a => {
     const r = depth[a.agent_id] ?? 0;
     if (!rowGroups[r]) rowGroups[r] = [];
     rowGroups[r].push(a.agent_id);
@@ -126,15 +141,16 @@ function buildLayout(agents) {
     });
   });
 
-  return { pos, edges, svgW, svgH, managerId };
+  return { pos, edges, svgW, svgH, managerId, extraNodes };
 }
 
-function TopologyDiagram({ agents, onSelectAgent }) {
+function TopologyDiagram({ agents, onSelectAgent, isEventDriven = false }) {
   if (agents.length === 0) {
     return <p className="text-xs text-secondary p-6">No agents in this project.</p>;
   }
 
-  const { pos, edges, svgW, svgH, managerId } = buildLayout(agents);
+  const { pos, edges, svgW, svgH, managerId, extraNodes } = buildLayout(agents, isEventDriven);
+  const allAgents = [...agents, ...extraNodes];
 
   return (
     <div className="overflow-auto">
@@ -146,6 +162,9 @@ function TopologyDiagram({ agents, onSelectAgent }) {
           <marker id="arrow-dispatch" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
             <path d="M0,0 L0,6 L8,3 z" fill="#ad1a6c" />
           </marker>
+          <marker id="arrow-watcher" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#d97706" />
+          </marker>
         </defs>
 
         {/* Edges */}
@@ -153,33 +172,50 @@ function TopologyDiagram({ agents, onSelectAgent }) {
           const from = pos[e.from];
           const to = pos[e.to];
           if (!from || !to) return null;
-          // Top-to-bottom: exit bottom-center of source, enter top-center of target
           const x1 = from.x + NODE_W / 2;
           const y1 = from.y + NODE_H;
           const x2 = to.x + NODE_W / 2;
           const y2 = to.y;
           const cy = (y1 + y2) / 2;
+          const color = e.watcher ? '#d97706' : e.dispatch ? '#ad1a6c' : '#94a3b8';
+          const markerId = e.watcher ? 'url(#arrow-watcher)' : e.dispatch ? 'url(#arrow-dispatch)' : 'url(#arrow)';
           return (
             <path
               key={i}
               d={`M${x1},${y1} C${x1},${cy} ${x2},${cy} ${x2},${y2}`}
               fill="none"
-              stroke={e.dispatch ? '#ad1a6c' : '#94a3b8'}
+              stroke={color}
               strokeWidth="1.5"
-              strokeDasharray={e.dispatch ? '5,3' : undefined}
-              markerEnd={e.dispatch ? 'url(#arrow-dispatch)' : 'url(#arrow)'}
+              strokeDasharray={e.watcher ? '6,3' : e.dispatch ? '5,3' : undefined}
+              markerEnd={markerId}
             />
           );
         })}
 
         {/* Nodes */}
-        {agents.map(a => {
+        {allAgents.map(a => {
           const p = pos[a.agent_id];
           if (!p) return null;
+          const isWatcher = a.agent_id === WATCHER_ID;
           const isManager = a.agent_id === managerId;
-          const { fill, stroke, text } = nodeColor(a.status, isManager);
           const label = a.name || a.role || a.agent_id.slice(0, 10);
           const sublabel = a.role && a.name ? a.role : (a.status || '');
+
+          if (isWatcher) {
+            return (
+              <g key={a.agent_id} transform={`translate(${p.x},${p.y})`}>
+                <rect width={NODE_W} height={NODE_H} rx="8" fill="#fffbeb" stroke="#d97706" strokeWidth="1.5" strokeDasharray="5,3" />
+                <text x={NODE_W / 2} y={NODE_H / 2 - 6} textAnchor="middle" fontSize="11" fontWeight="700" fill="#92400e" fontFamily="inherit">
+                  EventWatcher
+                </text>
+                <text x={NODE_W / 2} y={NODE_H / 2 + 10} textAnchor="middle" fontSize="9" fill="#d97706" fontFamily="inherit">
+                  streaming trigger
+                </text>
+              </g>
+            );
+          }
+
+          const { fill, stroke, text } = nodeColor(a.status, isManager);
           return (
             <g
               key={a.agent_id}
@@ -188,25 +224,10 @@ function TopologyDiagram({ agents, onSelectAgent }) {
               onClick={() => onSelectAgent(a.agent_id)}
             >
               <rect width={NODE_W} height={NODE_H} rx="8" fill={fill} stroke={stroke} strokeWidth={isManager ? 2 : 1.5} />
-              <text
-                x={NODE_W / 2}
-                y={NODE_H / 2 - 6}
-                textAnchor="middle"
-                fontSize="11"
-                fontWeight="700"
-                fill={text}
-                fontFamily="inherit"
-              >
+              <text x={NODE_W / 2} y={NODE_H / 2 - 6} textAnchor="middle" fontSize="11" fontWeight="700" fill={text} fontFamily="inherit">
                 {label.length > 18 ? label.slice(0, 16) + '…' : label}
               </text>
-              <text
-                x={NODE_W / 2}
-                y={NODE_H / 2 + 10}
-                textAnchor="middle"
-                fontSize="9"
-                fill={isManager ? '#ad1a6c' : '#94a3b8'}
-                fontFamily="inherit"
-              >
+              <text x={NODE_W / 2} y={NODE_H / 2 + 10} textAnchor="middle" fontSize="9" fill={isManager ? '#ad1a6c' : '#94a3b8'} fontFamily="inherit">
                 {sublabel.length > 22 ? sublabel.slice(0, 20) + '…' : sublabel}
               </text>
             </g>
@@ -219,12 +240,65 @@ function TopologyDiagram({ agents, onSelectAgent }) {
 
 // ── Project detail ─────────────────────────────────────────────────────────────
 
+function EventDrivenConfig({ project }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 text-obs-warning shrink-0">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-secondary">Event-Driven Configuration</h3>
+      </div>
+
+      <div className="bg-surface-container-low rounded-lg border border-outline-variant/10 p-5 space-y-4">
+        {project.event_query && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-secondary mb-2">Streaming Query</p>
+            <pre className="text-xs font-mono text-on-surface bg-surface-container rounded p-3 overflow-x-auto whitespace-pre-wrap break-all border border-outline-variant/20">
+              {project.event_query}
+            </pre>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+          {project.context_field && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-secondary mb-1">Context Field</p>
+              <span className="text-xs font-mono text-on-surface bg-surface-container px-2 py-0.5 rounded border border-outline-variant/20">
+                {project.context_field}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {project.trigger_prompt && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-secondary mb-2">Trigger Prompt</p>
+            <p className="text-xs text-on-surface leading-relaxed bg-surface-container rounded p-3 border border-outline-variant/20">
+              {project.trigger_prompt}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ProjectDetail({ project, agents, onSelectAgent }) {
+  const isEventDriven = project.schedule_type === 'event';
+
   return (
     <div className="p-8 space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-secondary mb-1">Project</p>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-secondary">Project</p>
+            {isEventDriven && (
+              <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-obs-warning/10 text-obs-warning border border-obs-warning/20">
+                Event-Driven
+              </span>
+            )}
+          </div>
           <h2 className="text-xl font-bold text-on-surface">{project.name || project.project_id}</h2>
           {project.description && <p className="text-sm text-secondary mt-1">{project.description}</p>}
         </div>
@@ -240,12 +314,14 @@ function ProjectDetail({ project, agents, onSelectAgent }) {
         <DetailField label="Last Updated" value={project.timestamp ? new Date(project.timestamp).toLocaleString() : null} />
       </dl>
 
+      {isEventDriven && <EventDrivenConfig project={project} />}
+
       <div>
         <h3 className="text-[11px] font-bold uppercase tracking-widest text-secondary mb-4">
           Agent Topology ({agents.length})
         </h3>
         <div className="bg-surface-container-low rounded-lg border border-outline-variant/10 overflow-hidden">
-          <TopologyDiagram agents={agents} onSelectAgent={onSelectAgent} />
+          <TopologyDiagram agents={agents} onSelectAgent={onSelectAgent} isEventDriven={isEventDriven} />
         </div>
         <p className="text-[10px] text-secondary mt-2">Click a node to view agent details.</p>
       </div>
@@ -299,7 +375,7 @@ const KANBAN_COLUMNS = [
   },
 ];
 
-function AgentDetail({ agent }) {
+function AgentDetail({ agent, refreshKey }) {
   const skills = Array.isArray(agent.skills)
     ? agent.skills
     : String(agent.skills || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -313,7 +389,7 @@ function AgentDetail({ agent }) {
       `WHERE sender_id = '${agent.agent_id}' OR target_id = '${agent.agent_id}' ` +
       `ORDER BY timestamp DESC LIMIT 200`
     );
-  }, [agent.agent_id]);
+  }, [agent.agent_id, refreshKey]);
 
   // Bind agent_id into column renderers that need it
   const columns = KANBAN_COLUMNS.map(col => ({
@@ -383,10 +459,12 @@ export default function Agents() {
   const { data: agents, loading: agentsLoading, error: agentsError, query: queryAgents } = useProtonQuery();
   const [expandedProjects, setExpandedProjects] = useState(new Set());
   const [selected, setSelected] = useState(null); // { type: 'project'|'agent', id: string }
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const load = () => {
-    queryProjects(`SELECT project_id, name, description, status, created_by, session_id, timestamp FROM table(pulsebot.kanban_projects) ORDER BY timestamp DESC LIMIT 1 BY project_id LIMIT 50`);
-    queryAgents(`SELECT agent_id, project_id, name, role, task_description, status, skills, target_agents, timestamp FROM table(pulsebot.kanban_agents) ORDER BY timestamp DESC LIMIT 1 BY agent_id, project_id LIMIT 200`);
+    queryProjects(`SELECT project_id, name, description, status, created_by, session_id, timestamp, schedule_type, event_query, context_field, trigger_prompt FROM table(pulsebot.kanban_projects) ORDER BY timestamp DESC LIMIT 1 BY project_id LIMIT 50`);
+    queryAgents(`SELECT agent_id, project_id, name, role, task_description, status, skills, target_agents, timestamp FROM table(pulsebot.kanban_agents) WHERE agent_id NOT LIKE 'event_watcher_%' ORDER BY timestamp DESC LIMIT 1 BY agent_id, project_id LIMIT 200`);
+    setRefreshKey(k => k + 1);
   };
 
   useEffect(() => { load(); }, []);
@@ -463,10 +541,16 @@ export default function Agents() {
                           </svg>
                         ) : <span className="w-3" />}
                       </button>
-                      {/* Project icon */}
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 shrink-0 text-primary">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                      </svg>
+                      {/* Project icon — lightning bolt for event-driven */}
+                      {project.schedule_type === 'event' ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 shrink-0 text-obs-warning">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 shrink-0 text-primary">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                      )}
                       <span className="text-xs font-semibold truncate flex-1">{project.name || project.project_id}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase shrink-0 ${statusBadge(project.status, 'project')}`}>
                         {project.status || '?'}
@@ -524,7 +608,7 @@ export default function Agents() {
               onSelectAgent={id => setSelected({ type: 'agent', id })}
             />
           ) : selectedAgent ? (
-            <AgentDetail agent={selectedAgent} />
+            <AgentDetail agent={selectedAgent} refreshKey={refreshKey} />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center gap-3 text-secondary">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-10 h-10 opacity-30">
