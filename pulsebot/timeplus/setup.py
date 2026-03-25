@@ -213,7 +213,9 @@ CREATE STREAM IF NOT EXISTS pulsebot.kanban_projects (
     is_scheduled    bool DEFAULT false,
     schedule_type   string DEFAULT '',
     schedule_expr   string DEFAULT '',
-    trigger_prompt  string DEFAULT ''
+    trigger_prompt  string DEFAULT '',
+    event_query     string DEFAULT '',
+    context_field   string DEFAULT ''
 )
 SETTINGS event_time_column='timestamp';
 """
