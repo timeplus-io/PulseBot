@@ -78,6 +78,91 @@ def test_trigger_project_with_context_returns_false_for_unknown_project():
     assert result is False
 
 
+def test_cancel_project_cancels_event_watcher():
+    """cancel_project must also cancel and remove the EventWatcher task."""
+    pm = make_pm()
+    from unittest.mock import MagicMock
+
+    from pulsebot.agents.models import ProjectState
+
+    project_id = "proj_cancel_ew"
+    manager_id = f"manager_{project_id}"
+    worker_id = f"worker_{project_id}"
+    watcher_key = f"event_watcher_{project_id}"
+
+    pm._projects[project_id] = ProjectState(
+        project_id=project_id,
+        name="Event Project",
+        description="",
+        session_id="sess",
+        agent_ids=[manager_id, worker_id],
+        is_scheduled=True,
+        schedule_type="event",
+        trigger_prompt="Investigate:",
+    )
+
+    # Set up mock tasks for the regular agents and the EventWatcher
+    manager_task = MagicMock()
+    manager_task.done.return_value = False
+    worker_task = MagicMock()
+    worker_task.done.return_value = False
+    watcher_task = MagicMock()
+    watcher_task.done.return_value = False
+
+    pm._agent_tasks[manager_id] = manager_task
+    pm._agent_tasks[worker_id] = worker_task
+    pm._agent_tasks[watcher_key] = watcher_task
+
+    import asyncio
+    result = asyncio.get_event_loop().run_until_complete(pm.cancel_project(project_id))
+
+    assert result is True
+    manager_task.cancel.assert_called_once()
+    worker_task.cancel.assert_called_once()
+    watcher_task.cancel.assert_called_once()
+    # EventWatcher must be removed from _agent_tasks
+    assert watcher_key not in pm._agent_tasks
+
+
+def test_delete_project_cancels_event_watcher():
+    """delete_project must cancel and remove the EventWatcher task (regression guard)."""
+    pm = make_pm()
+    from unittest.mock import MagicMock
+
+    from pulsebot.agents.models import ProjectState
+
+    project_id = "proj_delete_ew"
+    manager_id = f"manager_{project_id}"
+    watcher_key = f"event_watcher_{project_id}"
+
+    pm._projects[project_id] = ProjectState(
+        project_id=project_id,
+        name="Event Project Delete",
+        description="",
+        session_id="sess",
+        agent_ids=[manager_id],
+        is_scheduled=True,
+        schedule_type="event",
+        trigger_prompt="Watch:",
+    )
+
+    manager_task = MagicMock()
+    manager_task.done.return_value = False
+    watcher_task = MagicMock()
+    watcher_task.done.return_value = False
+
+    pm._agent_tasks[manager_id] = manager_task
+    pm._agent_tasks[watcher_key] = watcher_task
+
+    import asyncio
+    result = asyncio.get_event_loop().run_until_complete(pm.delete_project(project_id))
+
+    assert result is True
+    manager_task.cancel.assert_called_once()
+    watcher_task.cancel.assert_called_once()
+    assert watcher_key not in pm._agent_tasks
+
+
 def test_write_project_metadata_accepts_event_fields():
     pm = make_pm()
     from pulsebot.agents.models import SubAgentSpec

@@ -239,16 +239,15 @@ class ProjectManager:
 
         # Include any in-memory projects not yet flushed to the stream
         for state in self._projects.values():
-            if state.project_id not in seen:
-                if status is None or state.status == status:
-                    result.append({
-                        "project_id": state.project_id,
-                        "name": state.name,
-                        "description": state.description,
-                        "status": state.status,
-                        "agent_count": len(state.agent_ids),
-                        "session_id": state.session_id,
-                    })
+            if state.project_id not in seen and (status is None or state.status == status):
+                result.append({
+                    "project_id": state.project_id,
+                    "name": state.name,
+                    "description": state.description,
+                    "status": state.status,
+                    "agent_count": len(state.agent_ids),
+                    "session_id": state.session_id,
+                })
 
         return result
 
@@ -389,6 +388,13 @@ class ProjectManager:
             task = self._agent_tasks.pop(agent_id, None)
             if task and not task.done():
                 task.cancel()
+
+        # Cancel EventWatcher for event-driven projects
+        if state.schedule_type == "event":
+            watcher_key = f"event_watcher_{project_id}"
+            watcher_task = self._agent_tasks.pop(watcher_key, None)
+            if watcher_task and not watcher_task.done():
+                watcher_task.cancel()
 
         state.status = "cancelled"
         logger.info(f"Project {project_id} cancelled")
