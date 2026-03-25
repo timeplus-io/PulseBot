@@ -863,7 +863,7 @@ class ProjectManager:
             "sender_id": "event_watcher",
             "target_id": manager_id,
             "msg_type": "trigger",
-            "content": prompt,
+            "content": json.dumps({"prompt": prompt}),
         }])
 
         logger.info(

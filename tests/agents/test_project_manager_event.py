@@ -59,7 +59,9 @@ def test_trigger_project_with_context_marks_busy_and_inserts_trigger():
     row = call_args[1][0]
     assert row["msg_type"] == "trigger"
     assert row["target_id"] == "manager_proj_1"
-    assert "Do:\n\nevent data" in row["content"]
+    import json
+    parsed_content = json.loads(row["content"])
+    assert parsed_content == {"prompt": "Do:\n\nevent data"}
 
 
 def test_trigger_project_with_context_returns_false_when_busy():
