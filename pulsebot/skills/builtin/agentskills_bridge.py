@@ -157,13 +157,15 @@ class AgentSkillsBridge(BaseSkill):
 
         if content.scripts:
             parts.append("\n\n## Available Scripts")
+            skill_path = content.metadata.path
             for fname in content.scripts:
-                parts.append(f"- scripts/{fname}")
+                if skill_path:
+                    parts.append(f"- scripts/{fname}  (disk path: {skill_path}/scripts/{fname})")
+                else:
+                    parts.append(f"- scripts/{fname}")
             parts.append(
-                "\nUse the read_skill_file tool to read any script or reference file, "
-                "passing the full path as shown above. "
-                "To execute a script, first read it with read_skill_file, "
-                "then run it using the run_command tool."
+                "\nTo execute a script, run it directly via run_command using the disk path shown above. "
+                "Use read_skill_file only if you need to inspect the script source first."
             )
 
         return "\n".join(parts)

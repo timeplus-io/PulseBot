@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 
 const NAV_ITEMS = [
@@ -67,6 +67,15 @@ const NAV_ITEMS = [
     ),
   },
   {
+    to: '/tasks',
+    label: 'Tasks',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 shrink-0">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
     to: '/settings',
     label: 'Settings',
     icon: (
@@ -76,6 +85,24 @@ const NAV_ITEMS = [
     ),
   },
 ];
+
+function UtcClock() {
+  const [time, setTime] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const date = time.toISOString().slice(0, 10);
+  const hh = String(time.getUTCHours()).padStart(2, '0');
+  const mm = String(time.getUTCMinutes()).padStart(2, '0');
+  const ss = String(time.getUTCSeconds()).padStart(2, '0');
+  return (
+    <div className="px-6 py-4 border-t border-outline-variant/10">
+      <p className="text-[9px] font-bold uppercase tracking-widest text-secondary mb-1">UTC</p>
+      <p className="text-xs font-mono text-on-surface tabular-nums">{date} {hh}:{mm}:{ss}</p>
+    </div>
+  );
+}
 
 export default function Layout({ children }) {
   return (
@@ -88,7 +115,7 @@ export default function Layout({ children }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex flex-col gap-0.5 py-2 flex-1">
+        <nav className="flex flex-col gap-0.5 py-2 flex-1 min-h-0 overflow-y-auto">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
@@ -107,6 +134,8 @@ export default function Layout({ children }) {
             </NavLink>
           ))}
         </nav>
+
+        <UtcClock />
       </aside>
 
       {/* Main content */}

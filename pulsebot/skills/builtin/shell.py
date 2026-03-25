@@ -134,7 +134,13 @@ class ShellSkill(BaseSkill):
                     "Command returned non-zero exit code",
                     extra={"command": command[:50], "exit_code": process.returncode}
                 )
-            
+                error_parts = [f"Command failed with exit code {process.returncode}."]
+                if stderr_str:
+                    error_parts.append(f"stderr: {stderr_str}")
+                if stdout_str:
+                    error_parts.append(f"stdout: {stdout_str}")
+                return ToolResult.fail("\n".join(error_parts))
+
             return ToolResult.ok(result)
             
         except Exception as e:

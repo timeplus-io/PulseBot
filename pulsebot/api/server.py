@@ -38,6 +38,7 @@ _config: Config | None = None
 _config_path: str = "config.yaml"
 _writer: StreamWriter | None = None
 _reader: StreamReader | None = None
+_tp_client = None  # TimeplusClient, typed as Any to avoid circular import
 
 _proxy_registry: ProxyRegistry | None = None
 
@@ -130,10 +131,24 @@ class TaskTriggerResponse(BaseModel):
     status: str = Field(default="triggered", description="The status of the trigger request.")
 
 
+class ProjectTriggerRequest(BaseModel):
+    """Request body for triggering a scheduled project run."""
+    trigger_prompt: str | None = Field(
+        default=None,
+        description="Prompt to send to worker agents. Falls back to the project's default trigger_prompt if omitted.",
+    )
+
+
+class ProjectTriggerResponse(BaseModel):
+    """Response for a project trigger request."""
+    project_id: str = Field(..., description="The project that was triggered.")
+    status: str = Field(default="triggered", description="Trigger status.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global _config, _config_path, _writer, _reader, _proxy_registry
+    global _config, _config_path, _writer, _reader, _tp_client, _proxy_registry
 
     # Startup
     logger.info("Starting PulseBot API server")
@@ -142,18 +157,22 @@ async def lifespan(app: FastAPI):
         from pulsebot.timeplus.client import TimeplusClient
 
         _config = load_config(_config_path)
-        
+
         _proxy_registry = ProxyRegistry()
         internal_key = _config.workspace.internal_api_key
         set_proxy_registry(_proxy_registry, internal_key)
         set_proxy_registry_for_router(_proxy_registry)
         logger.info("Workspace proxy registry initialized")
-        
+
         client = TimeplusClient.from_config(_config.timeplus)
-        
+        _tp_client = client
+
+        from pulsebot.timeplus.setup import create_streams
+        await create_streams(client)
+
         _writer = StreamWriter(client, "messages")
         _reader = StreamReader(client, "messages")
-        
+
         logger.info("API server initialized")
     except Exception as e:
         logger.error(f"Failed to initialize API server: {e}")
@@ -405,6 +424,62 @@ async def trigger_task(request: TaskTriggerRequest) -> TaskTriggerResponse:
         execution_id=execution_id,
         session_id=session_id,
     )
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/trigger",
+    response_model=ProjectTriggerResponse,
+    tags=["Projects"],
+)
+async def trigger_project(project_id: str, request: ProjectTriggerRequest) -> ProjectTriggerResponse:
+    """Trigger one scheduled execution of a multi-agent project.
+
+    Called by the Timeplus Python UDF on each schedule tick. The endpoint
+    writes a 'trigger' kanban message for the ManagerAgent to pick up.
+    Returns 404 if the project does not exist or is not active.
+
+    The ManagerAgent handles skip-if-busy internally: if a run is already
+    in progress when the trigger arrives, it logs a warning and discards it.
+    """
+    if _tp_client is None or _config is None:
+        raise HTTPException(status_code=500, detail="Server not initialized")
+
+    # Verify the project exists and is an active scheduled project.
+    from pulsebot.timeplus.client import escape_sql_str
+
+    check_sql = f"""
+    SELECT project_id, session_id, is_scheduled, trigger_prompt
+    FROM table(pulsebot.kanban_projects)
+    WHERE project_id = '{escape_sql_str(project_id)}'
+    ORDER BY timestamp DESC
+    LIMIT 1
+    """
+    rows = _tp_client.query(check_sql)
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    row = rows[0]
+    if not row.get("is_scheduled"):
+        raise HTTPException(status_code=400, detail=f"Project {project_id} is not a scheduled project")
+
+    # Use provided prompt or fall back to the stored default.
+    prompt = request.trigger_prompt or row.get("trigger_prompt", "")
+
+    # Write the trigger message to the kanban stream.
+    import json as _json
+    _tp_client.insert("pulsebot.kanban", [{
+        "project_id": project_id,
+        "sender_id": "scheduler",
+        "target_id": f"manager_{project_id}",
+        "msg_type": "trigger",
+        "content": _json.dumps({"prompt": prompt}),
+    }])
+
+    logger.info(
+        "Project trigger written to kanban",
+        extra={"project_id": project_id},
+    )
+    return ProjectTriggerResponse(project_id=project_id)
 
 
 @router.websocket("/ws/{session_id}")
