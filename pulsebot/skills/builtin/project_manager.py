@@ -159,11 +159,27 @@ class ProjectManagerSkill(BaseSkill):
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {"type": "string"},
-                                    "role": {"type": "string"},
-                                    "skills": {"type": "array", "items": {"type": "string"}},
+                                    "name": {"type": "string", "description": "Agent name (used to derive agent_id)"},
+                                    "task_description": {"type": "string", "description": "System-level role instructions"},
+                                    "target_agents": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "Agent IDs that receive this agent's output. Empty = send to manager.",
+                                    },
+                                    "skills": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "Skill names to load. Omit to inherit all main agent skills.",
+                                    },
+                                    "builtin_skills": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "Builtin skills always available to this agent (default: file_ops, shell, workspace). Only applies when 'skills' is set.",
+                                    },
+                                    "model": {"type": "string", "description": "Override LLM model"},
+                                    "provider": {"type": "string", "description": "Override LLM provider"},
                                 },
-                                "required": ["name", "role"],
+                                "required": ["name", "task_description", "target_agents"],
                             },
                         },
                         "session_id": {"type": "string", "description": "Session for routing output"},

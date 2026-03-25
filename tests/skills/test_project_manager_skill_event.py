@@ -13,10 +13,10 @@ async def test_create_event_driven_project_tool_calls_manager():
 
     skill = ProjectManagerSkill(mock_pm)
 
-    result = await skill._create_event_driven_project({
+    result = await skill.execute("create_event_driven_project", {
         "name": "Error Monitor",
         "description": "Monitors error events",
-        "agents": [{"name": "analyst", "role": "Analyze errors"}],
+        "agents": [{"name": "analyst", "task_description": "Analyze errors", "target_agents": []}],
         "session_id": "sess_abc",
         "event_query": "SELECT payload FROM pulsebot.events WHERE severity = 'error'",
         "context_field": "payload",
@@ -26,7 +26,7 @@ async def test_create_event_driven_project_tool_calls_manager():
     mock_pm.create_event_driven_project.assert_called_once_with(
         name="Error Monitor",
         description="Monitors error events",
-        agents=[{"name": "analyst", "role": "Analyze errors"}],
+        agents=[{"name": "analyst", "task_description": "Analyze errors", "target_agents": []}],
         session_id="sess_abc",
         event_query="SELECT payload FROM pulsebot.events WHERE severity = 'error'",
         context_field="payload",
