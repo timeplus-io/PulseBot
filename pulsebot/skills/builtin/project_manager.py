@@ -140,6 +140,87 @@ class ProjectManagerSkill(BaseSkill):
                     "required": ["project_id"],
                 },
             ),
+            ToolDefinition(
+                name="create_scheduled_project",
+                description=(
+                    "Create a scheduled multi-agent project that runs repeatedly on a timer. "
+                    "Spawns long-running agents that idle between scheduled executions and resume "
+                    "after restarts via checkpointing. Use for recurring analysis, monitoring, or "
+                    "reporting tasks (e.g. daily summaries, hourly data checks)."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Short human-readable project name",
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "What this project aims to accomplish",
+                        },
+                        "agents": {
+                            "type": "array",
+                            "description": "Worker agent specifications",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Agent name (used to derive agent_id)"},
+                                    "task_description": {"type": "string", "description": "System-level role instructions"},
+                                    "target_agents": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "Agent IDs that receive this agent's output. Empty = send to manager.",
+                                    },
+                                    "skills": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "Skill names to load. Omit to inherit all main agent skills.",
+                                    },
+                                    "builtin_skills": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "Builtin skills always available to this agent (default: file_ops, shell, workspace). Only applies when 'skills' is set.",
+                                    },
+                                    "model": {"type": "string", "description": "Override LLM model"},
+                                    "provider": {"type": "string", "description": "Override LLM provider"},
+                                },
+                                "required": ["name", "task_description", "target_agents"],
+                            },
+                        },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Current user session ID (for routing results back to user)",
+                        },
+                        "schedule_type": {
+                            "type": "string",
+                            "enum": ["interval", "cron"],
+                            "description": "Scheduling mechanism: 'interval' for fixed intervals (e.g. '30m', '2h'), 'cron' for calendar schedules (e.g. '0 9 * * 1-5')",
+                        },
+                        "schedule_expr": {
+                            "type": "string",
+                            "description": "Schedule expression. For interval: '15m', '1h', '30s'. For cron: standard 5-field cron (minute hour dom month dow).",
+                        },
+                        "trigger_prompt": {
+                            "type": "string",
+                            "description": "Default instruction sent to worker agents on each scheduled execution",
+                        },
+                        "initial_messages": {
+                            "type": "array",
+                            "description": "Optional task messages dispatched immediately on project creation (before first scheduled run)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "target": {"type": "string", "description": "Agent name to send task to"},
+                                    "content": {"type": "string", "description": "Task content"},
+                                },
+                                "required": ["target", "content"],
+                            },
+                        },
+                    },
+                    "required": ["name", "description", "agents", "session_id", "schedule_type", "schedule_expr", "trigger_prompt"],
+                },
+            ),
         ]
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
@@ -154,6 +235,8 @@ class ProjectManagerSkill(BaseSkill):
                 return self._get_project_status(arguments)
             elif tool_name == "delete_project":
                 return await self._delete_project(arguments)
+            elif tool_name == "create_scheduled_project":
+                return await self._create_scheduled_project(arguments)
             else:
                 return ToolResult.fail(f"Unknown tool: {tool_name}")
         except Exception as e:
@@ -225,3 +308,38 @@ class ProjectManagerSkill(BaseSkill):
                 f"Project {project_id} deleted. All metadata removed from projects, agents, and kanban streams."
             )
         return ToolResult.fail(f"Project {project_id} not found.")
+
+    async def _create_scheduled_project(self, args: dict) -> ToolResult:
+        from pulsebot.agents.models import SubAgentSpec
+
+        raw_agents = args.get("agents", [])
+        specs = [
+            SubAgentSpec(
+                name=a["name"],
+                task_description=a["task_description"],
+                project_id="",  # set by ProjectManager
+                target_agents=a.get("target_agents", []),
+                skills=a.get("skills"),
+                builtin_skills=a.get("builtin_skills"),
+                model=a.get("model"),
+                provider=a.get("provider"),
+            )
+            for a in raw_agents
+        ]
+
+        project_id = await self._pm.create_scheduled_project(
+            name=args["name"],
+            description=args["description"],
+            agents=specs,
+            session_id=args["session_id"],
+            schedule_type=args["schedule_type"],
+            schedule_expr=args["schedule_expr"],
+            trigger_prompt=args["trigger_prompt"],
+            initial_messages=args.get("initial_messages", []),
+        )
+        return ToolResult.ok(
+            f"Scheduled project created: {project_id}\n"
+            f"Spawned {len(specs)} worker agent(s) with schedule: "
+            f"{args['schedule_type']} ({args['schedule_expr']}). "
+            f"Agents will idle and execute on each trigger."
+        )

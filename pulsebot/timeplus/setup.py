@@ -209,7 +209,11 @@ CREATE STREAM IF NOT EXISTS pulsebot.kanban_projects (
     created_by      string,
     session_id      string,
     agent_ids       array(string),
-    config_overrides string DEFAULT '{}'
+    config_overrides string DEFAULT '{}',
+    is_scheduled    bool DEFAULT false,
+    schedule_type   string DEFAULT '',
+    schedule_expr   string DEFAULT '',
+    trigger_prompt  string DEFAULT ''
 )
 SETTINGS event_time_column='timestamp';
 """
@@ -246,7 +250,12 @@ async def create_database(client: TimeplusClient) -> None:
         client.execute("CREATE DATABASE IF NOT EXISTS pulsebot")
         logger.info("Created database: pulsebot")
     except Exception as e:
-        logger.warning(f"Database pulsebot may already exist: {e}")
+        msg = str(e)
+        if "already exists" in msg or "DATABASE_ALREADY_EXISTS" in msg:
+            logger.debug("Database pulsebot already exists, skipping")
+        else:
+            logger.error(f"Failed to create database pulsebot: {e}")
+            raise
 
 
 async def create_streams(client: TimeplusClient) -> None:
@@ -275,14 +284,26 @@ async def create_streams(client: TimeplusClient) -> None:
         ("kanban_agents",  KANBAN_AGENTS_STREAM_DDL),
     ]
 
+    failed: list[str] = []
     for name, ddl in streams:
         try:
             client.execute(ddl)
-            logger.info(f"Created stream: {name}")
+            logger.info(f"Created stream: pulsebot.{name}")
         except Exception as e:
-            logger.warning(f"Stream {name} may already exist: {e}")
+            msg = str(e)
+            if "already exists" in msg or "STREAM_ALREADY_EXISTS" in msg:
+                logger.debug(f"Stream pulsebot.{name} already exists, skipping")
+            else:
+                logger.error(f"Failed to create stream pulsebot.{name}: {e}")
+                failed.append(name)
 
-    logger.info("Timeplus streams setup complete")
+    if failed:
+        logger.error(
+            f"Stream setup incomplete — failed to create: {failed}. "
+            "Queries against these streams will fail until they exist."
+        )
+    else:
+        logger.info("Timeplus streams setup complete")
 
 
 async def drop_streams(client: TimeplusClient) -> None:

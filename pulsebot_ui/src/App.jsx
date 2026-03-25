@@ -8,6 +8,7 @@ import LLMLogs from './pages/LLMLogs';
 import ToolLogs from './pages/ToolLogs';
 import Memory from './pages/Memory';
 import Agents from './pages/Agents';
+import Tasks from './pages/Tasks';
 import Settings from './pages/Settings';
 import { ChatProvider } from './context/ChatContext';
 
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/tool-logs" element={<ToolLogs />} />
           <Route path="/memory" element={<Memory />} />
           <Route path="/agents" element={<Agents />} />
+          <Route path="/tasks" element={<Tasks />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>

@@ -12,6 +12,84 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+_PROJECT_INTERVAL_UDF_TEMPLATE = """
+CREATE OR REPLACE FUNCTION trigger_pulsebot_project(
+    project_id string, project_name string, prompt string
+) RETURNS string LANGUAGE PYTHON AS $$
+import requests
+
+def trigger_pulsebot_project(project_id, project_name, prompt):
+    try:
+        resp = requests.post(
+            '{api_url}/api/v1/projects/' + project_id[0] + '/trigger',
+            json={{'trigger_prompt': prompt[0]}},
+            timeout=10,
+        )
+        if resp.status_code == 409:
+            return ['skipped: project busy']
+        data = resp.json()
+        return [data.get('execution_id', '')]
+    except Exception as e:
+        return [f'error: {{str(e)}}']
+$$
+"""
+
+_PROJECT_CRON_UDF_TEMPLATE = """
+CREATE OR REPLACE FUNCTION trigger_pulsebot_project_cron(
+    project_id string, project_name string, prompt string, cron_expr string
+) RETURNS string LANGUAGE PYTHON AS $$
+from datetime import datetime
+
+def _matches_field(field, value):
+    if field == '*':
+        return True
+    for part in field.split(','):
+        if '/' in part:
+            base, step = part.split('/', 1)
+            start = 0 if base == '*' else int(base)
+            if value >= start and (value - start) % int(step) == 0:
+                return True
+        elif '-' in part:
+            lo, hi = part.split('-', 1)
+            if int(lo) <= value <= int(hi):
+                return True
+        elif int(part) == value:
+            return True
+    return False
+
+def _matches_cron(expr, now):
+    parts = expr.split()
+    if len(parts) != 5:
+        return False
+    minute, hour, dom, month, dow = parts
+    return (
+        _matches_field(minute, now.minute) and
+        _matches_field(hour, now.hour) and
+        _matches_field(dom, now.day) and
+        _matches_field(month, now.month) and
+        _matches_field(dow, now.weekday())
+    )
+
+def trigger_pulsebot_project_cron(project_id, project_name, prompt, cron_expr):
+    now = datetime.now()
+    if not _matches_cron(cron_expr[0], now):
+        return ['skipped']
+    try:
+        import requests
+        resp = requests.post(
+            '{api_url}/api/v1/projects/' + project_id[0] + '/trigger',
+            json={{'trigger_prompt': prompt[0]}},
+            timeout=10,
+        )
+        if resp.status_code == 409:
+            return ['skipped: project busy']
+        data = resp.json()
+        return [data.get('execution_id', '')]
+    except Exception as e:
+        return [f'error: {{str(e)}}']
+$$
+"""
+
 _INTERVAL_UDF_TEMPLATE = """
 CREATE OR REPLACE FUNCTION trigger_pulsebot_task(
     task_id string, task_name string, prompt string
@@ -441,4 +519,125 @@ class TaskManager:
         self._write_task_metadata(task_name, task_type="cron", prompt=prompt, schedule=cron)
 
         logger.info("Created cron task", extra={"task_name": task_name, "cron": cron})
+        return task_name
+
+    def create_project_interval_task(
+        self,
+        project_id: str,
+        project_name: str,
+        trigger_prompt: str,
+        interval: str,
+        api_url: str = "http://localhost:8000",
+    ) -> str:
+        """Create an interval-based trigger for a scheduled multi-agent project.
+
+        The task fires on the given interval, invoking the
+        ``trigger_pulsebot_project`` UDF which POSTs to
+        ``/api/v1/projects/{project_id}/trigger``.
+
+        Args:
+            project_id: The project's unique ID.
+            project_name: Human-readable name (used to derive task name).
+            trigger_prompt: Instruction sent to the manager on each trigger.
+            interval: Timeplus interval string, e.g. ``"15m"`` or ``"1h"``.
+            api_url: Base URL of the PulseBot API server.
+
+        Returns:
+            The sanitised internal task name.
+        """
+        task_name = self._sanitise_task_name(project_name)
+        safe_prompt = trigger_prompt.replace("'", "''")
+        safe_project_id = project_id.replace("'", "''")
+        safe_project_name = project_name.replace("'", "''")
+
+        udf_sql = _PROJECT_INTERVAL_UDF_TEMPLATE.format(api_url=api_url)
+        self.client.execute(udf_sql)
+
+        task_sql = f"""
+            CREATE TASK IF NOT EXISTS {task_name}
+            SCHEDULE {interval}
+            TIMEOUT 30s
+            INTO pulsebot.task_triggers
+            AS
+            SELECT
+                uuid()                                                                             AS trigger_id,
+                '{safe_project_id}'                                                                AS task_id,
+                '{task_name}'                                                                      AS task_name,
+                '{safe_prompt}'                                                                    AS prompt,
+                trigger_pulsebot_project('{safe_project_id}', '{safe_project_name}', '{safe_prompt}') AS execution_id,
+                now64(3)                                                                           AS triggered_at
+        """
+        self.client.execute(task_sql)
+        self._write_task_metadata(
+            task_name,
+            task_type="project_interval",
+            prompt=trigger_prompt,
+            schedule=interval,
+        )
+
+        logger.info(
+            "Created project interval task",
+            extra={"task_name": task_name, "project_id": project_id, "interval": interval},
+        )
+        return task_name
+
+    def create_project_cron_task(
+        self,
+        project_id: str,
+        project_name: str,
+        trigger_prompt: str,
+        cron: str,
+        api_url: str = "http://localhost:8000",
+    ) -> str:
+        """Create a cron-scheduled trigger for a scheduled multi-agent project.
+
+        The task polls every minute and uses the ``trigger_pulsebot_project_cron``
+        Python UDF to match the cron expression and conditionally POST to
+        ``/api/v1/projects/{project_id}/trigger``.
+
+        Args:
+            project_id: The project's unique ID.
+            project_name: Human-readable name (used to derive task name).
+            trigger_prompt: Instruction sent to the manager on each trigger.
+            cron: Standard 5-field cron expression, e.g. ``"0 8 * * *"``.
+            api_url: Base URL of the PulseBot API server.
+
+        Returns:
+            The sanitised internal task name.
+        """
+        task_name = self._sanitise_task_name(project_name)
+        safe_prompt = trigger_prompt.replace("'", "''")
+        safe_project_id = project_id.replace("'", "''")
+        safe_project_name = project_name.replace("'", "''")
+        safe_cron = cron.replace("'", "''")
+
+        udf_sql = _PROJECT_CRON_UDF_TEMPLATE.format(api_url=api_url)
+        self.client.execute(udf_sql)
+
+        task_sql = f"""
+            CREATE TASK IF NOT EXISTS {task_name}
+            SCHEDULE 1m
+            TIMEOUT 30s
+            INTO pulsebot.task_triggers
+            AS
+            SELECT
+                uuid()                                                                                                      AS trigger_id,
+                '{safe_project_id}'                                                                                         AS task_id,
+                '{task_name}'                                                                                               AS task_name,
+                '{safe_prompt}'                                                                                             AS prompt,
+                trigger_pulsebot_project_cron('{safe_project_id}', '{safe_project_name}', '{safe_prompt}', '{safe_cron}') AS execution_id,
+                now64(3)                                                                                                    AS triggered_at
+        """
+        self.client.execute(task_sql)
+        self._write_task_metadata(
+            task_name,
+            task_type="project_cron",
+            prompt=trigger_prompt,
+            schedule=cron,
+        )
+
+        logger.info(
+            "Created project cron task",
+            extra={"task_name": task_name, "project_id": project_id, "cron": cron},
+        )
         return task_name

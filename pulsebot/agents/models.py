@@ -46,6 +46,14 @@ class SubAgentSpec:
     # None = use the default set (file_ops, shell, workspace).
     builtin_skills: list[str] | None = None
 
+    # Scheduled project fields — only relevant for the manager spec.
+    # When is_scheduled=True the manager loops instead of exiting after each run,
+    # and workers are not cancelled between runs.
+    is_scheduled: bool = False
+    schedule_type: str = ""    # 'interval' or 'cron'
+    schedule_expr: str = ""    # e.g. '30m' or '0 9 * * 1-5'
+    trigger_prompt: str = ""   # default instruction sent on each trigger
+
     # Fan-in: agent IDs expected to send tasks to this agent.
     # Empty = process each task immediately; non-empty = buffer until one
     # message has been received from each upstream agent ID, then synthesize.
@@ -73,3 +81,7 @@ class ProjectState:
     status: str = "active"  # 'active', 'completed', 'failed', 'cancelled'
     config_overrides: dict[str, Any] = field(default_factory=dict)
     created_by: str = ""   # agent or user that originated the project
+    is_scheduled: bool = False
+    schedule_type: str = ""
+    schedule_expr: str = ""
+    trigger_prompt: str = ""
