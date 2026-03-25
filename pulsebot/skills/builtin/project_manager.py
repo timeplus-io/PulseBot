@@ -141,6 +141,61 @@ class ProjectManagerSkill(BaseSkill):
                 },
             ),
             ToolDefinition(
+                name="create_event_driven_project",
+                description=(
+                    "Create a multi-agent project triggered by rows from a Proton streaming SQL query. "
+                    "Each matching row fires one workflow run (drop-on-busy — events arriving during an "
+                    "active run are skipped). The context field value is appended to the trigger prompt "
+                    "for every run."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Human-readable project name"},
+                        "description": {"type": "string", "description": "What this project accomplishes"},
+                        "agents": {
+                            "type": "array",
+                            "description": "Worker agent specs",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "role": {"type": "string"},
+                                    "skills": {"type": "array", "items": {"type": "string"}},
+                                },
+                                "required": ["name", "role"],
+                            },
+                        },
+                        "session_id": {"type": "string", "description": "Session for routing output"},
+                        "event_query": {
+                            "type": "string",
+                            "description": (
+                                "Complete Proton streaming SQL to subscribe to. Must SELECT the context_field "
+                                "column directly from a stream or view — nested subqueries are not supported "
+                                "because _tp_sn may not propagate through subquery boundaries."
+                            ),
+                        },
+                        "context_field": {
+                            "type": "string",
+                            "description": "Column name in the query result to extract as trigger context",
+                        },
+                        "trigger_prompt": {
+                            "type": "string",
+                            "description": (
+                                "Instruction prefix prepended to the extracted context value: "
+                                '"{trigger_prompt}\\n\\n{context_value}"'
+                            ),
+                        },
+                        "initial_messages": {
+                            "type": "array",
+                            "description": "Optional messages dispatched once on project creation",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["name", "description", "agents", "session_id", "event_query", "context_field", "trigger_prompt"],
+                },
+            ),
+            ToolDefinition(
                 name="create_scheduled_project",
                 description=(
                     "Create a scheduled multi-agent project that runs repeatedly on a timer. "
@@ -237,6 +292,8 @@ class ProjectManagerSkill(BaseSkill):
                 return await self._delete_project(arguments)
             elif tool_name == "create_scheduled_project":
                 return await self._create_scheduled_project(arguments)
+            elif tool_name == "create_event_driven_project":
+                return await self._create_event_driven_project(arguments)
             else:
                 return ToolResult.fail(f"Unknown tool: {tool_name}")
         except Exception as e:
@@ -342,4 +399,30 @@ class ProjectManagerSkill(BaseSkill):
             f"Spawned {len(specs)} worker agent(s) with schedule: "
             f"{args['schedule_type']} ({args['schedule_expr']}). "
             f"Agents will idle and execute on each trigger."
+        )
+
+    async def _create_event_driven_project(self, args: dict) -> ToolResult:
+        name = args["name"]
+        description = args["description"]
+        agents = args["agents"]
+        session_id = args["session_id"]
+        event_query = args["event_query"]
+        context_field = args["context_field"]
+        trigger_prompt = args["trigger_prompt"]
+        initial_messages = args.get("initial_messages", [])
+
+        project_id = await self._project_manager.create_event_driven_project(
+            name=name,
+            description=description,
+            agents=agents,
+            session_id=session_id,
+            event_query=event_query,
+            context_field=context_field,
+            trigger_prompt=trigger_prompt,
+            initial_messages=initial_messages,
+        )
+        return ToolResult.ok(
+            f"Event-driven project '{name}' created (ID: {project_id}). "
+            f"Listening on query: {event_query!r}. "
+            f"Each row's '{context_field}' value will trigger a run."
         )
