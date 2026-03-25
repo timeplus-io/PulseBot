@@ -411,7 +411,7 @@ class ProjectManagerSkill(BaseSkill):
         trigger_prompt = args["trigger_prompt"]
         initial_messages = args.get("initial_messages", [])
 
-        project_id = await self._project_manager.create_event_driven_project(
+        project_id = await self._pm.create_event_driven_project(
             name=name,
             description=description,
             agents=agents,

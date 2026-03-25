@@ -11,8 +11,7 @@ async def test_create_event_driven_project_tool_calls_manager():
     mock_pm = MagicMock()
     mock_pm.create_event_driven_project = AsyncMock(return_value="proj_event_123")
 
-    skill = ProjectManagerSkill.__new__(ProjectManagerSkill)
-    skill._project_manager = mock_pm
+    skill = ProjectManagerSkill(mock_pm)
 
     result = await skill._create_event_driven_project({
         "name": "Error Monitor",
@@ -42,8 +41,7 @@ def test_create_event_driven_project_tool_in_get_tools():
     from pulsebot.skills.builtin.project_manager import ProjectManagerSkill
 
     mock_pm = MagicMock()
-    skill = ProjectManagerSkill.__new__(ProjectManagerSkill)
-    skill._project_manager = mock_pm
+    skill = ProjectManagerSkill(mock_pm)
 
     tools = skill.get_tools()
     names = [t.name for t in tools]
