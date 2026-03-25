@@ -54,6 +54,12 @@ class SubAgentSpec:
     schedule_expr: str = ""    # e.g. '30m' or '0 9 * * 1-5'
     trigger_prompt: str = ""   # default instruction sent on each trigger
 
+    # Event-driven project fields — only relevant for the manager spec.
+    # When schedule_type='event', the manager is triggered per matching row
+    # from the streaming query rather than on a fixed schedule.
+    event_query: str = ""    # complete Proton streaming SQL to subscribe to
+    context_field: str = ""  # column name to extract as trigger context
+
     # Fan-in: agent IDs expected to send tasks to this agent.
     # Empty = process each task immediately; non-empty = buffer until one
     # message has been received from each upstream agent ID, then synthesize.
@@ -85,3 +91,5 @@ class ProjectState:
     schedule_type: str = ""
     schedule_expr: str = ""
     trigger_prompt: str = ""
+    event_query: str = ""
+    context_field: str = ""

@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from pulsebot.agents.sub_agent import SubAgent
 from pulsebot.timeplus.client import escape_sql_str
@@ -418,8 +419,9 @@ class ManagerAgent(SubAgent):
     async def _update_project_status(self, status: str) -> None:
         """Write a project status update to kanban_projects stream.
 
-        Scheduling fields are always included so that LIMIT 1 BY project_id
-        queries return consistent data regardless of which row is most recent.
+        All scheduling and event fields are always included so that
+        LIMIT 1 BY project_id queries return consistent data regardless
+        of which row is most recent.
         """
         self._batch_client.insert("pulsebot.kanban_projects", [{
             "project_id": self.project_id,
@@ -433,4 +435,6 @@ class ManagerAgent(SubAgent):
             "schedule_type": self.spec.schedule_type if self.spec.is_scheduled else "",
             "schedule_expr": self.spec.schedule_expr if self.spec.is_scheduled else "",
             "trigger_prompt": self.spec.trigger_prompt if self.spec.is_scheduled else "",
+            "event_query": self.spec.event_query,
+            "context_field": self.spec.context_field,
         }])
