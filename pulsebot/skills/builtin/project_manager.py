@@ -418,9 +418,24 @@ class ProjectManagerSkill(BaseSkill):
         )
 
     async def _create_event_driven_project(self, args: dict) -> ToolResult:
+        from pulsebot.agents.models import SubAgentSpec
+
         name = args["name"]
         description = args["description"]
-        agents = args["agents"]
+        raw_agents = args.get("agents", [])
+        specs = [
+            SubAgentSpec(
+                name=a["name"],
+                task_description=a["task_description"],
+                project_id="",  # set by ProjectManager
+                target_agents=a.get("target_agents", []),
+                skills=a.get("skills"),
+                builtin_skills=a.get("builtin_skills"),
+                model=a.get("model"),
+                provider=a.get("provider"),
+            )
+            for a in raw_agents
+        ]
         session_id = args["session_id"]
         event_query = args["event_query"]
         context_field = args["context_field"]
@@ -430,7 +445,7 @@ class ProjectManagerSkill(BaseSkill):
         project_id = await self._pm.create_event_driven_project(
             name=name,
             description=description,
-            agents=agents,
+            agents=specs,
             session_id=session_id,
             event_query=event_query,
             context_field=context_field,
