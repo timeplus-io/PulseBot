@@ -23,7 +23,7 @@ Neither mode supports reacting to real-time streaming data. There is no way to s
 - Skip incoming events while a run is in progress (no queuing; drop-on-busy).
 - Extract a single designated column from each row and inject its value into the agents' trigger prompt.
 - Survive server restarts: resume the streaming query from the last checkpointed sequence number so no events are missed or double-processed.
-- Reuse the existing ManagerAgent scheduled-mode code path with zero changes to that component.
+- Reuse the existing ManagerAgent scheduled-mode code path with minimal changes to that component.
 
 ---
 
@@ -109,6 +109,8 @@ class EventWatcher:
         config: Config,
         checkpoint_sn: int = 0,
         start_time: datetime | None = None,
+        # ProjectManager passes datetime.now(timezone.utc) at instantiation.
+        # None is only valid in tests; production code always provides a value.
     ) -> None: ...
 
     async def run(self) -> None: ...         # main async loop
@@ -117,22 +119,23 @@ class EventWatcher:
 
 #### Streaming query construction
 
-The user provides a bare streaming SQL. `EventWatcher` wraps it to add sequence-number access and seek control:
+The user provides a bare streaming SQL that queries **a single Proton stream or view directly** (not a nested subquery). This constraint is required because `_tp_sn` is a virtual column on the physical stream and its visibility through subquery boundaries in Proton is not guaranteed.
+
+`EventWatcher` appends seek control and optional `_tp_sn` filtering to the user's query:
 
 **First run (no checkpoint):**
 ```sql
-SELECT *, _tp_sn FROM ({event_query})
-SETTINGS seek_to='{start_time}'
+{event_query} SETTINGS seek_to='{start_time}'
 ```
 
 **After restart with checkpoint:**
 ```sql
-SELECT *, _tp_sn FROM ({event_query})
-WHERE _tp_sn > {checkpoint_sn}
-SETTINGS seek_to='earliest'
+{event_query} AND _tp_sn > {checkpoint_sn} SETTINGS seek_to='earliest'
 ```
 
-This mirrors exactly how `ManagerAgent._run_scheduled()` handles its kanban query.
+`_tp_sn` is accessed as a system column from each row returned by the `StreamReader`, the same way `ManagerAgent._run_scheduled()` accesses it from the kanban query.
+
+> **Constraint:** `event_query` must be a `SELECT ... FROM <stream_or_view> [WHERE ...]` query. Nested subqueries are not supported because `_tp_sn` may not propagate through subquery boundaries in Proton. This should be validated at `create_event_driven_project()` time (reject queries containing `FROM (`).
 
 #### Per-row logic
 
@@ -143,7 +146,7 @@ outer loop (while _running):
         context_value = row.get(context_field, "")
         if context_value is empty:
             log warning, persist checkpoint, continue
-        if project_manager.is_busy(project_id):
+        if project_manager.is_project_busy(project_id):
             log debug "event skipped — run in progress"
             persist checkpoint (_tp_sn)
             continue
@@ -197,7 +200,7 @@ ProjectManager.mark_project_idle(project_id)
 EventWatcher is free to process the next event row
 ```
 
-**Key architectural property:** The ManagerAgent requires zero changes. It already handles `msg_type="trigger"` in scheduled mode and calls `on_run_complete` on completion. Event-driven projects are indistinguishable from scheduled projects at the ManagerAgent level — the only difference is that `EventWatcher` (rather than a Timeplus UDF) writes the trigger kanban message.
+**ManagerAgent changes (minimal):** `_update_project_status()` must write `event_query` and `context_field` alongside the existing scheduling fields to satisfy the append-only write invariant. Since `ManagerAgent` already stores these on `self.spec` (populated by `ProjectManager` at construction), no new constructor parameters are needed — only the `_update_project_status()` insert is updated. All other ManagerAgent logic (trigger handling, worker dispatch, run completion) is unchanged.
 
 No Timeplus Task UDF is needed for event-driven projects.
 
@@ -218,13 +221,38 @@ Writes the trigger kanban message and adds to `_busy_projects`. Called by `Event
 
 #### Extended: `_recover_scheduled_projects()`
 
-On boot, for each active scheduled project in `kanban_projects`:
+The SELECT list in the recovery query is extended to include `event_query` and `context_field`:
+
+```sql
+SELECT project_id, name, description, session_id, schedule_type, schedule_expr,
+       trigger_prompt, agent_ids, event_query, context_field
+FROM table(pulsebot.kanban_projects)
+WHERE is_scheduled = true AND status = 'active'
+ORDER BY timestamp DESC LIMIT 1 BY project_id
+```
+
+On boot, for each active scheduled project:
 - `schedule_type in ('interval', 'cron')` → existing path: create Timeplus Task + spawn manager + workers.
 - `schedule_type == 'event'` → new path: spawn manager + workers + `EventWatcher` (with recovered checkpoint from `kanban_agents` row `event_watcher_{project_id}`). No Timeplus Task created.
 
+#### Extended: `_write_project_metadata()`
+
+Signature extended with two new optional parameters (defaulting to `""` so existing callers are unaffected):
+
+```python
+def _write_project_metadata(
+    self, ...,
+    event_query: str = "",
+    context_field: str = "",
+) -> None: ...
+```
+
+The insert includes both new columns for all project types (empty string for non-event projects).
+
 #### Extended: `delete_project()`
 
-If the project has an associated EventWatcher asyncio task, cancel it before removing project state.
+- If the project has an associated `EventWatcher` asyncio task, cancel it before removing project state.
+- The Timeplus Task drop call is guarded: `if state.schedule_type in ('interval', 'cron'): drop_task(...)`. Event-driven projects have no Timeplus Task and must not attempt to drop one.
 
 ---
 
@@ -286,5 +314,6 @@ A system error was detected. Investigate and summarize:
 | `pulsebot/timeplus/setup.py` | Add `event_query string DEFAULT ''` and `context_field string DEFAULT ''` to `kanban_projects` DDL |
 | `pulsebot/agents/models.py` | Add `event_query: str = ""`, `context_field: str = ""` to `SubAgentSpec` and `ProjectState` |
 | `pulsebot/agents/event_watcher.py` | **New file** — `EventWatcher` class with streaming query subscription, per-row trigger logic, checkpoint persistence, and reconnect loop |
-| `pulsebot/agents/project_manager.py` | Add `create_event_driven_project()`, `trigger_project_with_context()`; extend `_recover_scheduled_projects()` to handle `schedule_type='event'`; extend `delete_project()` to cancel EventWatcher task; ensure all `kanban_projects` inserts carry `event_query` and `context_field` from `ProjectState` |
+| `pulsebot/agents/manager_agent.py` | Update `_update_project_status()` to include `event_query` and `context_field` from `self.spec` in every `kanban_projects` insert |
+| `pulsebot/agents/project_manager.py` | Add `create_event_driven_project()`, `trigger_project_with_context()`; extend `_recover_scheduled_projects()` SELECT list and dispatch path; extend `_write_project_metadata()` signature; extend `delete_project()` with EventWatcher cancellation and `schedule_type` guard on Timeplus Task drop |
 | `pulsebot/skills/builtin/project_manager.py` | Add `create_event_driven_project` tool definition and `_create_event_driven_project()` handler |
