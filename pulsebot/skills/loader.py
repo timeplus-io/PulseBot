@@ -74,13 +74,6 @@ class SkillLoader:
             except Exception as e:
                 logger.warning(f"Failed to load builtin skill {skill_name}: {e}")
 
-        # Load custom skills
-        for module_path in config.custom:
-            try:
-                loader.load_custom(module_path)
-            except Exception as e:
-                logger.warning(f"Failed to load custom skill {module_path}: {e}")
-
         # Discover external agentskills.io skills
         if config.skill_dirs:
             loader._skill_dirs = list(config.skill_dirs)
@@ -186,17 +179,6 @@ class SkillLoader:
         module_path = BUILTIN_SKILLS[name]
         self._load_skill(name, module_path, config)
         self._builtin_names.add(name)
-
-    def load_custom(self, module_path: str, **config: Any) -> None:
-        """Load a custom skill from a module path.
-        
-        Args:
-            module_path: Full module path to the skill class
-            **config: Skill-specific configuration
-        """
-        # Derive name from class name
-        name = module_path.split(".")[-1].lower()
-        self._load_skill(name, module_path, config)
 
     def _load_skill(self, name: str, module_path: str, config: dict[str, Any]) -> None:
         """Internal skill loading.

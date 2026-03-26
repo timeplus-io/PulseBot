@@ -47,6 +47,7 @@ class SkillManagerSkill(BaseSkill):
         cfg = skills_config.clawhub
         self._site_url = cfg.site_url
         self._registry_url = cfg.registry_url
+        self._auth_token = cfg.auth_token
         self._auth_token_path = cfg.auth_token_path
         self._registry = SkillStreamRegistry(client)
 
@@ -64,7 +65,9 @@ class SkillManagerSkill(BaseSkill):
         from pulsebot.skills.clawhub_client import ClawHubClient
 
         auth_token = None
-        if self._auth_token_path:
+        if self._auth_token:
+            auth_token = self._auth_token
+        elif self._auth_token_path:
             token_path = Path(self._auth_token_path).expanduser()
             if token_path.exists():
                 auth_token = token_path.read_text(encoding="utf-8").strip()

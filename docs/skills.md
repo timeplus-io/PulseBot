@@ -98,9 +98,6 @@ skills:
     - shell
     - workspace
 
-  # Custom Python skill classes (module paths)
-  custom: []
-
   # Directories to scan for agentskills.io skill packages
   skill_dirs:
     - "./skills"
@@ -113,23 +110,26 @@ skills:
 clawhub:
   # Directory to install ClawHub skills (defaults to first skill_dirs entry)
   install_dir: "./skills"
-  
+
   # Auto-update installed skills on startup
   auto_update: false
-  
-  # Optional: Path to file containing auth token (defaults to CLAWHUB_AUTH_TOKEN env var)
-  auth_token_path: "~/.clawhub/token"
+
+  # Auth token — supports env var substitution like other API keys (preferred)
+  auth_token: "${CLAWHUB_AUTH_TOKEN:-}"
+
+  # Alternative: read token from a file instead of config
+  # auth_token_path: "~/.clawhub/token"
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `skills.builtin` | list[str] | `["file_ops", "shell", "workspace"]` | Built-in skill names to load |
-| `skills.custom` | list[str] | `[]` | Module paths to custom Python skill classes |
 | `skills.skill_dirs` | list[str] | `[]` | Directories to scan for agentskills.io packages |
 | `skills.disabled_skills` | list[str] | `[]` | Skill names to skip (by `name` field in SKILL.md) |
 | `clawhub.install_dir` | str | First `skill_dirs` entry | Default directory for `pulsebot skill install` |
 | `clawhub.auto_update` | bool | `false` | Auto-update installed skills on startup |
-| `clawhub.auth_token_path` | str | `None` | Path to file containing ClawHub auth token |
+| `clawhub.auth_token` | str | `""` | ClawHub auth token — supports `${CLAWHUB_AUTH_TOKEN:-}` env var substitution (preferred) |
+| `clawhub.auth_token_path` | str | `None` | Alternative: path to file containing ClawHub auth token (used if `auth_token` is empty) |
 
 ### Enabling/Disabling External Skills
 
@@ -585,11 +585,6 @@ skills:
 
 **"Unknown built-in skill" error**:
 - Check that the skill name matches one of: `file_ops`, `shell`, `workspace`
-
-**"Failed to load custom skill" error**:
-- Ensure the module path is importable (in Python path)
-- Verify the class exists and inherits from `BaseSkill`
-- Check for import errors in the skill module
 
 **Tool not being called by LLM**:
 - Check tool description is clear and specific

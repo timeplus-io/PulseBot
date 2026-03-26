@@ -130,8 +130,7 @@ Control which tools the agent can access.
 | Field | Description |
 | :--- | :--- |
 | `builtin` | List of standard skills (e.g., `file_ops`, `shell`, `workspace`, `scheduler`). |
-| `custom` | List of additional skill names to load. |
-| `skill_dirs` | Directories to scan for custom skill packages. |
+| `skill_dirs` | Directories to scan for agentskills.io skill packages. |
 | `disabled_skills` | Specific skills to skip during loading. |
 
 Available built-in skills:
@@ -296,5 +295,4 @@ See [Multi-Agent Projects](multi-agent.md) for full documentation.
 ### Other Sections
 - **API**: Controls the main API server (`host`, `port`, `cors_origins`).
 - **Logging**: Set `level` (DEBUG, INFO, etc.) and `format` (`json` or `text`).
-- **Scheduled Tasks**: Configure background jobs like `heartbeat` or `daily_summary`.
-- **MCP Servers**: Configure external Model Context Protocol servers.
+

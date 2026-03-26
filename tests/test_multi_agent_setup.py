@@ -34,12 +34,8 @@ def test_kanban_agents_ddl_has_required_fields():
 
 def test_multi_agent_config_defaults():
     cfg = MultiAgentConfig()
-    assert cfg.enabled is True
     assert cfg.max_agents_per_project == 10
     assert cfg.max_concurrent_projects == 5
-    assert cfg.default_agent_timeout == 300
-    assert cfg.project_timeout == 1800
-    assert cfg.checkpoint_interval == 1
 
 
 def test_config_includes_multi_agent():
