@@ -166,9 +166,7 @@ export default function Tasks() {
   const load = () => {
     queryTasks(
       `SELECT task_id, task_name, task_type, prompt, schedule, status, created_at, created_by ` +
-      `FROM (SELECT task_id, task_name, task_type, prompt, schedule, status, created_at, created_by ` +
-      `FROM table(pulsebot.tasks) ORDER BY created_at DESC LIMIT 1 BY task_id) ` +
-      `WHERE status != 'deleted'`
+      `FROM table(pulsebot.tasks) ORDER BY created_at DESC LIMIT 1 BY task_id`
     );
     setRefreshKey(k => k + 1);
   };

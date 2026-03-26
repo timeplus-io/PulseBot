@@ -105,6 +105,7 @@ class EventWatcher:
                 "skill_overrides": "{}",
                 "config": "{}",
                 "checkpoint_sn": self._checkpoint_sn,
+                "metadata": "{}",
             }])
         except Exception as e:
             logger.warning(

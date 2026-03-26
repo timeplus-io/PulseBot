@@ -257,17 +257,23 @@ class ProjectManager:
         """Return detailed status for a specific project, or None if not found."""
         from pulsebot.timeplus.client import escape_sql_str
 
-        # Check in-memory first (live projects)
+        # Check in-memory first, but only if the manager task is still running.
+        # Once the task is done the stream has the accurate final status (e.g.
+        # "completed" / "failed") whereas the in-memory ProjectState stays at
+        # "active" because ManagerAgent writes status updates only to the stream.
         state = self._projects.get(project_id)
         if state is not None:
-            return {
-                "project_id": state.project_id,
-                "name": state.name,
-                "description": state.description,
-                "status": state.status,
-                "agent_ids": state.agent_ids,
-                "session_id": state.session_id,
-            }
+            manager_task = self._agent_tasks.get(f"manager_{project_id}")
+            if manager_task is None or not manager_task.done():
+                return {
+                    "project_id": state.project_id,
+                    "name": state.name,
+                    "description": state.description,
+                    "status": state.status,
+                    "agent_ids": state.agent_ids,
+                    "session_id": state.session_id,
+                }
+            # Task finished — fall through to stream for accurate final status.
 
         # Fall back to stream for past projects
         try:
@@ -424,6 +430,7 @@ class ProjectManager:
             "created_by": "main",
             "session_id": session_id,
             "agent_ids": [s.agent_id for s in agents],
+            "config_overrides": "{}",
             "is_scheduled": is_scheduled,
             "schedule_type": schedule_type,
             "schedule_expr": schedule_expr,
@@ -452,6 +459,7 @@ class ProjectManager:
                 "enable_memory": spec.enable_memory,
             }),
             "checkpoint_sn": 0,
+            "metadata": "{}",
         }])
 
     # ── Scheduled project support ──────────────────────────────────────────────
@@ -925,6 +933,7 @@ class ProjectManager:
                     "created_by": "event_watcher",
                     "session_id": state.session_id,
                     "agent_ids": state.agent_ids,
+                    "config_overrides": "{}",
                     "is_scheduled": True,
                     "schedule_type": "event",
                     "schedule_expr": "",
