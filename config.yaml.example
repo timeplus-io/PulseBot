@@ -56,7 +56,6 @@ providers:
 
   # Ollama — local LLM, no API key required
   ollama:
-    enabled: false
     host: "${OLLAMA_HOST:-http://localhost:11434}"
     default_model: "llama3"             # llama3, mistral, phi3, gemma2, qwen2.5
     timeout_seconds: 120
@@ -72,16 +71,11 @@ providers:
 # Channels — input sources the agent listens on
 # ---------------------------------------------------------------------------
 channels:
-  # Telegram bot integration
+  # Telegram bot integration (webchat is always on via the API server)
   telegram:
     enabled: false
     token: "${TELEGRAM_BOT_TOKEN}"
     allow_from: []                      # Restrict to these Telegram user IDs; empty = allow all
-
-  # Web chat UI (served at http://host:port/)
-  webchat:
-    enabled: true
-    port: 8000
 
 # ---------------------------------------------------------------------------
 # Skills — tools available to the agent
@@ -96,9 +90,6 @@ skills:
     - skill_manager   # Install/list skills from ClawHub registry
     - project_manager # Spawn and coordinate multi-agent projects
 
-  # Custom skill class paths (rarely needed; prefer agentskills packages)
-  custom: []
-
   # Directories to scan for agentskills.io skill packages (.zip or unpacked)
   skill_dirs:
     - "./skills"      # Relative to the working directory where pulsebot runs
@@ -108,44 +99,13 @@ skills:
 
   # ClawHub skill registry integration
   clawhub:
-    enabled: true
-    site_url: "https://clawhub.ai"
-    # registry_url:       # Auto-discovered from .well-known; override only if needed
-    # install_dir:        # Defaults to first entry in skill_dirs
-    # auth_token_path:    # Path to file containing your ClawHub auth token
-    verify_checksums: true   # Verify SHA256 checksums on downloaded skill packages
-    auto_update: false       # Auto-update installed skills on each startup
-
-# ---------------------------------------------------------------------------
-# MCP Servers — Model Context Protocol tool servers
-# ---------------------------------------------------------------------------
-mcp_servers: []
-# Example stdio server:
-# - name: "filesystem"
-#   transport: "stdio"
-#   command: "npx"
-#   args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
-#
-# Example HTTP/SSE server:
-# - name: "my-mcp-server"
-#   transport: "sse"
-#   url: "http://localhost:3001/sse"
-
-# ---------------------------------------------------------------------------
-# Scheduled Tasks — background tasks the agent runs on a schedule
-# ---------------------------------------------------------------------------
-scheduled_tasks:
-  # Periodic heartbeat: agent checks calendar/reminders on an interval
-  heartbeat:
-    enabled: false
-    interval: "30m"              # How often to run (e.g. "15m", "1h", "30m")
-    actions: ["calendar", "reminders"]
-
-  # Daily summary: agent posts a digest on a cron schedule
-  daily_summary:
-    enabled: false
-    cron: "0 9 * * *"           # Standard 5-field cron expression
-    timezone: "UTC"              # IANA timezone name (e.g. "America/Los_Angeles")
+    # Authentication token — supports env var substitution like other API keys
+    auth_token: "${CLAWHUB_AUTH_TOKEN:-}"
+    # Alternative: read token from a file instead of config
+    # auth_token_path: "~/.clawhub/token"
+    # site_url: "https://clawhub.ai"      # Override registry site (default: clawhub.ai)
+    # registry_url:                        # Auto-discovered from .well-known; override only if needed
+    # install_dir:                         # Defaults to first entry in skill_dirs
 
 # ---------------------------------------------------------------------------
 # API Server — FastAPI REST + WebSocket server
@@ -217,29 +177,33 @@ workspace:
 hooks:
   tool_call:
     pre_call: []
+    # Example: block specific tools
+    # pre_call:
+    #   - type: policy
+    #     config:
+    #       deny_tools: ["shell"]
+    #       allow_tools: ["read_file", "write_file"]
+    #
     # Example: log every tool call to a webhook before execution
     # pre_call:
-    #   - type: "webhook"
+    #   - type: webhook
     #     config:
     #       url: "https://my-audit-service.example.com/hook"
+    #       auth_header: "Bearer ${WEBHOOK_SECRET}"
+    #       timeout: 5.0
+    #       fail_open: true   # approve on network error; false = deny on error
 
 # ---------------------------------------------------------------------------
 # Multi-Agent — parallel and pipeline sub-agent projects
 # ---------------------------------------------------------------------------
 multi_agent:
-  enabled: true
   max_agents_per_project: 10    # Hard cap on sub-agents spawned by a single project
   max_concurrent_projects: 5    # Max simultaneously active projects across all sessions
-  default_agent_timeout: 300    # Per-agent task timeout in seconds (5 min)
-  project_timeout: 1800         # Whole-project wall-clock timeout in seconds (30 min)
-  checkpoint_interval: 1        # Write a checkpoint every N processed kanban messages
 
 # ---------------------------------------------------------------------------
-# Observability — event stream and debug controls
+# Observability — event stream emitted to the `events` Timeplus stream
 # ---------------------------------------------------------------------------
 observability:
   events:
     enabled: true
     min_severity: "info"          # Minimum severity to emit: debug | info | warning | error | critical
-    heartbeat_interval: 60        # Emit a heartbeat event every N seconds (0 = disabled)
-    include_debug_state: false    # Emit high-volume agent.state.* events at info level (dev only)

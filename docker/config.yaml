@@ -82,7 +82,6 @@ providers:
 
   # Local LLM via Ollama – no API key needed.
   ollama:
-    enabled: true
     host: "${OLLAMA_HOST:-http://localhost:11434}"
     default_model: "${PULSEBOT_MODEL:-llama3}"
     timeout_seconds: 120
@@ -109,9 +108,6 @@ channels:
     token: "${TELEGRAM_BOT_TOKEN:-}"
     allow_from: []   # Restrict to specific Telegram user IDs; empty = allow all
 
-  webchat:
-    enabled: true
-    port: "${PULSEBOT_API_PORT:-8001}"
 
 # ---------------------------------------------------------------------------
 # Skills
@@ -125,8 +121,6 @@ skills:
     - skill_manager
     - project_manager
 
-  custom: []
-
   # Directories to scan for agentskills.io / OpenClaw skill packages
   skill_dirs:
     - "/app/skills"
@@ -134,29 +128,9 @@ skills:
   # Skill names to skip (by name field in SKILL.md frontmatter)
   disabled_skills: []
 
-# ---------------------------------------------------------------------------
-# MCP servers (uncomment and fill in as needed)
-# ---------------------------------------------------------------------------
-mcp_servers: []
-# Example:
-# - name: "filesystem"
-#   transport: "stdio"
-#   command: "npx"
-#   args: ["-y", "@modelcontextprotocol/server-filesystem", "/app/data"]
+  clawhub:
+    auth_token: "${CLAWHUB_AUTH_TOKEN:-}"
 
-# ---------------------------------------------------------------------------
-# Scheduled tasks
-# ---------------------------------------------------------------------------
-scheduled_tasks:
-  heartbeat:
-    enabled: true
-    interval: "30m"
-    actions: ["calendar", "reminders"]
-
-  daily_summary:
-    enabled: false
-    cron: "0 9 * * *"
-    timezone: "UTC"
 
 # ---------------------------------------------------------------------------
 # API server
@@ -252,12 +226,8 @@ hooks:
 # Multi-agent coordination
 # ---------------------------------------------------------------------------
 multi_agent:
-  enabled: true
   max_agents_per_project: 10      # Hard cap on sub-agents per project
   max_concurrent_projects: 5      # Max simultaneously active projects
-  default_agent_timeout: 300      # Per-agent task timeout in seconds
-  project_timeout: 1800           # Whole-project wall-clock timeout in seconds
-  checkpoint_interval: 1          # Checkpoint every N processed messages
 
 # ---------------------------------------------------------------------------
 # Observability – structured events emitted to the `events` stream
@@ -266,5 +236,3 @@ observability:
   events:
     enabled: true
     min_severity: "info"       # debug|info|warning|error|critical
-    heartbeat_interval: 60     # seconds between heartbeat events; 0 to disable
-    include_debug_state: false # set true only for development (high-volume state events)

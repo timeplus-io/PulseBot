@@ -71,7 +71,6 @@ class GeminiConfig(BaseModel):
 
 class OllamaConfig(BaseModel):
     """Ollama local LLM configuration."""
-    enabled: bool = False
     host: str = "http://localhost:11434"
     default_model: str = "llama3"
     timeout_seconds: int = 120
@@ -105,33 +104,23 @@ class TelegramChannelConfig(BaseModel):
     allow_from: list[int] = Field(default_factory=list)  # Telegram user IDs
 
 
-class WebchatChannelConfig(BaseModel):
-    """Webchat channel configuration."""
-    enabled: bool = True
-    port: int = 8000
-
-
 class ChannelsConfig(BaseModel):
     """All channels configuration."""
     telegram: TelegramChannelConfig = Field(default_factory=TelegramChannelConfig)
-    webchat: WebchatChannelConfig = Field(default_factory=WebchatChannelConfig)
 
 
 class ClawHubConfig(BaseModel):
     """ClawHub registry integration configuration."""
-    enabled: bool = True
     site_url: str = "https://clawhub.ai"
     registry_url: str | None = None      # Auto-discovered from .well-known if None
     install_dir: str | None = None       # Defaults to first skill_dir if None
-    auth_token_path: str | None = None   # Path to file containing auth token
-    verify_checksums: bool = True        # Verify SHA256 checksums on download
-    auto_update: bool = False            # Auto-update installed skills on startup
+    auth_token: str = ""                 # Bearer token; use "${CLAWHUB_AUTH_TOKEN:-}" for env var
+    auth_token_path: str | None = None   # Alternative: path to file containing auth token
 
 
 class SkillsConfig(BaseModel):
     """Skills configuration."""
     builtin: list[str] = Field(default_factory=lambda: ["file_ops", "shell"])
-    custom: list[str] = Field(default_factory=list)
     skill_dirs: list[str] = Field(default_factory=list)
     disabled_skills: list[str] = Field(default_factory=list)
     clawhub: ClawHubConfig = Field(default_factory=ClawHubConfig)
@@ -153,29 +142,6 @@ class HooksConfig(BaseModel):
     tool_call: ToolCallHooksConfig = Field(default_factory=ToolCallHooksConfig)
 
 
-class MCPServerConfig(BaseModel):
-    """MCP server configuration."""
-    name: str
-    transport: str = "stdio"
-    command: str | None = None
-    args: list[str] = Field(default_factory=list)
-    url: str | None = None
-    config: dict[str, Any] = Field(default_factory=dict)
-
-
-class ScheduledTaskConfig(BaseModel):
-    """Scheduled task configuration."""
-    enabled: bool = False
-    interval: str | None = None
-    cron: str | None = None
-    timezone: str = "UTC"
-    actions: list[str] = Field(default_factory=list)
-
-
-class ScheduledTasksConfig(BaseModel):
-    """All scheduled tasks configuration."""
-    heartbeat: ScheduledTaskConfig = Field(default_factory=ScheduledTaskConfig)
-    daily_summary: ScheduledTaskConfig = Field(default_factory=ScheduledTaskConfig)
 
 
 class APIConfig(BaseModel):
@@ -207,12 +173,8 @@ class MemoryConfig(BaseModel):
 
 class MultiAgentConfig(BaseModel):
     """Multi-agent coordination configuration."""
-    enabled: bool = True                    # Enable multi-agent coordination
     max_agents_per_project: int = 10        # Hard cap on sub-agents per project
     max_concurrent_projects: int = 5        # Max simultaneously active projects
-    default_agent_timeout: int = 300        # Per-agent task timeout in seconds
-    project_timeout: int = 1800             # Whole-project wall-clock timeout in seconds
-    checkpoint_interval: int = 1            # Checkpoint every N processed messages
 
 
 class ObservabilityEventsConfig(BaseModel):
@@ -220,16 +182,9 @@ class ObservabilityEventsConfig(BaseModel):
 
     min_severity gates event emission at the source — debug events never
     serialize to JSON in production (saves CPU and stream volume).
-
-    include_debug_state controls agent.state.* events which are high-volume
-    (3-5 events per user request). Set to True only for development debugging.
-    When False, state events are emitted at 'debug' severity and will be
-    suppressed by the default min_severity='info' floor.
     """
     enabled: bool = True
     min_severity: str = "info"        # 'debug', 'info', 'warning', 'error', 'critical'
-    heartbeat_interval: int = 60      # seconds, 0 to disable
-    include_debug_state: bool = False  # emit agent.state.* at 'info' vs 'debug'
 
 
 class ObservabilityConfig(BaseModel):
@@ -246,8 +201,6 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
-    mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
-    scheduled_tasks: ScheduledTasksConfig = Field(default_factory=ScheduledTasksConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
@@ -319,10 +272,8 @@ providers:
   openai:
     api_key: "${OPENAI_API_KEY}"
     default_model: "gpt-4o"
-    embedding_model: "text-embedding-3-small"
 
   ollama:
-    enabled: true
     host: "${OLLAMA_HOST:-http://localhost:11434}"
     default_model: "llama3"
 
@@ -346,10 +297,6 @@ channels:
     token: "${TELEGRAM_BOT_TOKEN}"
     allow_from: []
 
-  webchat:
-    enabled: true
-    port: 8000
-
 skills:
   builtin:
     - file_ops
@@ -358,8 +305,6 @@ skills:
     - scheduler
     - skill_manager
 
-  custom: []
-
   # Directories to scan for agentskills.io skill packages
   skill_dirs:
     - "./skills"
@@ -367,25 +312,13 @@ skills:
   # Skill names to disable
   disabled_skills: []
 
-# ClawHub registry for OpenClaw-compatible skills
-clawhub:
-  # Authentication token for ClawHub (defaults to CLAWHUB_AUTH_TOKEN env var)
-  # auth_token_path: "~/.clawhub/token"
+  # ClawHub registry for OpenClaw-compatible skills
+  clawhub:
+    # Authentication token — supports env var substitution like other API keys
+    auth_token: "${CLAWHUB_AUTH_TOKEN:-}"
 
-  # Auto-update installed skills on startup
-  auto_update: false
-
-mcp_servers: []
-
-scheduled_tasks:
-  heartbeat:
-    enabled: true
-    interval: "30m"
-
-  daily_summary:
-    enabled: false
-    cron: "0 9 * * *"
-    timezone: "UTC"
+    # Alternative: read token from a file instead of config
+    # auth_token_path: "~/.clawhub/token"
 
 api:
   host: "0.0.0.0"

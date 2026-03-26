@@ -230,14 +230,6 @@ function ProviderSection({ name, label, config, onChange }) {
           </Field>
         )}
       </div>
-      {isOllama && (
-        <ToggleRow
-          label="Enabled"
-          hint="Enable local Ollama inference"
-          checked={config?.enabled}
-          onChange={v => onChange({ ...config, enabled: v })}
-        />
-      )}
       {hasThinking && (
         <ToggleRow
           label="Enable Thinking"
@@ -543,7 +535,7 @@ export default function Settings() {
             id="channels"
             title="Channels"
 
-            description="Input sources the agent listens on."
+            description="Input channels. Web chat is always available via the API server."
             onSave={() => save('channels', { channels: c.channels })}
             saving={saving.channels}
             saveError={saveError.channels}
@@ -562,23 +554,6 @@ export default function Settings() {
                     value={c.channels?.telegram?.token}
                     onChange={v => update(['channels', 'telegram', 'token'], v)}
                     placeholder="Not configured"
-                  />
-                </Field>
-              </div>
-            </div>
-            <div className="flex flex-col pt-4 border-t border-[#DAD9DB]/40">
-              <h3 className="text-xs font-semibold text-[#3A3741] uppercase tracking-wider mb-3">Web Chat</h3>
-              <ToggleRow
-                label="Enabled"
-                checked={c.channels?.webchat?.enabled}
-                onChange={v => update(['channels', 'webchat', 'enabled'], v)}
-              />
-              <div className="grid grid-cols-2 gap-4 mt-3">
-                <Field label="Port">
-                  <NumberInput
-                    value={c.channels?.webchat?.port}
-                    onChange={v => update(['channels', 'webchat', 'port'], v)}
-                    min={1024} max={65535}
                   />
                 </Field>
               </div>
@@ -618,41 +593,28 @@ export default function Settings() {
             </Field>
             <div className="flex flex-col pt-2 border-t border-[#DAD9DB]/40">
               <h3 className="text-xs font-semibold text-[#3A3741] uppercase tracking-wider mb-3">ClawHub Registry</h3>
-              <div className="flex flex-col gap-4">
-                <ToggleRow
-                  label="Enabled"
-                  hint="Enable the ClawHub skill registry for installing agentskills"
-                  checked={c.skills?.clawhub?.enabled}
-                  onChange={v => update(['skills', 'clawhub', 'enabled'], v)}
-                />
-                <ToggleRow
-                  label="Auto-update"
-                  hint="Automatically update installed skills on startup"
-                  checked={c.skills?.clawhub?.auto_update}
-                  onChange={v => update(['skills', 'clawhub', 'auto_update'], v)}
-                />
-                <ToggleRow
-                  label="Verify Checksums"
-                  hint="Verify SHA256 checksums when downloading skills"
-                  checked={c.skills?.clawhub?.verify_checksums}
-                  onChange={v => update(['skills', 'clawhub', 'verify_checksums'], v)}
-                />
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Site URL">
-                    <TextInput
-                      value={c.skills?.clawhub?.site_url}
-                      onChange={v => update(['skills', 'clawhub', 'site_url'], v)}
-                      placeholder="https://clawhub.ai"
-                    />
-                  </Field>
-                  <Field label="Install Directory" hint="Defaults to first skill directory">
-                    <TextInput
-                      value={c.skills?.clawhub?.install_dir ?? ''}
-                      onChange={v => update(['skills', 'clawhub', 'install_dir'], v || null)}
-                      placeholder="(auto)"
-                    />
-                  </Field>
-                </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Auth Token" hint="Bearer token for authenticated registry access">
+                  <ApiKeyField
+                    value={c.skills?.clawhub?.auth_token}
+                    onChange={v => update(['skills', 'clawhub', 'auth_token'], v)}
+                    placeholder="Not configured"
+                  />
+                </Field>
+                <Field label="Install Directory" hint="Defaults to first skill directory">
+                  <TextInput
+                    value={c.skills?.clawhub?.install_dir ?? ''}
+                    onChange={v => update(['skills', 'clawhub', 'install_dir'], v || null)}
+                    placeholder="(auto)"
+                  />
+                </Field>
+                <Field label="Site URL" hint="Override registry site (default: clawhub.ai)">
+                  <TextInput
+                    value={c.skills?.clawhub?.site_url}
+                    onChange={v => update(['skills', 'clawhub', 'site_url'], v)}
+                    placeholder="https://clawhub.ai"
+                  />
+                </Field>
               </div>
             </div>
           </SectionCard>
@@ -720,12 +682,6 @@ export default function Settings() {
             saveError={saveError.multi_agent}
             saveOk={saveOk.multi_agent}
           >
-            <ToggleRow
-              label="Enabled"
-              hint="Enable multi-agent coordination"
-              checked={c.multi_agent?.enabled}
-              onChange={v => update(['multi_agent', 'enabled'], v)}
-            />
             <div className="grid grid-cols-2 gap-4">
               <Field label="Max Agents per Project">
                 <NumberInput
@@ -739,20 +695,6 @@ export default function Settings() {
                   value={c.multi_agent?.max_concurrent_projects}
                   onChange={v => update(['multi_agent', 'max_concurrent_projects'], v)}
                   min={1}
-                />
-              </Field>
-              <Field label="Agent Timeout (seconds)" hint="Per-agent task timeout">
-                <NumberInput
-                  value={c.multi_agent?.default_agent_timeout}
-                  onChange={v => update(['multi_agent', 'default_agent_timeout'], v)}
-                  min={30}
-                />
-              </Field>
-              <Field label="Project Timeout (seconds)" hint="Whole-project wall-clock timeout">
-                <NumberInput
-                  value={c.multi_agent?.project_timeout}
-                  onChange={v => update(['multi_agent', 'project_timeout'], v)}
-                  min={60}
                 />
               </Field>
             </div>
@@ -789,20 +731,7 @@ export default function Settings() {
                   ]}
                 />
               </Field>
-              <Field label="Heartbeat Interval (seconds)" hint="0 to disable heartbeat events">
-                <NumberInput
-                  value={c.observability?.events?.heartbeat_interval}
-                  onChange={v => update(['observability', 'events', 'heartbeat_interval'], v)}
-                  min={0}
-                />
-              </Field>
             </div>
-            <ToggleRow
-              label="Include Debug State Events"
-              hint="Emit high-volume agent.state.* events at info level (dev only)"
-              checked={c.observability?.events?.include_debug_state}
-              onChange={v => update(['observability', 'events', 'include_debug_state'], v)}
-            />
           </SectionCard>
 
           {/* ── Logging ── */}
