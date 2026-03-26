@@ -435,6 +435,7 @@ class ManagerAgent(SubAgent):
             "created_by": "main",
             "session_id": self.session_id,
             "agent_ids": [spec.agent_id for spec in self.worker_specs],
+            "config_overrides": "{}",
             "is_scheduled": self.spec.is_scheduled,
             "schedule_type": self.spec.schedule_type if self.spec.is_scheduled else "",
             "schedule_expr": self.spec.schedule_expr if self.spec.is_scheduled else "",

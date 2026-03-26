@@ -263,13 +263,7 @@ class TaskManager:
             name: Task name to drop
         """
         self.client.execute(f"DROP TASK IF EXISTS {name}")
-        try:
-            self.client.insert(
-                "pulsebot.tasks",
-                [{"task_id": _task_id(name), "task_name": name, "status": "deleted"}],
-            )
-        except Exception as e:
-            logger.warning("Could not write deleted tombstone for task", extra={"task_name": name, "error": str(e)})
+        self.client.execute(f"DELETE FROM pulsebot.tasks WHERE task_id = '{_task_id(name)}'")
         logger.info("Dropped task", extra={"task_name": name})
 
     def list_tasks(self) -> list[dict[str, Any]]:

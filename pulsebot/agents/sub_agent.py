@@ -518,6 +518,7 @@ class SubAgent:
                 "enable_memory": self.spec.enable_memory,
             }),
             "checkpoint_sn": self._checkpoint_sn,
+            "metadata": "{}",
         }])
 
     async def stop(self) -> None:

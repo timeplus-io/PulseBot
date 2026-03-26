@@ -1,9 +1,7 @@
 """Stream-native skill registry backed by the pulsebot.skills Proton stream.
 
-Replaces the file-based .clawhub/lock.json with an event-sourced stream:
-- install → appends action='install' record
-- remove  → appends action='remove' tombstone
-- read    → queries latest action per slug, excludes removed
+Uses an append-only stream for installs (upgrades re-insert) and physical
+DELETE for removals, consistent with all other PulseBot metadata streams.
 """
 
 from __future__ import annotations
@@ -21,16 +19,10 @@ logger = get_logger(__name__)
 STREAM = "pulsebot.skills"
 
 _LIST_QUERY = (
-    "SELECT name, version, content_hash, source, installed_at FROM ("
-    "  SELECT slug AS name,"
-    "         arg_max(version,      created_at) AS version,"
-    "         arg_max(content_hash, created_at) AS content_hash,"
-    "         arg_max(source,       created_at) AS source,"
-    "         arg_max(installed_at, created_at) AS installed_at,"
-    "         arg_max(action,       created_at) AS action"
-    "  FROM table(pulsebot.skills)"
-    "  GROUP BY slug"
-    ") WHERE action != 'remove'"
+    "SELECT slug AS name, version, content_hash, source, installed_at"
+    " FROM table(pulsebot.skills)"
+    " ORDER BY created_at DESC"
+    " LIMIT 1 BY slug"
 )
 
 
@@ -63,7 +55,7 @@ class SkillStreamRegistry:
             return {}
 
     def add(self, skill: LockedSkill) -> None:
-        """Record a skill installation."""
+        """Record a skill installation (or upgrade via re-insert)."""
         self._client.insert(STREAM, [{
             "slug": skill.slug,
             "version": skill.version,
@@ -74,12 +66,5 @@ class SkillStreamRegistry:
         }])
 
     def remove(self, slug: str) -> None:
-        """Record a skill removal (tombstone)."""
-        self._client.insert(STREAM, [{
-            "slug": slug,
-            "version": "",
-            "content_hash": "",
-            "source": "",
-            "action": "remove",
-            "installed_at": "",
-        }])
+        """Physically delete a skill from the registry."""
+        self._client.execute(f"DELETE FROM {STREAM} WHERE slug = '{slug}'")
