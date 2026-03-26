@@ -208,6 +208,11 @@ class SubAgent:
                         f"SubAgent {self.agent_id} error processing message: {e}",
                         exc_info=True,
                     )
+                    await self.events.emit_error("subagent.task_error", e, payload={
+                        "agent_id": self.agent_id,
+                        "project_id": self.project_id,
+                        "msg_id": message.get("msg_id", ""),
+                    })
                     await self._write_error(message, str(e))
 
                 self._checkpoint_sn = message.get("_tp_sn", self._checkpoint_sn)
@@ -302,11 +307,19 @@ class SubAgent:
         response = None
         for _ in range(self.spec.max_iterations):
             t0 = time.monotonic()
-            response = await self.llm.chat(
-                messages=messages,
-                system=system_prompt,
-                tools=tools,
-            )
+            try:
+                response = await self.llm.chat(
+                    messages=messages,
+                    system=system_prompt,
+                    tools=tools,
+                )
+            except Exception as llm_exc:
+                latency_ms = int((time.monotonic() - t0) * 1000)
+                await self._log_llm_call(
+                    session_id, system_prompt, messages, None, latency_ms,
+                    error=str(llm_exc),
+                )
+                raise
             latency_ms = int((time.monotonic() - t0) * 1000)
             await self._log_llm_call(session_id, system_prompt, messages, response, latency_ms)
 
@@ -413,6 +426,7 @@ class SubAgent:
         messages: list[dict[str, Any]],
         response: Any,
         latency_ms: int,
+        error: str = "",
     ) -> None:
         usage = response.usage if response else None
         await self._llm_logger.write({
@@ -433,7 +447,8 @@ class SubAgent:
             "messages_count": len(messages),
             "tools_called": [tc.name for tc in (response.tool_calls or [])] if response else [],
             "tool_call_count": len(response.tool_calls or []) if response else 0,
-            "status": "success",
+            "status": "error" if error else "success",
+            "error_message": error,
             "caller": self.agent_id,
         })
 

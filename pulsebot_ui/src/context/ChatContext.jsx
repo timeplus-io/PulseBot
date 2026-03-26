@@ -108,13 +108,19 @@ export function ChatProvider({ children }) {
         clearTimeout(agentReadyFallback);
         setAgentReady(true);
       } else if (data.type === 'system_error') {
+        const wasWaiting = isWaitingRef.current;
         setWaiting(false);
         setActiveToolCalls(new Map());
         setActiveLlmThinking(new Map());
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setMessages(prev => [...prev, {
-          id: Date.now() + Math.random(), type: 'system_error', text: data.message, time,
-        }]);
+        // Only show the error message if the UI was waiting for a response.
+        // This prevents duplicate errors when both agent_response and the
+        // events-stream safety-net arrive for the same failure.
+        if (wasWaiting) {
+          const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          setMessages(prev => [...prev, {
+            id: Date.now() + Math.random(), type: 'system_error', text: data.message, time,
+          }]);
+        }
       } else if (data.type === 'system_info') {
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         setMessages(prev => [...prev, {

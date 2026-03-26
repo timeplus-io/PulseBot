@@ -60,7 +60,7 @@ async def stream_proton_query(
         Raw response bytes from Proton.
     """
     target = f"{proton_url.rstrip('/')}/?default_format={fmt}"
-    logger.debug("Proton proxy: sql=%r → %s", sql[:120], proton_url)
+    logger.info("Proton proxy query: %s", sql[:200])
 
     try:
         async with httpx.AsyncClient(timeout=None) as client:
@@ -72,10 +72,11 @@ async def stream_proton_query(
             ) as resp:
                 if resp.status_code != 200:
                     error_body = await resp.aread()
-                    logger.warning(
-                        "Proton returned %d: %s",
+                    logger.error(
+                        "Proton query error (HTTP %d) — sql: %s — error: %s",
                         resp.status_code,
-                        error_body.decode()[:300],
+                        sql[:300],
+                        error_body.decode()[:500],
                     )
                     yield error_body
                     return

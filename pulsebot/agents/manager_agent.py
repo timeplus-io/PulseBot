@@ -43,6 +43,8 @@ class ManagerAgent(SubAgent):
         llm_provider: LLMProvider,
         skill_loader: SkillLoader,
         config: Config,
+        project_name: str = "",
+        project_description: str = "",
         initial_messages: list[dict[str, Any]] | None = None,
         reporting_agent_ids: list[str] | None = None,
         on_run_complete: Callable[[], None] | None = None,
@@ -50,6 +52,8 @@ class ManagerAgent(SubAgent):
         super().__init__(spec, timeplus, llm_provider, skill_loader, config)
         self.worker_specs = worker_specs
         self.session_id = session_id
+        self.project_name = project_name
+        self.project_description = project_description
         self.initial_messages = initial_messages or []
         # Agent IDs expected to report a result. Complete once all have reported
         # at least once — ignores duplicate reports from the same sender.
@@ -425,8 +429,8 @@ class ManagerAgent(SubAgent):
         """
         self._batch_client.insert("pulsebot.kanban_projects", [{
             "project_id": self.project_id,
-            "name": "",
-            "description": "",
+            "name": self.project_name,
+            "description": self.project_description,
             "status": status,
             "created_by": "main",
             "session_id": self.session_id,

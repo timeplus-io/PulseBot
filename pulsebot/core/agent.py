@@ -354,11 +354,12 @@ class Agent:
             except Exception as e:
                 latency_ms = int((time.time() - start_time) * 1000)
                 logger.error(f"LLM call failed (iteration {iteration}): {e}", exc_info=True)
+                await self._log_llm_call(session_id, context, None, latency_ms, error=str(e))
                 await self.events.emit("llm.call_failed", severity="error", payload={
                     "session_id": session_id,
                     "iteration": iteration,
                     "error": str(e),
-                    "latency_ms": int((time.time() - start_time) * 1000),
+                    "latency_ms": latency_ms,
                     "model": self.llm.model,
                 })
                 # Signal UI that thinking is done so the spinner clears
@@ -592,20 +593,22 @@ class Agent:
         context: Any,
         response: Any,
         latency_ms: float,
+        error: str = "",
     ) -> None:
         """Log LLM call to observability stream.
 
         Args:
             session_id: Session identifier
             context: Context used for the call
-            response: LLM response
+            response: LLM response (None on error)
             latency_ms: Request latency in milliseconds
+            error: Error message if the call failed
         """
         # Safely handle response which might be None in error cases
         response_content = response.content if response else ""
         response_usage = response.usage if response else None
         response_tool_calls = response.tool_calls if response else None
-        
+
         await self.llm_logger.write({
             "session_id": session_id,
             "model": self.llm.model,
@@ -622,11 +625,12 @@ class Agent:
                 5000
             ),
             "assistant_response_preview": truncate_string(response_content or "", 5000),
-            "full_response_content": response_content or "",  # Full response for debugging
+            "full_response_content": response_content or "",
             "messages_count": len(context.messages),
             "tools_called": [tc.name for tc in (response_tool_calls or [])],
             "tool_call_count": len(response_tool_calls or []),
-            "status": "success",
+            "status": "error" if error else "success",
+            "error_message": error,
             "caller": "main",
         })
 
