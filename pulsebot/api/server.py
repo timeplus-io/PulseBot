@@ -611,13 +611,13 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
             logger.info(f"send_responses ended for session: {session_id}")
     
     async def forward_task_notifications():
-        """Forward task_notification events to this WebSocket client."""
+        """Forward task_notification and agent error events to this WebSocket client."""
         ws_events_client = TimeplusClient.from_config(_config.timeplus)
         ws_events_reader = StreamReader(ws_events_client, "events")
 
         events_query = """
             SELECT * FROM pulsebot.events
-            WHERE event_type = 'task_notification'
+            WHERE event_type IN ('task_notification', 'llm.call_failed', 'session.error')
             SETTINGS seek_to='latest'
         """
         try:
@@ -625,15 +625,28 @@ async def websocket_chat(websocket: WebSocket, session_id: str) -> None:
                 if websocket.client_state.name != "CONNECTED":
                     break
                 try:
+                    event_type = event.get("event_type", "")
                     payload = json.loads(event.get("payload", "{}"))
-                    text = payload.get("text", "")
-                    if not text:
-                        continue
-                    await websocket.send_json({
-                        "type": "task_notification",
-                        "task_name": payload.get("task_name", ""),
-                        "text": text,
-                    })
+                    if event_type == "task_notification":
+                        text = payload.get("text", "")
+                        if not text:
+                            continue
+                        await websocket.send_json({
+                            "type": "task_notification",
+                            "task_name": payload.get("task_name", ""),
+                            "text": text,
+                        })
+                    elif event_type in ("llm.call_failed", "session.error"):
+                        # Safety net: if the agent_response message was missed or
+                        # failed to write, forward the error event directly so the
+                        # UI can unblock and show the error.
+                        if payload.get("session_id") != session_id:
+                            continue
+                        error = payload.get("error", "An error occurred while processing your request")
+                        await websocket.send_json({
+                            "type": "system_error",
+                            "message": error,
+                        })
                 except RuntimeError:
                     break
         except WebSocketDisconnect:

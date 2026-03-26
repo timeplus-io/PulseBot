@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from typing import TYPE_CHECKING, Any
 
 from pulsebot.utils import get_logger
@@ -11,6 +12,14 @@ if TYPE_CHECKING:
     from pulsebot.timeplus.client import TimeplusClient
 
 logger = get_logger(__name__)
+
+# Stable namespace for deterministic task UUIDs derived from task names.
+_TASK_UUID_NAMESPACE = uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+
+
+def _task_id(name: str) -> str:
+    """Return a stable UUID for a task derived from its name."""
+    return str(uuid.uuid5(_TASK_UUID_NAMESPACE, name))
 
 _PROJECT_INTERVAL_UDF_TEMPLATE = """
 CREATE OR REPLACE FUNCTION trigger_pulsebot_project(
@@ -243,8 +252,8 @@ class TaskManager:
         """Record task metadata (schedule, type, prompt) to pulsebot.tasks for display."""
         self.client.insert(
             "pulsebot.tasks",
-            [{"task_name": name, "task_type": task_type, "prompt": prompt,
-              "schedule": schedule, "status": "active"}],
+            [{"task_id": _task_id(name), "task_name": name, "task_type": task_type,
+              "prompt": prompt, "schedule": schedule, "status": "active"}],
         )
 
     def drop_task(self, name: str) -> None:
@@ -254,6 +263,13 @@ class TaskManager:
             name: Task name to drop
         """
         self.client.execute(f"DROP TASK IF EXISTS {name}")
+        try:
+            self.client.insert(
+                "pulsebot.tasks",
+                [{"task_id": _task_id(name), "task_name": name, "status": "deleted"}],
+            )
+        except Exception as e:
+            logger.warning("Could not write deleted tombstone for task", extra={"task_name": name, "error": str(e)})
         logger.info("Dropped task", extra={"task_name": name})
 
     def list_tasks(self) -> list[dict[str, Any]]:

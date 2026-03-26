@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useProtonQuery } from '../hooks/useProtonQuery';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
@@ -75,13 +75,22 @@ const COLUMNS = [
   },
 ];
 
+const SEVERITY_FILTERS = [
+  { label: 'All', value: '' },
+  { label: 'Error', value: 'error' },
+  { label: 'Warning', value: 'warning' },
+  { label: 'Info', value: 'info' },
+];
+
 export default function Events() {
   const { data: stats, loading: statsLoading, query: queryStats } = useProtonQuery();
   const { data, loading, error, query } = useProtonQuery();
+  const [severityFilter, setSeverityFilter] = useState('');
 
-  const load = () => {
+  const load = (sev = severityFilter) => {
     queryStats(`SELECT count() as total, count_if(severity='error') as errors FROM table(pulsebot.events)`);
-    query(`SELECT id, timestamp, event_type, source, severity, payload, tags FROM table(pulsebot.events) ORDER BY timestamp DESC LIMIT 200`);
+    const where = sev ? `WHERE severity = '${sev}'` : '';
+    query(`SELECT id, timestamp, event_type, source, severity, payload, tags FROM table(pulsebot.events) ${where} ORDER BY timestamp DESC LIMIT 200`);
   };
 
   useEffect(() => { load(); }, []);
@@ -115,26 +124,42 @@ export default function Events() {
             tagColor="text-primary"
             icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-primary"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" /></svg>}
           />
-          <MetricCard
-            label="Critical Errors"
-            value={st.errors ?? '—'}
-            tag={st.errors > 0 ? 'Active' : 'None'}
-            tagColor={st.errors > 0 ? 'text-obs-error' : 'text-tertiary'}
-            icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-obs-error"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>}
-          />
+          <div
+            className={st.errors > 0 ? 'cursor-pointer' : ''}
+            onClick={() => {
+              if (!st.errors) return;
+              setSeverityFilter('error');
+              load('error');
+            }}
+          >
+            <MetricCard
+              label="Critical Errors"
+              value={st.errors ?? '—'}
+              tag={st.errors > 0 ? 'Click to view' : 'None'}
+              tagColor={st.errors > 0 ? 'text-obs-error' : 'text-tertiary'}
+              icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5 text-obs-error"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>}
+            />
+          </div>
         </div>
 
         {/* Event Log Table */}
         <Card>
-          <div className="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
-            <h3 className="text-sm font-semibold text-on-surface uppercase tracking-wider">Event Log</h3>
-            <div className="flex gap-4">
-              <div className="flex items-center gap-2 text-[11px] text-secondary font-medium">
-                <span className="w-2 h-2 rounded-full bg-tertiary"></span> System
-              </div>
-              <div className="flex items-center gap-2 text-[11px] text-secondary font-medium">
-                <span className="w-2 h-2 rounded-full bg-primary"></span> Agent
-              </div>
+          <div className="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center gap-4">
+            <h3 className="text-sm font-semibold text-on-surface uppercase tracking-wider shrink-0">Event Log</h3>
+            <div className="flex items-center gap-2">
+              {SEVERITY_FILTERS.map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => { setSeverityFilter(f.value); load(f.value); }}
+                  className={`px-3 py-1 rounded text-[11px] font-semibold transition-colors ${
+                    severityFilter === f.value
+                      ? 'bg-primary text-on-primary'
+                      : 'bg-surface-container text-secondary hover:bg-surface-container-high'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
             </div>
           </div>
           <DataTable
