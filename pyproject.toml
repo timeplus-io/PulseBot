@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "A lightweight, stream-native AI agent powered by Timeplus"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 authors = [
     {name = "Timeplus Engineering", email = "engineering@timeplus.com"}
 ]
@@ -12,7 +12,7 @@ keywords = ["ai", "agent", "streaming", "timeplus", "llm"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
